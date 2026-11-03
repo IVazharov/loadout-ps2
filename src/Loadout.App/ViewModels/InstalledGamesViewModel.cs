@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Windows.Input;
+using Loadout.Artwork;
 using Loadout.Bay;
 using Loadout.Core;
 using Loadout.Images;
@@ -20,7 +22,7 @@ namespace Loadout.App;
 /// </summary>
 public sealed class InstalledGamesViewModel : ObservableObject
 {
-    private readonly Func<string?, string?> _artPathFor;
+    private readonly ArtworkCache _artwork;
     private readonly Func<string> _hostFor;
     private readonly Action<BayLibrary> _onRead;
     private readonly OperationLog _log;
@@ -51,7 +53,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
     private int _settingsRead;
 
     public InstalledGamesViewModel(
-        Func<string?, string?> artPathFor,
+        ArtworkCache artwork,
         Func<string> hostFor,
         Action<BayLibrary> onRead,
         OperationLog log,
@@ -65,7 +67,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
         _useBay = useBay ?? throw new ArgumentNullException(nameof(useBay));
         _titles = titles ?? throw new ArgumentNullException(nameof(titles));
         _bundledBay = bundledBay ?? throw new ArgumentNullException(nameof(bundledBay));
-        _artPathFor = artPathFor ?? throw new ArgumentNullException(nameof(artPathFor));
+        _artwork = artwork ?? throw new ArgumentNullException(nameof(artwork));
         _hostFor = hostFor ?? throw new ArgumentNullException(nameof(hostFor));
         _onRead = onRead ?? throw new ArgumentNullException(nameof(onRead));
         _log = log ?? throw new ArgumentNullException(nameof(log));
@@ -286,7 +288,56 @@ public sealed class InstalledGamesViewModel : ObservableObject
         Games.Clear();
         foreach (var game in GameListSort.ByTitle(games, game => game.Title))
         {
-            Games.Add(game with { ArtPath = _artPathFor(game.DiscId) });
+            Games.Add(game with { ArtPath = _artwork.CoverOrIconPath(game.DiscId) });
+        }
+    }
+
+    // The list is on screen by now, and the covers fill in as they arrive. It is whole without them,
+    // so a failure here is only logged.
+    private async Task ReadCoversAsync(string host)
+    {
+        var discs = Games
+            .Where(game => game.ArtPath is null && BayGameChanges.CanEdit(game))
+            .Select(game => DiscId.TryParse(game.DiscId, out var disc) ? disc : (DiscId?)null)
+            .OfType<DiscId>()
+            .ToList();
+        if (discs.Count == 0)
+        {
+            return;
+        }
+
+        var shown = Status;
+        var progress = new Progress<CoverReadProgress>(step =>
+        {
+            ShowCover(step.ReadDiscId);
+            Status = PageStatus.Busy(
+                "Reading covers from the PS2",
+                string.Create(CultureInfo.CurrentCulture, $"{step.Done} of {step.Total}"),
+                step.Done * 100.0 / step.Total);
+        });
+        try
+        {
+            var read = await BayArtwork.ReadCoversAsync(host, discs, _artwork, progress);
+            _log.Add(string.Create(CultureInfo.CurrentCulture, $"Read {read} of {discs.Count} covers from the PS2."));
+        }
+        catch (Exception ex) when (ex is LoadoutBayException or IOException or UnauthorizedAccessException)
+        {
+            _log.Add("Covers weren't read from the PS2: " + ex.Message);
+        }
+
+        Status = shown;
+    }
+
+    // Replacing a row would drop it from the selection, so a selected row gets its cover from the next list.
+    private void ShowCover(string? discId)
+    {
+        for (var i = 0; discId is not null && i < Games.Count; i++)
+        {
+            var game = Games[i];
+            if (game.DiscId == discId && game.ArtPath is null && game != _selected && !_selection.Contains(game))
+            {
+                Games[i] = game with { ArtPath = _artwork.CoverOrIconPath(discId) };
+            }
         }
     }
 
@@ -315,6 +366,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
             ShowRead(library, host);
             _onRead(library);
             otherVersion = library.Hello.Version != ProductInfo.Version;
+            await ReadCoversAsync(host);
         }
         catch (LoadoutBayException ex)
         {
@@ -552,7 +604,18 @@ public sealed class InstalledGamesViewModel : ObservableObject
             return;
         }
 
-        if (_connecting || _bundledBay() is not { } elf || !_confirm(PutBayOnDiskQuestion()))
+        if (_connecting)
+        {
+            return;
+        }
+
+        if (_bundledBay() is not { } elf)
+        {
+            Status = PageStatus.Warn("This build doesn't include Loadout Bay", "Build ps2/ first and then this app, or use a release download.");
+            return;
+        }
+
+        if (!_confirm(PutBayOnDiskQuestion()))
         {
             return;
         }

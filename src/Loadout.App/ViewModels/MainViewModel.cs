@@ -45,7 +45,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         };
         Settings = new SettingsViewModel(settingsStore, stored, Install, log, defaultCacheDirectory);
         Installed = new InstalledGamesViewModel(
-            artworkCache.CoverOrIconPath,
+            artworkCache,
             () => Settings.Host,
             library => KeepList(savedList, library),
             log,

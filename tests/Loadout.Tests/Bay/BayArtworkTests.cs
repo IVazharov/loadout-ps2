@@ -145,6 +145,116 @@ public sealed class BayArtworkTests : IDisposable
         };
     }
 
+    [Fact]
+    public async Task ACoverThePcLacksIsReadFromThePs2AndStored()
+    {
+        var cache = new ArtworkCache(_root);
+        var cover = TinyImages.Png((1, 2, 3), (4, 5, 6));
+        var game = Game("SLUS-20297", "").DiscId;
+        using var bay = new FakeLoadoutBay(disk: Disk);
+        bay.Files[(BayFolder.Art, "SLUS_202.97_COV.png")] = cover;
+        bay.Files[(BayFolder.Art, "SLUS_202.97_BG.png")] = TinyImages.Png((7, 8, 9), (1, 2, 3));
+        bay.Files[(BayFolder.Art, "SLUS_202.97_ICO.png")] = TinyImages.Png((9, 9, 9), (1, 1, 1));
+        var reports = new List<CoverReadProgress>();
+
+        var read = await BayArtwork.ReadCoversAsync("127.0.0.1", [game, game], cache, new Reports(reports), bay.Port);
+
+        Assert.Equal(1, read);
+        Assert.Equal(cover, cache.TryGet(game, OplArtKind.Cover)?.Content);
+        Assert.Null(cache.TryGet(game, OplArtKind.Background));
+        Assert.Null(cache.TryGet(game, OplArtKind.Icon));
+        Assert.Equal([new CoverReadProgress(1, 1, "SLUS-20297")], reports);
+    }
+
+    [Fact]
+    public async Task AJpegCoverOrAnIconServesWhenThereIsNoPngCover()
+    {
+        var cache = new ArtworkCache(_root);
+        var jpeg = Game("SLUS-20297", "").DiscId;
+        var icon = Game("SCUS-97399", "").DiscId;
+        using var bay = new FakeLoadoutBay(disk: Disk);
+        bay.Files[(BayFolder.Art, "SLUS_202.97_COV.jpg")] = TinyImages.Jpeg;
+        bay.Files[(BayFolder.Art, "SCUS_973.99_ICO.png")] = TinyImages.Png((1, 2, 3), (4, 5, 6));
+
+        var read = await BayArtwork.ReadCoversAsync("127.0.0.1", [jpeg, icon], cache, port: bay.Port);
+
+        Assert.Equal(2, read);
+        Assert.Equal(ArtworkFormat.Jpeg, cache.TryGet(jpeg, OplArtKind.Cover)?.Format);
+        Assert.NotNull(cache.CoverOrIconPath(icon.Canonical));
+    }
+
+    [Fact]
+    public async Task NothingConnectsWhenEveryGameHasAPicture()
+    {
+        var cache = new ArtworkCache(_root);
+        var game = Game("SLUS-20297", "").DiscId;
+        cache.Store(game, OplArtKind.Cover, TinyImages.Png((1, 2, 3), (4, 5, 6)));
+        using var bay = new FakeLoadoutBay(disk: Disk);
+
+        var read = await BayArtwork.ReadCoversAsync("127.0.0.1", [game], cache, port: bay.Port);
+
+        Assert.Equal(0, read);
+        Assert.Empty(bay.Commands);
+    }
+
+    [Fact]
+    public async Task AFileThatIsNotAnImageOrAGameWithoutArtIsPassedOver()
+    {
+        var cache = new ArtworkCache(_root);
+        var broken = Game("SLUS-20297", "").DiscId;
+        var none = Game("SCUS-97399", "").DiscId;
+        var good = Game("SLUS-20035", "").DiscId;
+        var icon = TinyImages.Png((1, 2, 3), (4, 5, 6));
+        using var bay = new FakeLoadoutBay(disk: Disk);
+        bay.Files[(BayFolder.Art, "SLUS_202.97_COV.png")] = [1, 2, 3];
+        bay.Files[(BayFolder.Art, "SLUS_202.97_ICO.png")] = icon;
+        bay.Files[(BayFolder.Art, "SLUS_200.35_COV.png")] = TinyImages.Png((7, 8, 9), (1, 2, 3));
+        var reports = new List<CoverReadProgress>();
+
+        var read = await BayArtwork.ReadCoversAsync("127.0.0.1", [broken, none, good], cache, new Reports(reports), bay.Port);
+
+        Assert.Equal(2, read);
+        Assert.Null(cache.TryGet(broken, OplArtKind.Cover));
+        Assert.Equal(icon, cache.TryGet(broken, OplArtKind.Icon)?.Content);
+        Assert.Null(cache.CoverOrIconPath(none.Canonical));
+        Assert.NotNull(cache.TryGet(good, OplArtKind.Cover));
+        Assert.Equal(
+            [new CoverReadProgress(1, 3, "SLUS-20297"), new CoverReadProgress(2, 3, null), new CoverReadProgress(3, 3, "SLUS-20035")],
+            reports);
+    }
+
+    [Fact]
+    public async Task APartitionNameLoadoutBayWontUseIsSaidAndNothingIsSent()
+    {
+        var cache = new ArtworkCache(_root);
+        var rtcw = Game("SLUS-20297", "Return to Castle Ravensworth");
+        cache.Store(rtcw.DiscId, OplArtKind.Cover, TinyImages.Png((1, 2, 3), (4, 5, 6)));
+        using var bay = new FakeLoadoutBay(disk: Disk) { BadOplPartitionName = true };
+
+        var error = await Assert.ThrowsAsync<LoadoutBayException>(() => BayArtwork.SendAsync("127.0.0.1", [rtcw], cache, replaceExisting: false, port: bay.Port));
+
+        Assert.Equal(BayWire.StatusBadOplPartition, error.Status);
+        Assert.Contains("conf_hdd.cfg", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(BayWire.CommandFileWrite, bay.Commands);
+    }
+
+    [Fact]
+    public async Task WithoutOplsPartitionReadingCoversSaysSo()
+    {
+        var cache = new ArtworkCache(_root);
+        using var bay = new FakeLoadoutBay(disk: Disk) { HasOplPartition = false };
+
+        var error = await Assert.ThrowsAsync<LoadoutBayException>(
+            () => BayArtwork.ReadCoversAsync("127.0.0.1", [Game("SLUS-20297", "").DiscId], cache, port: bay.Port));
+
+        Assert.Equal(BayWire.StatusNotFound, error.Status);
+    }
+
+    private sealed class Reports(List<CoverReadProgress> reports) : IProgress<CoverReadProgress>
+    {
+        public void Report(CoverReadProgress value) => reports.Add(value);
+    }
+
     private static ArtworkGame Game(string discId, string title) => new(DiscId.TryParse(discId, out var id) ? id : default, title);
 
     private sealed class Recorder(List<ArtworkSendProgress> reports) : IProgress<ArtworkSendProgress>

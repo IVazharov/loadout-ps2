@@ -82,6 +82,9 @@ public sealed class FakeLoadoutBay : IDisposable
     /// <summary>False for a disk without OPL's partition: every file command is refused with -ENOENT.</summary>
     public bool HasOplPartition { get; set; } = true;
 
+    /// <summary>True for a <c>conf_hdd.cfg</c> Loadout Bay won't use: every file command is refused with -ENOTDIR.</summary>
+    public bool BadOplPartitionName { get; set; }
+
     /// <summary>What FILE_RUNS answers for a file; 2 (its inode and one run of data) when not set.</summary>
     public Dictionary<(BayFolder Folder, string Name), int> FileRuns { get; } = [];
 
@@ -410,6 +413,11 @@ public sealed class FakeLoadoutBay : IDisposable
         if (request.Length != 8)
         {
             return (BayWire.StatusInvalid, []);
+        }
+
+        if (BadOplPartitionName)
+        {
+            return (BayWire.StatusBadOplPartition, []);
         }
 
         if (!HasOplPartition)

@@ -1,10 +1,12 @@
 # Loadout Bay
 
-Loadout Bay is the PS2 side of Loadout. It runs on a fat PS2 with a network adapter and an internal hard disk.
+Loadout Bay is the PS2 side of Loadout. It runs on a fat PS2 with a network adapter and an internal hard disk formatted for the PS2.
+
+You also need a way to start homebrew, such as FreeMcBoot or Free HDBoot, with wLaunchELF, and Open PS2 Loader (OPL) to play the games. Loadout Bay includes none of these. The full list is at https://github.com/IVazharov/loadout-ps2#before-you-start.
 
 ## Start it
 
-1. Copy `loadout-bay.elf` to a memory card or USB drive.
+1. Copy `loadout-bay.elf` to a USB drive formatted as FAT32. A memory card also works, but updates sent from Loadout can't be saved there.
 2. On the PS2, open wLaunchELF and start `loadout-bay.elf`.
 
 The screen shows what Loadout Bay is doing, the console's address and network settings, the hard disk, and the last speed test.
@@ -15,7 +17,7 @@ Press START to leave Loadout Bay. It restarts the PS2 into its main menu, or Fre
 
 ### From the hard disk
 
-Once Loadout Bay runs, Loadout's **Put Loadout Bay on the hard disk…** button (on Installed Games) copies it into `APPS/Loadout-Bay` in OPL's partition, with a `title.cfg`. OPL then lists it in its Apps menu when Settings → Applications Start Mode is on, and the USB drive is no longer needed. A `loadout-bay.cfg` for a fixed address goes in the same folder; the network settings on the console (Triangle) save it there.
+Once Loadout Bay runs, Loadout's **Put Loadout Bay on the hard disk…** button (on Installed Games) copies it into `APPS/Loadout-Bay` in OPL's partition, with a `title.cfg`. OPL's partition is the one named in OPL's `conf_hdd.cfg`, or `+OPL` without one. OPL then lists it in its Apps menu when Settings → Applications Start Mode is on, and the USB drive is no longer needed. A `loadout-bay.cfg` for a fixed address goes in the same folder; the network settings on the console (Triangle) save it there.
 
 ## Network settings
 

@@ -22,9 +22,12 @@ public sealed record ArtworkSendResult(IReadOnlyList<ArtworkFile> Sent, IReadOnl
 
 public sealed record ArtworkSendFailure(ArtworkFile File, string Reason);
 
+/// <summary>Reading covers from the PS2: how far it is, and the disc whose picture just arrived, if one did.</summary>
+public sealed record CoverReadProgress(int Done, int Total, string? ReadDiscId);
+
 /// <summary>
-/// Sends cached artwork to OPL's ART folder through Loadout Bay. The PS2's own listing decides what
-/// it lacks, so nothing is kept on the PC about what was sent before.
+/// Sends cached artwork to OPL's ART folder through Loadout Bay, and reads back the covers the PC lacks.
+/// The PS2's own listing decides what it has, so nothing is kept on the PC about what was sent before.
 /// </summary>
 public static class BayArtwork
 {
@@ -150,6 +153,71 @@ public static class BayArtwork
         }
 
         return new ArtworkSendResult(sent, failed, plan);
+    }
+
+    /// <summary>
+    /// Copies the picture the game list shows from OPL's ART folder into the cache, for each disc that has
+    /// none cached: its cover, or its icon without one. Nothing connects when every disc has one. A file
+    /// Loadout Bay refuses or that is not a usable image is passed over. Returns how many discs got a picture.
+    /// </summary>
+    public static async Task<int> ReadCoversAsync(
+        string host,
+        IReadOnlyList<DiscId> discs,
+        ArtworkCache cache,
+        IProgress<CoverReadProgress>? progress = null,
+        int port = BayWire.Port,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(discs);
+        ArgumentNullException.ThrowIfNull(cache);
+        var missing = discs.Distinct().Where(disc => cache.CoverOrIconPath(disc.Canonical) is null).ToList();
+        if (missing.Count == 0)
+        {
+            return 0;
+        }
+
+        using var bay = await LoadoutBayClient.ConnectAsync(host, port, cancellationToken).ConfigureAwait(false);
+        var onPs2 = (await bay.ListFilesAsync(BayFolder.Art, cancellationToken).ConfigureAwait(false))
+            .ToDictionary(file => file.Name, file => file.Size, StringComparer.Ordinal);
+        var read = 0;
+        for (var i = 0; i < missing.Count; i++)
+        {
+            var got = await ReadCoverAsync(bay, missing[i], cache, onPs2, cancellationToken).ConfigureAwait(false);
+            read += got ? 1 : 0;
+            progress?.Report(new CoverReadProgress(i + 1, missing.Count, got ? missing[i].Canonical : null));
+        }
+
+        return read;
+    }
+
+    private static async Task<bool> ReadCoverAsync(
+        LoadoutBayClient bay, DiscId disc, ArtworkCache cache, Dictionary<string, uint> onPs2, CancellationToken cancellationToken)
+    {
+        (OplArtKind Kind, ArtworkFormat Format)[] choices =
+            [(OplArtKind.Cover, ArtworkFormat.Png), (OplArtKind.Cover, ArtworkFormat.Jpeg), (OplArtKind.Icon, ArtworkFormat.Png)];
+        foreach (var (kind, format) in choices)
+        {
+            var name = OplArtNames.FileName(disc, kind, format);
+            if (!onPs2.TryGetValue(name, out var size) || size > ArtworkImages.MaxBytes)
+            {
+                continue;
+            }
+
+            try
+            {
+                var content = await bay.ReadFileAsync(BayFolder.Art, name, cancellationToken).ConfigureAwait(false);
+                if (cache.Store(disc, kind, content).Status == ArtworkInspectionStatus.Valid)
+                {
+                    return true;
+                }
+            }
+            catch (LoadoutBayException ex) when (ex.Status != 0)
+            {
+                // Refused: the next choice may still be there.
+            }
+        }
+
+        return false;
     }
 
     // Reports on the sender's thread, so the totals stay in order.

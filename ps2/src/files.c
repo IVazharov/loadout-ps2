@@ -48,13 +48,14 @@ static int valid_name(const char *name)
 
 // The partition OPL keeps its files in, as hddFindOPLPartition finds it.
 // A partition name could start an hdd0: password with a comma, so one with
-// anything but letters, digits, '+', '_', '.' or '-' is not used.
-static void opl_partition(char *name)
+// anything but letters, digits, '+', '_', '.' or '-' is refused with -ENOTDIR:
+// using another partition would put files where OPL does not look.
+static int opl_partition(char *name)
 {
     strcpy(name, "+OPL");
     if (fileXioMount(MOUNT_POINT, "hdd0:__common", FIO_MT_RDONLY) < 0)
     {
-        return;
+        return 0;
     }
 
     int fd = fileXioOpen(MOUNT_POINT "OPL/conf_hdd.cfg", FIO_O_RDONLY);
@@ -67,14 +68,14 @@ static void opl_partition(char *name)
     fileXioUmount(MOUNT_POINT);
     if (length <= 0)
     {
-        return;
+        return 0;
     }
 
     conf[length] = '\0';
     const char *value = strstr((const char *)conf, "hdd_partition=");
     if (value == NULL)
     {
-        return;
+        return 0;
     }
 
     value += strlen("hdd_partition=");
@@ -85,11 +86,14 @@ static void opl_partition(char *name)
         end++;
     }
 
-    if (end > 0 && (value[end] == '\r' || value[end] == '\n' || value[end] == '\0'))
+    if (end == 0 || (value[end] != '\r' && value[end] != '\n' && value[end] != '\0'))
     {
-        memcpy(name, value, end);
-        name[end] = '\0';
+        return -ENOTDIR;
     }
+
+    memcpy(name, value, end);
+    name[end] = '\0';
+    return 0;
 }
 
 static int mount_opl(void)
@@ -108,10 +112,15 @@ static int mount_opl(void)
     }
 
     char partition[PARTITION_NAME_MAX + 1];
-    opl_partition(partition);
+    int status = opl_partition(partition);
+    if (status < 0)
+    {
+        return status;
+    }
+
     char device[48];
     snprintf(device, sizeof(device), "hdd0:%s", partition);
-    int status = fileXioMount(MOUNT_POINT, device, FIO_MT_RDWR);
+    status = fileXioMount(MOUNT_POINT, device, FIO_MT_RDWR);
     if (status < 0)
     {
         return status;
@@ -258,6 +267,11 @@ int files_write(u32 folder, const char *name, u32 offset, const u8 *data, u32 le
     // OPL makes its folders when it first runs; a new OPL partition may not have them yet.
     char dir[PATH_BYTES];
     prepare(folder, NULL, "", dir);
+    if (strcmp(prefix, MOUNT_POINT) != 0)
+    {
+        fileXioMkdir(MOUNT_POINT "OPL", 0777);
+    }
+
     if (folder == FILES_FOLDER_APP)
     {
         char apps[PATH_BYTES];

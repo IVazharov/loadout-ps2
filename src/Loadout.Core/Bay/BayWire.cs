@@ -172,6 +172,9 @@ public static class BayWire
     public const int StatusExists = -17;
     public const int StatusNoDevice = -19;
     public const int StatusInvalid = -22;
+
+    /// <summary>OPL's <c>conf_hdd.cfg</c> names a partition Loadout Bay won't use (<c>ENOTDIR</c>).</summary>
+    public const int StatusBadOplPartition = -20;
     public const int StatusTooLarge = -27;
     public const int StatusNoSpace = -28;
     public const int StatusBrokenPipe = -32;

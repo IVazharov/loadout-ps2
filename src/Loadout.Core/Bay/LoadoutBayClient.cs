@@ -701,6 +701,10 @@ public sealed class LoadoutBayClient : IDisposable
                         ? "Loadout Bay found no OPL partition on the PS2's hard disk. OPL makes it the first time it lists games from the hard disk."
                         : "Loadout Bay found no " + place + " on the PS2, or no OPL partition.",
                     status);
+            case BayWire.StatusBadOplPartition:
+                throw new LoadoutBayException(
+                    "OPL's conf_hdd.cfg names a partition Loadout Bay can't use, so nothing was read or written. A name can only have letters, digits, +, _, . and -.",
+                    status);
             case BayWire.StatusNotPermitted:
                 throw new LoadoutBayException("Loadout Bay refused the file name " + place + ".", status);
             case BayWire.StatusBusy:

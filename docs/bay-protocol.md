@@ -406,6 +406,7 @@ These are the PS2 newlib errno values, from `sys/errno.h` in the ps2dev toolchai
 |---|---|---|
 | -1 | `EPERM` | the partition is not the kind of game the command takes, a file name breaks the rules, or `ELF_SAVE` finds that this copy was not started from a USB drive or the hard disk, so nothing was changed |
 | -2 | `ENOENT` | no game partition or file with that name, no OPL partition, or no install open |
+| -20 | `ENOTDIR` | `conf_hdd.cfg` names OPL's partition in a form Loadout Bay won't use: an empty name, or one with anything but letters, digits, `+`, `_`, `.` and `-` |
 | -5 | `EIO` | the hard disk driver failed, a header read back differs from the one written, or a saved ELF read back differs |
 | -8 | `ENOEXEC` | the ELF sent cannot be started |
 | -12 | `ENOMEM` | no room in memory for the ELF sent |

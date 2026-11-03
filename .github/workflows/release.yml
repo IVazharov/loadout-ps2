@@ -121,13 +121,13 @@ jobs:
         run: dotnet publish src/Loadout.App/Loadout.App.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en -o publish
 
       # The executable embeds Open PS2 Loader's memory card groups, Loadout Bay and more, so their licences go with it.
-      - name: Zip the executable and licences
+      - name: Zip the executable, readme, and licences
         id: zip
         run: |
           $exe = 'publish/Loadout.exe'
           if (-not (Test-Path $exe)) { throw "$exe was not produced." }
           New-Item -ItemType Directory app, app/third_party | Out-Null
-          Copy-Item $exe, LICENSE, THIRD-PARTY-NOTICES.txt app/
+          Copy-Item $exe, README.md, LICENSE, THIRD-PARTY-NOTICES.txt app/
           Copy-Item -Recurse src/Loadout.Core/ThirdParty/* app/third_party/
           Copy-Item -Recurse ps2/third_party/* app/third_party/
           $zip = "Loadout-PS2-${{ steps.version.outputs.version }}-win-x64.zip"
@@ -142,7 +142,7 @@ jobs:
           if (-not (Test-Path $bay)) { throw "$bay was not downloaded." }
           $arguments = @(
             'release', 'create', '${{ github.ref_name }}', '${{ steps.zip.outputs.zip }}', $bay,
-            '--title', 'Loadout ${{ steps.version.outputs.version }}',
+            '--title', 'Loadout for PS2 ${{ steps.version.outputs.version }}',
             '--notes-file', 'release-notes.md',
             '--verify-tag'
           )
