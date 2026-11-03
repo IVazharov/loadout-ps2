@@ -1,0 +1,23 @@
+# Normalize line endings in the repository. Files are checked out with the
+# platform's line endings, except files that a Linux tool reads: shell scripts,
+# the PS2 sources, and VERSION, which always use LF.
+* text=auto
+
+*.slnx text
+*.cs text
+*.xaml text
+*.csproj text
+*.props text
+*.md text
+*.json text
+*.yml text
+
+*.sh text eol=lf
+ps2/** text eol=lf
+VERSION text eol=lf
+
+*.ico binary
+*.png binary
+*.elf binary
+*.irx binary
+*.ttf binary

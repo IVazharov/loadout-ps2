@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  ps2:
+    name: Build Loadout Bay
+    runs-on: ubuntu-latest
+    container: ps2dev/ps2dev:v2.0.0
+    steps:
+      - name: Install build tools
+        run: apk add --no-cache build-base git zip
+
+      # The whole history, so the build number (the count of commits after the first) is the real one.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag against VERSION and the build number
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          version="${GITHUB_REF_NAME#v}"
+          expected="$(tr -d '\r\n' < VERSION).$(git rev-list --count --skip=1 HEAD)"
+          if [ "$version" != "$expected" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match this commit's version ($expected)." >&2
+            exit 1
+          fi
+
+      - name: Build the ELF
+        run: make -C ps2
+
+      - name: Zip the ELF, readme, and licences
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          cp ps2/loadout-bay.elf ps2/loadout-bay.example.cfg ps2/README.md LICENSE THIRD-PARTY-NOTICES.txt out/
+          # The tracked files only: the build leaves its output in these folders.
+          git archive HEAD ps2/third_party | tar -x -C out --strip-components=1
+          (cd out && zip -r "../Loadout-Bay-PS2-$version.zip" .)
+
+      - name: Upload Loadout Bay
+        uses: actions/upload-artifact@v7
+        with:
+          name: loadout-bay
+          path: Loadout-Bay-PS2-*.zip
+
+  release:
+    name: Build Loadout and publish the release
+    needs: ps2
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read the version from the tag
+        id: version
+        run: |
+          $version = '${{ github.ref_name }}'.Substring(1)
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Tag ${{ github.ref_name }} is not v<major>.<minor>.<patch>."
+          }
+          $expected = (Get-Content VERSION -Raw).Trim() + '.' + (git rev-list --count --skip=1 HEAD)
+          if ($version -ne $expected) { throw "Tag ${{ github.ref_name }} does not match this commit's version ($expected)." }
+          # Below 1.0.0, the release is a prerelease.
+          $prerelease = $version.StartsWith('0.')
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$($prerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Extract the changelog section
+        run: |
+          # The changelog has a section for each major.minor version.
+          $version = ('${{ steps.version.outputs.version }}' -split '\.')[0..1] -join '.'
+          $lines = Get-Content CHANGELOG.md
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match "^## $([regex]::Escape($version))( |$)") { $start = $i; break }
+          }
+          if ($start -lt 0) { throw "CHANGELOG.md has no '## $version' section." }
+          $end = $lines.Count
+          for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^## ') { $end = $i; break }
+          }
+          $notes = if ($end - $start -gt 1) { ($lines[($start + 1)..($end - 1)] -join "`n").Trim() } else { '' }
+          if (-not $notes) { throw "The '## $version' section in CHANGELOG.md is empty." }
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+
+      - name: Download Loadout Bay
+        uses: actions/download-artifact@v8
+        with:
+          name: loadout-bay
+
+      # Loadout embeds the Loadout Bay of its own version, to offer it to a PS2 that runs another.
+      - name: Put Loadout Bay where Loadout embeds it
+        run: |
+          $bay = "Loadout-Bay-PS2-${{ steps.version.outputs.version }}.zip"
+          if (-not (Test-Path $bay)) { throw "$bay was not downloaded." }
+          Expand-Archive -Path $bay -DestinationPath bay
+          Copy-Item bay/loadout-bay.elf ps2/loadout-bay.elf
+
+      - name: Build solution
+        run: dotnet build Loadout.slnx --configuration Release --verbosity minimal
+
+      - name: Test solution
+        run: dotnet test Loadout.slnx --configuration Release --verbosity minimal --no-build
+
+      - name: Publish framework-dependent single-file win-x64
+        run: dotnet publish src/Loadout.App/Loadout.App.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en -o publish
+
+      # The executable embeds Open PS2 Loader's memory card groups, Loadout Bay and more, so their licences go with it.
+      - name: Zip the executable and licences
+        id: zip
+        run: |
+          $exe = 'publish/Loadout.exe'
+          if (-not (Test-Path $exe)) { throw "$exe was not produced." }
+          New-Item -ItemType Directory app, app/third_party | Out-Null
+          Copy-Item $exe, LICENSE, THIRD-PARTY-NOTICES.txt app/
+          Copy-Item -Recurse src/Loadout.Core/ThirdParty/* app/third_party/
+          Copy-Item -Recurse ps2/third_party/* app/third_party/
+          $zip = "Loadout-PS2-${{ steps.version.outputs.version }}-win-x64.zip"
+          Compress-Archive -Path app/* -DestinationPath $zip
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $bay = "Loadout-Bay-PS2-${{ steps.version.outputs.version }}.zip"
+          if (-not (Test-Path $bay)) { throw "$bay was not downloaded." }
+          $arguments = @(
+            'release', 'create', '${{ github.ref_name }}', '${{ steps.zip.outputs.zip }}', $bay,
+            '--title', 'Loadout ${{ steps.version.outputs.version }}',
+            '--notes-file', 'release-notes.md',
+            '--verify-tag'
+          )
+          if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { $arguments += '--prerelease' }
+          gh @arguments

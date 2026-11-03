@@ -1,0 +1,41 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <!-- Keeps this machine's folders out of the binaries. -->
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Loadout and Loadout Bay share one version: major.minor from VERSION, raised by hand
+         for a major change, then the build number (the target below). -->
+    <LoadoutVersionPrefix>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</LoadoutVersionPrefix>
+    <Version>$(LoadoutVersionPrefix).0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Authors>Ivan Vazharov</Authors>
+    <Copyright>Copyright (c) 2026 Ivan Vazharov</Copyright>
+  </PropertyGroup>
+
+  <!-- The build number is the count of commits after the first, as ps2/Makefile counts it for Loadout Bay, so
+       every commit builds a new version and the same commit always the same one (0 outside git).
+       Merges keep the history, so the count only goes up. -->
+  <Target Name="LoadoutBuildNumber" BeforeTargets="GetAssemblyVersion">
+    <Exec Command="git rev-list --count --skip=1 HEAD" WorkingDirectory="$(MSBuildThisFileDirectory)" ConsoleToMSBuild="true"
+          IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="LoadoutBuild" />
+      <Output TaskParameter="ExitCode" PropertyName="LoadoutBuildExit" />
+    </Exec>
+    <PropertyGroup Condition="'$(LoadoutBuildExit)' == '0' And '$(LoadoutBuild)' != ''">
+      <Version>$(LoadoutVersionPrefix).$(LoadoutBuild)</Version>
+      <InformationalVersion>$(Version)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
+</Project>

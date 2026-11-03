@@ -1,0 +1,23 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
+                    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                    mc:Ignorable="po">
+    <!-- The Bay's status icons (ps2/src/widgets.c, widget_icon) on its 28 px grid.
+         The "!" is cut out (even-odd fill), so the surface shows through as the Bay's ink does. -->
+    <Geometry x:Key="IconWarn">F0 M14,2 L27,26 L1,26 Z M12.5,10 H15.5 V18 H12.5 Z M12.5,20 H15.5 V23 H12.5 Z</Geometry>
+    <Geometry x:Key="IconError">F0 M14,0 L28,14 L14,28 L0,14 Z M12.5,7 H15.5 V16 H12.5 Z M12.5,18 H15.5 V21 H12.5 Z</Geometry>
+    <!-- The mark, on a 32-unit grid. Its colours are the same in both themes. -->
+    <DrawingImage x:Key="MarkDrawing" po:Freeze="True">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#F2963A" Geometry="M6,0 L26,0 32,6 32,26 26,32 6,32 0,26 0,6 Z" />
+                <GeometryDrawing Geometry="M9,6 L16,13 23,6 M7,16 L7,25 25,25 25,16">
+                    <GeometryDrawing.Pen>
+                        <Pen Brush="#0F1724" Thickness="4" StartLineCap="Flat" EndLineCap="Flat" LineJoin="Miter" />
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

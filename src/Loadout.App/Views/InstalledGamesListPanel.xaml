@@ -1,0 +1,107 @@
+<UserControl x:Class="Loadout.App.InstalledGamesListPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Loadout.App"
+             xmlns:c="clr-namespace:Loadout.App.Controls">
+    <UserControl.Resources>
+        <local:ArtworkPreviewConverter x:Key="ArtworkPreviewConverter" />
+    </UserControl.Resources>
+    <ListView x:Name="GamesList"
+              AutomationProperties.Name="Installed games"
+              c:TableColumns.Key="installed"
+              c:TableColumns.Fill="title"
+              ItemsSource="{Binding Games}"
+              SelectedItem="{Binding SelectedGame}"
+              SelectionMode="Extended"
+              SelectionChanged="GamesList_SelectionChanged"
+              Loaded="GamesList_Loaded">
+        <ListView.View>
+            <GridView>
+                <GridViewColumn Header="Art" Width="56" c:TableColumns.Id="art" c:TableColumns.Fixed="True">
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <Image AutomationProperties.Name="{Binding Title, StringFormat='Cover of {0}'}"
+                                   Width="36"
+                                   Height="48"
+                                   Margin="0,4,0,3"
+                                   HorizontalAlignment="Left"
+                                   Stretch="Uniform"
+                                   Source="{Binding ArtPath, Converter={StaticResource ArtworkPreviewConverter}, TargetNullValue={x:Null}}" />
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn Header="Disc ID"
+                                DisplayMemberBinding="{Binding DiscId}"
+                                c:TableColumns.Id="discId"
+                                c:TableColumns.MinWidth="72"
+                                c:TableColumns.MaxAutoWidth="140" />
+                <GridViewColumn Header="Title"
+                                local:GameColumnSort.SortPath="Title"
+                                c:TableColumns.Id="title"
+                                c:TableColumns.MinWidth="160"
+                                c:TableColumns.MaxAutoWidth="520"
+                                c:TableColumns.MeasurePath="Title"
+                                c:TableColumns.ExtraWhen="Incomplete"
+                                c:TableColumns.ExtraText="(incomplete install)">
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <!-- The mark is never cut off: only the title shortens to make room for it. -->
+                            <!-- Left-aligned, the star column sizes to the title until the cell runs out of room. -->
+                            <Grid HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource Text.Cell}" TextTrimming="CharacterEllipsis" Text="{Binding Title, Mode=OneWay}" />
+                                <TextBlock x:Name="Incomplete"
+                                           Grid.Column="1"
+                                           Margin="4,0,0,0"
+                                           Style="{StaticResource Text.Cell}"
+                                           Visibility="Collapsed"
+                                           Foreground="{DynamicResource AppError}"
+                                           Text="(incomplete install)" />
+                            </Grid>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Incomplete}" Value="True">
+                                    <Setter TargetName="Incomplete" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <GridViewColumn Header="Partition"
+                                DisplayMemberBinding="{Binding PartitionName}"
+                                c:TableColumns.Id="partition"
+                                c:TableColumns.MinWidth="100"
+                                c:TableColumns.MaxAutoWidth="320" />
+                <GridViewColumn Header="Modes"
+                                DisplayMemberBinding="{Binding ModesLabel}"
+                                c:TableColumns.Id="modes"
+                                c:TableColumns.MinWidth="56"
+                                c:TableColumns.MaxAutoWidth="120" />
+                <GridViewColumn Header="Transfer"
+                                DisplayMemberBinding="{Binding TransferLabel}"
+                                c:TableColumns.Id="transfer"
+                                c:TableColumns.MinWidth="72"
+                                c:TableColumns.MaxAutoWidth="110" />
+                <GridViewColumn Header="Type"
+                                DisplayMemberBinding="{Binding DiscTypeLabel}"
+                                c:TableColumns.Id="type"
+                                c:TableColumns.MinWidth="48"
+                                c:TableColumns.MaxAutoWidth="80" />
+                <GridViewColumn Header="Size"
+                                local:GameColumnSort.SortPath="Sectors"
+                                c:TableColumns.Id="size"
+                                c:TableColumns.MinWidth="72"
+                                c:TableColumns.MaxAutoWidth="110"
+                                c:TableColumns.MeasurePath="SizeLabel">
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Cell}" Text="{Binding SizeLabel, Mode=OneWay}" />
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+            </GridView>
+        </ListView.View>
+    </ListView>
+</UserControl>

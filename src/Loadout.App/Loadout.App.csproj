@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Loadout.App</RootNamespace>
+    <AssemblyName>Loadout</AssemblyName>
+    <ApplicationTitle>Loadout for PS2</ApplicationTitle>
+    <Product>Loadout for PS2</Product>
+    <!-- The mark, rendered by ps2/tools/make_icon.py. -->
+    <ApplicationIcon>Assets\loadout.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows 10 and 11 include SQLite as winsqlite3.dll, so the app does not ship its own. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Barlow: one copy of the Bay's files, plus Medium, the desktop's body weight. -->
+    <Resource Include="..\..\ps2\assets\fonts\*.ttf" LinkBase="Assets\Fonts" />
+    <Resource Include="Assets\Fonts\Barlow-Medium.ttf" />
+    <Resource Include="Assets\loadout.ico" />
+    <None Include="..\..\ps2\third_party\barlow\OFL.txt" Link="ThirdParty\Barlow-OFL.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Loadout.Core\Loadout.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Loadout Bay of this version, offered to a PS2 that runs another. Built in ps2/; without it nothing is offered. -->
+    <EmbeddedResource Include="..\..\ps2\loadout-bay.elf" LogicalName="loadout-bay.elf" Condition="Exists('..\..\ps2\loadout-bay.elf')" />
+  </ItemGroup>
+
+</Project>

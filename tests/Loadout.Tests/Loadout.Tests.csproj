@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Loadout</RootNamespace>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The app uses the SQLite that ships with Windows, and so do the tests. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Images\ChdFixtures\**\*.chd;Images\ChdFixtures\**\*.cue;Images\ChdFixtures\expected.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Loadout.Fakes" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Loadout.Core\Loadout.Core.csproj" />
+    <ProjectReference Include="..\..\tools\Loadout.SpeedTest\Loadout.SpeedTest.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Loadout</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" />
+    <PackageReference Include="ZstdSharp.Port" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="ThirdParty\OplVmcGroups\vmc-groups.txt" LogicalName="Loadout.Vmc.vmc-groups.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Loadout.Tests" />
+    <InternalsVisibleTo Include="Loadout.SpeedTest" />
+  </ItemGroup>
+
+</Project>

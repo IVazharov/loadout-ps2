@@ -1,0 +1,98 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Colours: each value once. -->
+    <Color x:Key="AppBackgroundColor">#FF0F1724</Color>
+    <Color x:Key="AppBandColor">#FF0A0F18</Color>
+    <Color x:Key="AppSurfaceColor">#FF172338</Color>
+    <Color x:Key="AppSurfaceRaisedColor">#FF1B2A42</Color>
+    <Color x:Key="AppChipColor">#FF22324D</Color>
+    <Color x:Key="AppHoverColor">#FF1C2B43</Color>
+    <Color x:Key="AppSelectionColor">#FF26405F</Color>
+    <Color x:Key="AppSelectionInactiveColor">#FF22324D</Color>
+    <Color x:Key="AppSelectionTextColor">#FFECF0F6</Color>
+    <Color x:Key="AppBorderColor">#FF2F4566</Color>
+    <Color x:Key="AppDividerColor">#FF1E2C44</Color>
+    <Color x:Key="AppInputColor">#FF0F1724</Color>
+    <Color x:Key="AppInputBorderColor">#FF5B759C</Color>
+    <Color x:Key="AppTextColor">#FFECF0F6</Color>
+    <Color x:Key="AppMutedColor">#FFB4C0D0</Color>
+    <Color x:Key="AppLabelColor">#FF8D9DB4</Color>
+    <Color x:Key="AppDisabledColor">#FF5E6E86</Color>
+    <Color x:Key="AppAccentColor">#FFF2963A</Color>
+    <Color x:Key="AppAccentFillColor">#FFF2963A</Color>
+    <Color x:Key="AppAccentHoverColor">#FFF6A95C</Color>
+    <Color x:Key="AppAccentPressedColor">#FFD9822B</Color>
+    <Color x:Key="AppOnAccentColor">#FF0F1724</Color>
+    <Color x:Key="AppInfoColor">#FF74B2FF</Color>
+    <Color x:Key="AppOkColor">#FF4FCB8D</Color>
+    <Color x:Key="AppWarnColor">#FFF5CF5C</Color>
+    <Color x:Key="AppErrorColor">#FFFF8273</Color>
+    <Color x:Key="AppErrorFillColor">#FF4A1F27</Color>
+    <Color x:Key="AppScrimColor">#99000000</Color>
+    <Color x:Key="AppBackdropTopColor">#FF16233A</Color>
+    <Color x:Key="AppBackdropBottomColor">#FF0B111B</Color>
+
+    <!-- Brushes. -->
+    <SolidColorBrush x:Key="AppBackground" Color="{StaticResource AppBackgroundColor}" />
+    <SolidColorBrush x:Key="AppBand" Color="{StaticResource AppBandColor}" />
+    <SolidColorBrush x:Key="AppSurface" Color="{StaticResource AppSurfaceColor}" />
+    <SolidColorBrush x:Key="AppSurfaceRaised" Color="{StaticResource AppSurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="AppChip" Color="{StaticResource AppChipColor}" />
+    <SolidColorBrush x:Key="AppHover" Color="{StaticResource AppHoverColor}" />
+    <!-- The rail: navy stands apart from the content without a line. -->
+    <SolidColorBrush x:Key="AppNavHover" Color="{StaticResource AppHoverColor}" />
+    <SolidColorBrush x:Key="AppFrameEdge" Color="Transparent" />
+    <SolidColorBrush x:Key="AppSelection" Color="{StaticResource AppSelectionColor}" />
+    <SolidColorBrush x:Key="AppSelectionInactive" Color="{StaticResource AppSelectionInactiveColor}" />
+    <SolidColorBrush x:Key="AppSelectionText" Color="{StaticResource AppSelectionTextColor}" />
+    <SolidColorBrush x:Key="AppBorder" Color="{StaticResource AppBorderColor}" />
+    <SolidColorBrush x:Key="AppDivider" Color="{StaticResource AppDividerColor}" />
+    <SolidColorBrush x:Key="AppInput" Color="{StaticResource AppInputColor}" />
+    <SolidColorBrush x:Key="AppInputBorder" Color="{StaticResource AppInputBorderColor}" />
+    <SolidColorBrush x:Key="AppText" Color="{StaticResource AppTextColor}" />
+    <SolidColorBrush x:Key="AppMuted" Color="{StaticResource AppMutedColor}" />
+    <SolidColorBrush x:Key="AppLabel" Color="{StaticResource AppLabelColor}" />
+    <SolidColorBrush x:Key="AppDisabled" Color="{StaticResource AppDisabledColor}" />
+    <SolidColorBrush x:Key="AppAccent" Color="{StaticResource AppAccentColor}" />
+    <SolidColorBrush x:Key="AppAccentFill" Color="{StaticResource AppAccentFillColor}" />
+    <SolidColorBrush x:Key="AppAccentHover" Color="{StaticResource AppAccentHoverColor}" />
+    <SolidColorBrush x:Key="AppAccentPressed" Color="{StaticResource AppAccentPressedColor}" />
+    <SolidColorBrush x:Key="AppOnAccent" Color="{StaticResource AppOnAccentColor}" />
+    <SolidColorBrush x:Key="AppInfo" Color="{StaticResource AppInfoColor}" />
+    <SolidColorBrush x:Key="AppOk" Color="{StaticResource AppOkColor}" />
+    <SolidColorBrush x:Key="AppWarn" Color="{StaticResource AppWarnColor}" />
+    <SolidColorBrush x:Key="AppError" Color="{StaticResource AppErrorColor}" />
+    <SolidColorBrush x:Key="AppErrorFill" Color="{StaticResource AppErrorFillColor}" />
+    <SolidColorBrush x:Key="AppScrim" Color="{StaticResource AppScrimColor}" />
+    <SolidColorBrush x:Key="AppNav" Color="{StaticResource AppBandColor}" />
+    <!-- Popup outline and menu separator: a white menu on a white table still shows its edge. -->
+    <SolidColorBrush x:Key="AppPopupBorder" Color="{StaticResource AppBorderColor}" />
+    <SolidColorBrush x:Key="AppMenuSeparator" Color="{StaticResource AppDividerColor}" />
+    <!-- The primary button's 1 px edge: amber stands out on navy without one. -->
+    <SolidColorBrush x:Key="AppAccentEdge" Color="Transparent" />
+    <!-- The secondary button's rest edge and pressed fill, and the progress track: here the chip and the border;
+         high contrast gives them their own system colours. -->
+    <SolidColorBrush x:Key="AppChipEdge" Color="{StaticResource AppChipColor}" />
+    <SolidColorBrush x:Key="AppPressed" Color="{StaticResource AppBorderColor}" />
+    <SolidColorBrush x:Key="AppTrack" Color="{StaticResource AppBorderColor}" />
+    <LinearGradientBrush x:Key="AppBackdrop" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0" Color="{StaticResource AppBackdropTopColor}" />
+        <GradientStop Offset="1" Color="{StaticResource AppBackdropBottomColor}" />
+    </LinearGradientBrush>
+
+    <!-- A safety net for anything still on an Aero2 template. -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="{StaticResource AppSelectionColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="{StaticResource AppSelectionTextColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="{StaticResource AppSelectionInactiveColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="{StaticResource AppSelectionTextColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="{StaticResource AppTextColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="{StaticResource AppTextColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="{StaticResource AppTextColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InfoTextBrushKey}" Color="{StaticResource AppTextColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}" Color="{StaticResource AppDisabledColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="{StaticResource AppSurfaceColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="{StaticResource AppBackgroundColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="{StaticResource AppSurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InfoBrushKey}" Color="{StaticResource AppSurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HotTrackBrushKey}" Color="{StaticResource AppInfoColor}" />
+</ResourceDictionary>

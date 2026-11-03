@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push to a pull request replaces its older run. Runs on main are kept
+  # so every release commit has a finished build.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows build, test, and publish
+    runs-on: windows-latest
+    steps:
+      # The whole history, so the build number is the real one.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'Directory.Packages.props', 'global.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Build solution
+        run: dotnet build Loadout.slnx --configuration Release --verbosity minimal
+
+      - name: Test solution
+        run: dotnet test Loadout.slnx --configuration Release --verbosity minimal --no-build
+
+      - name: Publish framework-dependent single-file win-x64
+        run: dotnet publish src/Loadout.App/Loadout.App.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en -o publish
+
+      - name: Keep the executable and its notices only
+        shell: pwsh
+        run: |
+          Get-ChildItem publish -Force | Where-Object {
+            $_.Name -ne 'Loadout.exe'
+          } | Remove-Item -Recurse -Force
+          Copy-Item LICENSE, THIRD-PARTY-NOTICES.txt publish/
+
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Loadout-PS2-win-x64
+          path: publish/
+
+  ps2:
+    name: Loadout Bay ELF build
+    runs-on: ubuntu-latest
+    container: ps2dev/ps2dev:v2.0.0
+    steps:
+      - name: Install build tools
+        run: apk add --no-cache build-base git
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build the ELF
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          make -C ps2
+
+      - name: Upload Loadout Bay
+        uses: actions/upload-artifact@v7
+        with:
+          name: Loadout-Bay-PS2
+          path: |
+            ps2/loadout-bay.elf
+            LICENSE
+            THIRD-PARTY-NOTICES.txt

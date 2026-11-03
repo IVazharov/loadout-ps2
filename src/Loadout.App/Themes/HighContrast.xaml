@@ -1,0 +1,55 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Windows' contrast themes: every App key takes a system colour, so the theme the user
+         chose (Aquatic, Desert, ...) reaches every surface. The brushes follow a change of system colours by
+         themselves; AppTheme reloads this dictionary for the one Color key. Colour is never the only signal here,
+         so states read as text with their icons and words. No SystemColors overrides: they are the source. -->
+    <SolidColorBrush x:Key="AppBackground" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppBackdrop" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppBand" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppNav" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppSurface" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppSurfaceRaised" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppHover" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppNavHover" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppFrameEdge" Color="Transparent" />
+    <SolidColorBrush x:Key="AppInput" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppErrorFill" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="AppTrack" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+
+    <!-- Buttons: button face with a button-text edge. -->
+    <SolidColorBrush x:Key="AppChip" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="AppChipEdge" Color="{DynamicResource {x:Static SystemColors.ControlTextColorKey}}" />
+
+    <!-- Selection, hover and press of buttons, the amber roles: highlight, with highlight text on it. -->
+    <SolidColorBrush x:Key="AppSelection" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="AppSelectionInactive" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="AppPressed" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="AppAccent" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="AppAccentFill" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="AppAccentHover" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="AppAccentPressed" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="AppSelectionText" Color="{DynamicResource {x:Static SystemColors.HighlightTextColorKey}}" />
+    <SolidColorBrush x:Key="AppOnAccent" Color="{DynamicResource {x:Static SystemColors.HighlightTextColorKey}}" />
+
+    <!-- Text and lines. -->
+    <SolidColorBrush x:Key="AppText" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppMuted" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppLabel" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppOk" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppWarn" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppError" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppBorder" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppDivider" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppInputBorder" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppPopupBorder" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppMenuSeparator" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppAccentEdge" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+    <SolidColorBrush x:Key="AppDisabled" Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+
+    <!-- Links, progress, the busy icon and text selection: the hyperlink colour. -->
+    <SolidColorBrush x:Key="AppInfo" Color="{DynamicResource {x:Static SystemColors.HotTrackColorKey}}" />
+    <x:Static x:Key="AppInfoColor" Member="SystemColors.HotTrackColor" />
+
+    <SolidColorBrush x:Key="AppScrim" Color="#99000000" />
+</ResourceDictionary>

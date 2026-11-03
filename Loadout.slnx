@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Loadout.App/Loadout.App.csproj" />
+    <Project Path="src/Loadout.Core/Loadout.Core.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Loadout.SpeedTest/Loadout.SpeedTest.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Loadout.Tests/Loadout.Tests.csproj" />
+  </Folder>
+</Solution>

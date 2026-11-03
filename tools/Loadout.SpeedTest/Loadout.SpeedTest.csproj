@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Loadout.SpeedTest</RootNamespace>
+    <AssemblyName>Loadout.SpeedTest</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Loadout.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Loadout.Core\Loadout.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Like the app, the tool uses the SQLite that ships with Windows. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" />
+  </ItemGroup>
+
+</Project>

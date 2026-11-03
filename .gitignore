@@ -1,0 +1,76 @@
+# Build
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+publish/
+[Aa]rtifacts/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# PS2 build output
+ps2/build/
+*.o
+*.a
+*.elf
+*.irx
+*.map
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Secrets
+.env
+.env.*
+*.pfx
+*.snk
+secrets.json
+appsettings.*.local.json
+credentials.json
+
+# Game images, saves, BIOS files, virtual hard disks, and downloaded artwork.
+# Never commit these.
+*.iso
+*.bin
+*.cue
+*.chd
+*.nrg
+*.img
+*.mdf
+*.mds
+*.vcd
+*.vmc
+*.psu
+*.sps
+*.xps
+*.max
+*.raw
+*.rom*
+*.nvm
+*.mec
+bios/
+artwork-cache/
+downloads/
+saves/
+
+# Local SQLite files. They do not contain artwork bytes.
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Except the chd reader's test files, which hold made-up data.
+!tests/Loadout.Tests/Images/ChdFixtures/*.chd
+!tests/Loadout.Tests/Images/ChdFixtures/sheets/*.cue
