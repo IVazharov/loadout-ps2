@@ -105,9 +105,11 @@ public static class DiscScanner
         return (kept, leftOut);
     }
 
+    /// <param name="incomplete">The discs with only an incomplete install on the PS2, which read as failed until it is removed.</param>
     public static IReadOnlyList<QueuePreviewItem> ApplyDuplicates(
         IReadOnlyList<QueuePreviewItem> items,
-        InstalledGameIndex? installed)
+        InstalledGameIndex? installed,
+        InstalledGameIndex? incomplete = null)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var resolved = new List<QueuePreviewItem>(items.Count);
@@ -115,17 +117,19 @@ public static class DiscScanner
         {
             var inLibrary = false;
             var inQueue = false;
+            var incompleteOnPs2 = false;
             if (item.DiscId != null)
             {
                 inLibrary = installed?.TryGet(item.DiscId, out _) == true;
                 inQueue = !inLibrary && !seen.Add(item.DiscId);
+                incompleteOnPs2 = incomplete?.TryGet(item.DiscId, out _) == true;
                 if (inLibrary)
                 {
                     seen.Add(item.DiscId);
                 }
             }
 
-            resolved.Add(item.Resolve(inLibrary, inQueue));
+            resolved.Add(item.Resolve(inLibrary, inQueue, incompleteOnPs2));
         }
 
         return resolved;

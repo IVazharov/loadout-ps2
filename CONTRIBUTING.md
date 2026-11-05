@@ -57,11 +57,13 @@ Do not commit game images, saves, BIOS files, virtual hard disks, or artwork.
 
 Docs use short, plain, declarative sentences. They describe the apps as they are now. History belongs in the changelog and git, not in the docs.
 
-Add a line to [CHANGELOG.md](CHANGELOG.md) for anything a user would notice, under the newest section at the top. Internal changes do not need an entry.
+Add a line to [CHANGELOG.md](CHANGELOG.md) for anything a user would notice, under the next release's section at the top. Internal changes do not need an entry.
 
 ## Releases
 
-A release is built from a commit on `main`. Its version is `VERSION` (major.minor), then the build number. A maintainer makes sure `CHANGELOG.md` has a `## <major.minor> - <date>` section, which supplies the notes, and pushes the tag `v<major.minor>.<build>`, such as `v0.9.1`. The release workflow refuses a tag that does not match the commit's version, builds and tests both apps, and creates the GitHub release with both downloads. A version below 1.0.0 is a prerelease.
+A release is built from a commit on `main`. Its version is `VERSION` (major.minor), then the build number. A maintainer makes sure `CHANGELOG.md` has a `## <major.minor>.<build> - <date>` section, which supplies the notes, and pushes the tag `v<major.minor>.<build>`, such as `v0.9.1`. The build number is that of the last commit before the tag, so work it out before committing the section. The release workflow refuses a tag that does not match the commit's version or has no changelog section, before it builds anything. It then builds and tests both apps, and creates a draft GitHub release with both downloads. A version below 1.0.0 is a prerelease.
+
+The maintainer then logs in to SimplySign Desktop and runs `tools/sign-release.ps1 -Tag v<major.minor>.<build>`, which signs `LoadoutPS2.exe` with a timestamp and replaces it in the draft's zip. Running it again with `-Publish` publishes the release.
 
 ## Commits and pull requests
 

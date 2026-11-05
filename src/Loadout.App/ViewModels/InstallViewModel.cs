@@ -23,6 +23,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
 {
     private readonly DiscScanOptions _options;
     private readonly InstalledGameIndex _installed = new();
+    private readonly InstalledGameIndex _incomplete = new();
     private readonly List<QueuePreviewItem> _scanned = new();
     private readonly OperationLog _log;
     private readonly Func<string> _hostFor;
@@ -41,6 +42,9 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     private int _scansRunning;
     private int _generation;
     private PageStatus _status;
+    private BayFreeSpace? _space;
+    private int _spaceReading;
+    private ulong _sentSinceReading;
 
     public InstallViewModel(
         DiscScanOptions options,
@@ -97,10 +101,8 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     /// <summary>True while nothing is queued, when the page shows its empty state instead of the table.</summary>
     public bool IsEmpty => Items.Count == 0;
 
-    /// <summary>The page header's summary, such as "5 IN QUEUE · 3 READY".</summary>
-    public string Summary => Items.Count == 0
-        ? ""
-        : string.Create(CultureInfo.CurrentCulture, $"{Items.Count} IN QUEUE · {Items.Count(item => item.Status == QueueItemStatus.Ready)} READY");
+    /// <summary>The page header's summary, such as "5 IN QUEUE · 3 READY · 3.8 GB OF 17.9 GB FREE".</summary>
+    public string Summary => InstallQueueSummary.Describe(Items, _space, _sentSinceReading);
 
     public bool HasSelection => _selection.Length > 0;
 
@@ -163,13 +165,18 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasSelection));
     }
 
-    public void ReplaceInstalled(IReadOnlyList<InstalledGameRow> games)
+    /// <summary>Takes the PS2's list, and its free space when it comes from a Connect rather than the saved list.</summary>
+    public void ReplaceInstalled(IReadOnlyList<InstalledGameRow> games, BayFreeSpace? space)
     {
+        _space = space;
+        _spaceReading++;
+        _sentSinceReading = 0;
         _installed.Clear();
-        // An incomplete install is not a game on the PS2: its image stays ready, and the install says to remove it first.
-        foreach (var game in games.Where(game => !game.Incomplete))
+        _incomplete.Clear();
+        // An incomplete install is not a game on the PS2: its image reads as failed, saying to remove it first.
+        foreach (var game in games)
         {
-            _installed.TryAdd(game.DiscId, game.PartitionName);
+            (game.Incomplete ? _incomplete : _installed).TryAdd(game.DiscId, game.PartitionName);
         }
 
         Publish();
@@ -353,10 +360,25 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
 
     private void Publish()
     {
-        Items.Clear();
-        foreach (var item in GameListSort.ByTitle(DiscScanner.ApplyDuplicates(_scanned, _installed), row => row.DetectedTitle))
+        var rows = GameListSort.ByTitle(DiscScanner.ApplyDuplicates(_scanned, _installed, _incomplete), row => row.DetectedTitle);
+        if (rows.Select(row => row.SourceFile).SequenceEqual(Items.Select(item => item.SourceFile)))
         {
-            Items.Add(item);
+            // The same games, so only the rows that changed: a batch moves on while the user may have scrolled the list.
+            for (var i = 0; i < rows.Length; i++)
+            {
+                if (rows[i] != Items[i])
+                {
+                    Items[i] = rows[i];
+                }
+            }
+        }
+        else
+        {
+            Items.Clear();
+            foreach (var row in rows)
+            {
+                Items.Add(row);
+            }
         }
 
         OnPropertyChanged(nameof(CanInstall));
@@ -380,6 +402,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         }
 
         _install = new CancellationTokenSource();
+        var reading = _spaceReading;
         OnPropertyChanged(nameof(IsInstalling));
         OnPropertyChanged(nameof(CanInstall));
         SetWorking();
@@ -394,6 +417,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
                 current = step.Index;
                 checking = false;
                 clock.Restart();
+                MarkInstalling(step.Item, true);
             }
 
             // The last report after a check is not more sending: it would put the check's time in the speed.
@@ -414,17 +438,8 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
                 await DownloadArtworkAsync(queue, _install.Token);
             }
 
-            var run = await BayQueueInstaller.RunAsync(host, queue, progress, CheckInstalls, memoryCards: cards, artwork: artwork, cancellationToken: _install.Token);
-            foreach (var result in run.Results)
-            {
-                _log.Add(result.Message);
-                var index = _scanned.FindIndex(item => item.SourceFile == result.Item.SourceFile);
-                if (result.Outcome == BayInstallOutcome.Installed && index >= 0)
-                {
-                    _scanned[index] = _scanned[index] with { InstalledFromQueue = true };
-                }
-            }
-
+            var run = await BayQueueInstaller.RunAsync(
+                host, queue, progress, CheckInstalls, memoryCards: cards, artwork: artwork, finished: new Progress<BayQueueResult>(result => ShowResult(result, reading)), cancellationToken: _install.Token);
             if (run.Library is not null)
             {
                 await _onLibraryRead(run.Library);
@@ -433,12 +448,27 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
             Status = Finished(run.Results);
             if (run.Library is null)
             {
+                // The install used some of the free space, and the new figure could not be read.
+                _space = null;
+                OnPropertyChanged(nameof(Summary));
                 _log.Add(Status.LogLine);
-                Status = PageStatus.Error("Lost the connection to Loadout Bay", "Connect on Installed Games to see the PS2's list.");
+
+                // When each game has its own result, only reading the list back failed: the results stay the news.
+                Status = run.LostConnection
+                    ? PageStatus.Error("Lost the connection to Loadout Bay", "Connect on Installed Games to see the PS2's list.")
+                    : run.Results.All(result => result.Outcome == BayInstallOutcome.Installed)
+                        ? PageStatus.Warn(Status.Headline, "Loadout Bay stopped answering afterwards. Connect on Installed Games to see the PS2's list.")
+                        : PageStatus.Warn(Status.Headline, Status.Detail + " Then Loadout Bay stopped answering: connect on Installed Games to see the PS2's list.");
             }
         }
         finally
         {
+            // A game's result clears its row. This is for a batch that ended without one.
+            foreach (var item in queue)
+            {
+                MarkInstalling(item, false);
+            }
+
             _install.Dispose();
             _install = null;
             OnPropertyChanged(nameof(IsInstalling));
@@ -447,6 +477,49 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         }
 
         _log.Add(Status.LogLine);
+    }
+
+    private void MarkInstalling(QueuePreviewItem item, bool installing)
+    {
+        var index = _scanned.FindIndex(row => row.SourceFile == item.SourceFile);
+        if (index >= 0 && _scanned[index].Installing != installing)
+        {
+            _scanned[index] = _scanned[index] with { Installing = installing };
+            Publish();
+        }
+    }
+
+    // As each game finishes, so the rows and the Logs page follow the batch.
+    /// <param name="reading">The free space reading the batch started from. A result that arrives after a newer reading is already counted in it.</param>
+    private void ShowResult(BayQueueResult result, int reading)
+    {
+        _log.Add(result.Message);
+        if (result.Outcome == BayInstallOutcome.Installed && reading == _spaceReading)
+        {
+            _sentSinceReading += (ulong)result.Item.InstallBytes;
+            OnPropertyChanged(nameof(Summary));
+        }
+
+        var index = _scanned.FindIndex(row => row.SourceFile == result.Item.SourceFile);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var row = _scanned[index] with { Installing = false };
+        if (result.Outcome == BayInstallOutcome.Installed)
+        {
+            row = row with { InstalledFromQueue = true };
+            _installed.TryAdd(row.DiscId, result.PartitionName);
+        }
+        else if (result.Outcome is BayInstallOutcome.CheckFailed or BayInstallOutcome.Cancelled or BayInstallOutcome.IncompleteOnPs2)
+        {
+            // Loadout Bay left an incomplete install, so the row says to remove it before the list is read again.
+            _incomplete.TryAdd(row.DiscId, null);
+        }
+
+        _scanned[index] = row;
+        Publish();
     }
 
     private async Task DownloadArtworkAsync(List<QueuePreviewItem> queue, CancellationToken cancellationToken)

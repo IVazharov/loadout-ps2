@@ -5,8 +5,8 @@ using System.Windows.Media;
 namespace Loadout.App;
 
 // Paints the standard caption through DWM in the theme's frame colour, so caption and rail read as one frame.
-// Windows 11 takes all the colours; Windows 10 (1809 and later) only the dark mode, which gives a dark grey caption
-// in the dark theme and its own light one in the light theme.
+// Windows 11 takes all the colours; Windows 10 (1809 and later) only the dark mode, which gives a black caption
+// (dark grey when inactive) in the dark theme and its own light one in the light theme.
 public static class CaptionTheme
 {
     private const int DarkModeOld = 19;
@@ -18,6 +18,11 @@ public static class CaptionTheme
 
     private const uint FrameChanged = 0x0020;
     private const uint NoSizeMoveZOrderActivate = 0x0001 | 0x0002 | 0x0004 | 0x0010;
+    private const int NcActivate = 0x0086;
+    private const int FirstWindows11Build = 22000;
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint hwnd, int message, nint wParam, nint lParam);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
@@ -47,12 +52,20 @@ public static class CaptionTheme
         Set(hwnd, TextColor, highContrast ? ColorDefault : ColorRef(active ? "AppTextColor" : "AppLabelColor"));
     }
 
-    // Windows 10 repaints the caption for a new dark mode only when the frame changes.
-    public static void Repaint(nint hwnd)
+    // Windows 11 paints a new colour by itself once the frame changes. Windows 10 keeps the old dark mode on the caption
+    // until the caption is next drawn as active or inactive, so it is told both, ending on the real state.
+    public static void Repaint(nint hwnd, bool active)
     {
-        if (hwnd != 0)
+        if (hwnd == 0)
         {
-            SetWindowPos(hwnd, 0, 0, 0, 0, 0, FrameChanged | NoSizeMoveZOrderActivate);
+            return;
+        }
+
+        SetWindowPos(hwnd, 0, 0, 0, 0, 0, FrameChanged | NoSizeMoveZOrderActivate);
+        if (Environment.OSVersion.Version.Build < FirstWindows11Build)
+        {
+            SendMessage(hwnd, NcActivate, active ? 0 : 1, 0);
+            SendMessage(hwnd, NcActivate, active ? 1 : 0, 0);
         }
     }
 

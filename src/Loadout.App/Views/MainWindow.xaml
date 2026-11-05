@@ -86,6 +86,9 @@
         <Style x:Key="DetailsHelp" TargetType="TextBlock" BasedOn="{StaticResource Text.Detail}">
             <Setter Property="Foreground" Value="{DynamicResource AppMuted}" />
             <Setter Property="VerticalAlignment" Value="Center" />
+            <!-- Two lines at most, so the details panel keeps its height. The tooltip has all of a longer message. -->
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="MaxHeight" Value="36" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}" />
             <Style.Triggers>
@@ -155,7 +158,7 @@
                                            Typography.NumeralAlignment="Tabular"
                                            Text="{Binding SelectedGame.DiscId}" />
                             </StackPanel>
-                            <DockPanel DockPanel.Dock="Bottom" Height="32">
+                            <DockPanel DockPanel.Dock="Bottom" Height="36">
                                 <Button DockPanel.Dock="Right"
                                         Margin="8,0,0,0"
                                         Style="{StaticResource PrimaryButton}"
@@ -167,14 +170,15 @@
                                         ToolTip="Puts back the values read from the PS2."
                                         IsEnabled="{Binding IsDirty}"
                                         Command="{Binding RevertCommand}" />
-                                <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
-                                    <Control Width="16"
+                                <DockPanel Margin="0,0,12,0">
+                                    <Control DockPanel.Dock="Left"
+                                             Width="16"
                                              Height="16"
                                              Margin="0,0,8,0"
                                              Style="{StaticResource Spinner}"
                                              Visibility="{Binding IsReadingSettings, Converter={StaticResource VisibleWhenTrue}}" />
                                     <TextBlock Style="{StaticResource DetailsHelp}" Text="{Binding DetailsHelp}" />
-                                </StackPanel>
+                                </DockPanel>
                             </DockPanel>
                             <Grid Margin="0,6,0,6">
                                 <Grid.ColumnDefinitions>
@@ -394,6 +398,18 @@
                                                 c:TableColumns.Id="media"
                                                 c:TableColumns.MinWidth="64"
                                                 c:TableColumns.MaxAutoWidth="140" />
+                                <GridViewColumn Header="Size"
+                                                local:GameColumnSort.SortPath="InstallBytes"
+                                                c:TableColumns.Id="size"
+                                                c:TableColumns.MinWidth="72"
+                                                c:TableColumns.MaxAutoWidth="110"
+                                                c:TableColumns.MeasurePath="SizeLabel">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Cell}" Text="{Binding SizeLabel, Mode=OneWay}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
                                 <GridViewColumn Header="Status"
                                                 local:GameColumnSort.SortPath="StatusLabel"
                                                 c:TableColumns.Id="status"
@@ -416,6 +432,10 @@
                                                 <DataTrigger Binding="{Binding Status}" Value="Installed">
                                                     <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AppOk}" />
                                                     <Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource AppOk}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Status}" Value="Installing">
+                                                    <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AppInfo}" />
+                                                    <Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource AppInfo}" />
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding Status}" Value="NeedsConversion">
                                                     <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AppInfo}" />

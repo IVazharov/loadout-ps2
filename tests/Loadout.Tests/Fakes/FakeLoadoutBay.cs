@@ -76,6 +76,9 @@ public sealed class FakeLoadoutBay : IDisposable
 
     public List<uint> Commands { get; } = [];
 
+    /// <summary>A command, and which of its requests closes the connection unanswered, as if Loadout Bay stopped answering there.</summary>
+    public (uint Command, int Request)? HangUpOn { get; set; }
+
     /// <summary>The files in OPL's folders, by folder and name, including <c>.part</c> files.</summary>
     public Dictionary<(BayFolder Folder, string Name), byte[]> Files { get; } = [];
 
@@ -159,6 +162,11 @@ public sealed class FakeLoadoutBay : IDisposable
             var request = new byte[length];
             await stream.ReadExactlyAsync(request, _stop.Token);
             Commands.Add(command);
+            if (HangUpOn is { } hangUp && hangUp.Command == command && Commands.Count(seen => seen == command) == hangUp.Request)
+            {
+                return;
+            }
+
             var (status, payload) = command switch
             {
                 _ when command is >= BayWire.CommandElfBegin and <= BayWire.CommandElfRun && helloSeen && !greeted && ProtocolVersion < 5 =>

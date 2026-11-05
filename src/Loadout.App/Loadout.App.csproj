@@ -5,7 +5,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>Loadout.App</RootNamespace>
-    <AssemblyName>Loadout</AssemblyName>
+    <!-- Not Loadout.exe: Windows takes that name for a game, and without Game Bar shows an error at each start. -->
+    <AssemblyName>LoadoutPS2</AssemblyName>
     <ApplicationTitle>Loadout for PS2</ApplicationTitle>
     <Product>Loadout for PS2</Product>
     <!-- The mark, rendered by ps2/tools/make_icon.py. -->

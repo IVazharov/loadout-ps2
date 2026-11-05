@@ -1,5 +1,6 @@
 using System.Globalization;
 using Loadout.Core;
+using Loadout.Library;
 
 namespace Loadout.Images;
 
@@ -11,12 +12,16 @@ public enum QueueItemStatus
     Duplicate,
     Failed,
     Installed,
+    Installing,
 }
 
 public enum InstallationState
 {
     NotInstalled,
     Installed,
+
+    /// <summary>Only an incomplete install of the disc is on the PS2, which has to be removed before it can be installed.</summary>
+    Incomplete,
 }
 
 public enum DuplicateMatch
@@ -93,7 +98,15 @@ public sealed record QueuePreviewItem
         _ => Status.ToString(),
     };
 
-    public string InstallationLabel => InstallationStatus == InstallationState.Installed ? "Installed" : "Not installed";
+    public string InstallationLabel => InstallationStatus switch
+    {
+        InstallationState.Installed => "Installed",
+        InstallationState.Incomplete => "Incomplete",
+        _ => "Not installed",
+    };
+
+    /// <summary>The Detail of a disc with only an incomplete install on the PS2.</summary>
+    public const string IncompleteDetail = "An incomplete install of it is on the PS2. Remove it in Installed Games, then install again.";
 
     public string DuplicateLabel => DuplicateStatus switch
     {
@@ -114,6 +127,12 @@ public sealed record QueuePreviewItem
 
     public uint Layer1Sectors { get; init; }
 
+    /// <summary>The bytes the game takes on the PS2, which the install sends: its sectors, 2048 bytes each. Zero while unknown.</summary>
+    public long InstallBytes => ((long)Layer0Sectors + Layer1Sectors) * 2048;
+
+    /// <summary>The Size column, as Installed Games shows it: "1.40 GB", or a dash while the size is unknown.</summary>
+    public string SizeLabel => InstalledGameRow.Size(checked(Layer0Sectors + Layer1Sectors));
+
     public byte HdlDiscType { get; init; }
 
     public int VolumeSetSize { get; init; }
@@ -133,18 +152,34 @@ public sealed record QueuePreviewItem
     /// <summary>True once this queue's own install put the disc on the PS2, which makes it the copy there rather than a duplicate of it.</summary>
     public bool InstalledFromQueue { get; init; }
 
+    /// <summary>True while this queue's install is sending the disc to the PS2.</summary>
+    public bool Installing { get; init; }
+
     public string? Detail { get; init; }
 
     public int TrackCount { get; init; }
 
-    public QueuePreviewItem Resolve(bool inLibrary, bool inQueue)
+    /// <param name="incompleteOnPs2">True when an incomplete install of the disc is on the PS2. Loadout Bay refuses the
+    /// disc until it is removed, so the row says so instead of reading as ready.</param>
+    public QueuePreviewItem Resolve(bool inLibrary, bool inQueue, bool incompleteOnPs2 = false)
     {
         var status = Preliminary;
         var installation = inLibrary ? InstallationState.Installed : InstallationState.NotInstalled;
         var duplicate = DuplicateMatch.None;
-        if (Preliminary == QueueItemStatus.Ready && inLibrary && InstalledFromQueue)
+        var detail = Detail;
+        if (Preliminary == QueueItemStatus.Ready && Installing)
+        {
+            status = QueueItemStatus.Installing;
+        }
+        else if (Preliminary == QueueItemStatus.Ready && inLibrary && InstalledFromQueue)
         {
             status = QueueItemStatus.Installed;
+        }
+        else if (Preliminary == QueueItemStatus.Ready && !inLibrary && incompleteOnPs2)
+        {
+            status = QueueItemStatus.Failed;
+            installation = InstallationState.Incomplete;
+            detail = IncompleteDetail;
         }
         else if (Preliminary == QueueItemStatus.Ready && (inLibrary || inQueue))
         {
@@ -157,6 +192,7 @@ public sealed record QueuePreviewItem
             Status = status,
             InstallationStatus = installation,
             DuplicateStatus = duplicate,
+            Detail = detail,
         };
     }
 

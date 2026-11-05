@@ -21,13 +21,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check the tag against VERSION and the build number
+      - name: Check the tag against VERSION, the build number, and the changelog
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           version="${GITHUB_REF_NAME#v}"
           expected="$(tr -d '\r\n' < VERSION).$(git rev-list --count --skip=1 HEAD)"
           if [ "$version" != "$expected" ]; then
             echo "Tag $GITHUB_REF_NAME does not match this commit's version ($expected)." >&2
+            exit 1
+          fi
+          notes="$(awk -v heading="## $version" '{ sub(/\r$/, "") } /^## / { inside = ($0 == heading || index($0, heading " ") == 1); next } inside' CHANGELOG.md | tr -d '[:space:]')"
+          if [ -z "$notes" ]; then
+            echo "CHANGELOG.md has no '## $version' section with notes." >&2
             exit 1
           fi
 
@@ -82,8 +87,8 @@ jobs:
 
       - name: Extract the changelog section
         run: |
-          # The changelog has a section for each major.minor version.
-          $version = ('${{ steps.version.outputs.version }}' -split '\.')[0..1] -join '.'
+          # The changelog has a section for each release.
+          $version = '${{ steps.version.outputs.version }}'
           $lines = Get-Content CHANGELOG.md
           $start = -1
           for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -124,17 +129,23 @@ jobs:
       - name: Zip the executable, readme, and licences
         id: zip
         run: |
-          $exe = 'publish/Loadout.exe'
+          $exe = 'publish/LoadoutPS2.exe'
           if (-not (Test-Path $exe)) { throw "$exe was not produced." }
           New-Item -ItemType Directory app, app/third_party | Out-Null
           Copy-Item $exe, README.md, LICENSE, THIRD-PARTY-NOTICES.txt app/
+          # The zip's readme is text only: the screenshots are for the repository page.
+          $readme = (Resolve-Path app/README.md).Path
+          $text = [regex]::Replace([IO.File]::ReadAllText($readme), '(?s)<!-- showcase:start -->.*?<!-- showcase:end -->\r?\n\r?\n', '')
+          if ($text -match '!\[|<img|\.png|showcase:') { throw "The zip's readme still has images in it." }
+          [IO.File]::WriteAllText($readme, $text)
           Copy-Item -Recurse src/Loadout.Core/ThirdParty/* app/third_party/
           Copy-Item -Recurse ps2/third_party/* app/third_party/
           $zip = "Loadout-PS2-${{ steps.version.outputs.version }}-win-x64.zip"
           Compress-Archive -Path app/* -DestinationPath $zip
           "zip=$zip" >> $env:GITHUB_OUTPUT
 
-      - name: Create the GitHub release
+      # A draft, as the app is signed on a maintainer's PC: tools/sign-release.ps1 signs and publishes it.
+      - name: Create the draft GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -144,7 +155,8 @@ jobs:
             'release', 'create', '${{ github.ref_name }}', '${{ steps.zip.outputs.zip }}', $bay,
             '--title', 'Loadout for PS2 ${{ steps.version.outputs.version }}',
             '--notes-file', 'release-notes.md',
-            '--verify-tag'
+            '--verify-tag',
+            '--draft'
           )
           if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { $arguments += '--prerelease' }
           gh @arguments

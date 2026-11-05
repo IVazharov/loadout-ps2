@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           Get-ChildItem publish -Force | Where-Object {
-            $_.Name -ne 'Loadout.exe'
+            $_.Name -ne 'LoadoutPS2.exe'
           } | Remove-Item -Recurse -Force
           Copy-Item LICENSE, THIRD-PARTY-NOTICES.txt publish/
 

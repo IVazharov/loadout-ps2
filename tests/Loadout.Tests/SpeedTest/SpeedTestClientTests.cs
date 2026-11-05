@@ -70,7 +70,8 @@ public class SpeedTestClientTests
 
         var result = await Task.Run(() => SpeedTestClient.RunUdp("127.0.0.1", bay.UdpPort, 64 * 1024, megabytesPerSecond: 0));
 
-        Assert.Equal(3, bay.EndPacketsSeen);
+        // Three at least, as two go unanswered. A reply slower than the client's wait brings one more, up to its limit of ten.
+        Assert.InRange(bay.EndPacketsSeen, 3, 10);
         Assert.Equal(bay.UdpPackets, result.PacketsReceived);
     }
 

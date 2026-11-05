@@ -99,7 +99,7 @@ public static class AppTheme
         _ => WindowsIsDark(),
     };
 
-    private static Uri Source(string name) => new($"pack://application:,,,/Loadout;component/Themes/{name}.xaml");
+    private static Uri Source(string name) => new($"pack://application:,,,/LoadoutPS2;component/Themes/{name}.xaml");
 
     // Slot 0 of the application's merged dictionaries holds the colours; nothing else is touched. A contrast theme
     // replaces both themes while it is on.

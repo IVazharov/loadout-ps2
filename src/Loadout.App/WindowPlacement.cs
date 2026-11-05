@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
 using Loadout.Core;
 
 namespace Loadout.App;
@@ -16,6 +17,7 @@ public static class WindowPlacement
     private const int RestoreToMaximized = 0x0002;
     private const uint DefaultToNull = 0;
     private const uint DefaultToPrimary = 1;
+    private const uint DefaultToNearest = 2;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect32
@@ -75,25 +77,47 @@ public static class WindowPlacement
     public static bool IsOnAMonitor(WindowBounds bounds)
     {
         ArgumentNullException.ThrowIfNull(bounds);
-        var origin = WorkspaceOrigin();
-        var screen = new Rect32
-        {
-            Left = bounds.Left + origin.X,
-            Top = bounds.Top + origin.Y,
-            Right = bounds.Left + origin.X + bounds.Width,
-            Bottom = bounds.Top + origin.Y + bounds.Height,
-        };
+        var screen = ToScreen(bounds, WorkspaceOrigin());
         return MonitorFromRect(ref screen, DefaultToNull) != 0;
+    }
+
+    /// <summary>
+    /// The bounds as they are when all four corners are on monitors, so a window across two monitors stays.
+    /// Otherwise fitted to the nearest monitor's work area, so the caption and its buttons can be reached.
+    /// </summary>
+    public static WindowBounds KeepOnScreen(WindowBounds bounds)
+    {
+        ArgumentNullException.ThrowIfNull(bounds);
+        var origin = WorkspaceOrigin();
+        var screen = ToScreen(bounds, origin);
+        if (IsOnAMonitor(screen.Left, screen.Top) && IsOnAMonitor(screen.Right - 1, screen.Top)
+            && IsOnAMonitor(screen.Left, screen.Bottom - 1) && IsOnAMonitor(screen.Right - 1, screen.Bottom - 1))
+        {
+            return bounds;
+        }
+
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(MonitorFromRect(ref screen, DefaultToNearest), ref info))
+        {
+            return bounds;
+        }
+
+        var work = info.Work;
+        return bounds.FitWithin(work.Left - origin.X, work.Top - origin.Y, work.Right - work.Left, work.Bottom - work.Top);
     }
 
     /// <summary>
     /// Moves the window to the bounds while it is still hidden: call it from OnSourceInitialized, with
     /// WindowStartupLocation Manual, after <see cref="IsOnAMonitor"/>. Maximizing happens on that monitor.
+    /// The window's minimum size gives way when the bounds are smaller, as on a small screen at a high scale.
     /// </summary>
     public static void Restore(Window window, WindowBounds bounds)
     {
         ArgumentNullException.ThrowIfNull(window);
         ArgumentNullException.ThrowIfNull(bounds);
+        var scale = VisualTreeHelper.GetDpi(window);
+        window.MinWidth = Math.Min(window.MinWidth, bounds.Width / scale.DpiScaleX);
+        window.MinHeight = Math.Min(window.MinHeight, bounds.Height / scale.DpiScaleY);
         var placement = new Placement
         {
             Length = Marshal.SizeOf<Placement>(),
@@ -127,6 +151,16 @@ public static class WindowPlacement
             || (placement.ShowCommand == ShowMinimized && (placement.Flags & RestoreToMaximized) != 0);
         return new WindowBounds(normal.Left, normal.Top, normal.Right - normal.Left, normal.Bottom - normal.Top, maximized);
     }
+
+    private static bool IsOnAMonitor(int x, int y) => MonitorFromPoint(new Point32 { X = x, Y = y }, DefaultToNull) != 0;
+
+    private static Rect32 ToScreen(WindowBounds bounds, Point32 origin) => new()
+    {
+        Left = bounds.Left + origin.X,
+        Top = bounds.Top + origin.Y,
+        Right = bounds.Left + origin.X + bounds.Width,
+        Bottom = bounds.Top + origin.Y + bounds.Height,
+    };
 
     // Where workspace 0,0 is on the screen: the primary monitor's work area corner (a taskbar on the left or top moves it).
     private static Point32 WorkspaceOrigin()

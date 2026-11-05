@@ -127,7 +127,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// <summary>Saves the list Loadout Bay returned for the next start, and lets Install check new discs against it.</summary>
     private void KeepList(InstalledGameListStore savedList, BayLibrary library)
     {
-        Install.ReplaceInstalled(library.Games);
+        Install.ReplaceInstalled(library.Games, library.Space);
         try
         {
             savedList.Replace(library.Games, DateTimeOffset.Now);
@@ -146,7 +146,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (saved is not null && saved.Games.Count > 0)
             {
                 Installed.ShowSavedList(saved);
-                Install.ReplaceInstalled(saved.Games);
+                Install.ReplaceInstalled(saved.Games, null);
             }
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or System.IO.IOException)

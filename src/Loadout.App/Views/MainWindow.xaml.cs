@@ -88,9 +88,11 @@ public partial class MainWindow : LoadoutWindow
     {
         base.OnSourceInitialized(e);
         HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(AppTheme.OnWindowMessage);
-        if (_lastBounds is not null)
+        // The first time, this is where WPF centred the window, which is off the top of a screen shorter than the window.
+        var bounds = _lastBounds ?? WindowPlacement.Read(this);
+        if (bounds is not null)
         {
-            WindowPlacement.Restore(this, _lastBounds);
+            WindowPlacement.Restore(this, WindowPlacement.KeepOnScreen(bounds));
         }
     }
 

@@ -56,6 +56,6 @@ public class LoadoutWindow : Window
     private void Reapply()
     {
         CaptionTheme.Apply(_handle, IsActive);
-        CaptionTheme.Repaint(_handle);
+        CaptionTheme.Repaint(_handle, IsActive);
     }
 }

@@ -65,6 +65,91 @@ public sealed class BayQueueInstallerTests : IDisposable
     }
 
     [Fact]
+    public async Task EachResultIsReportedAsItsGameFinishes()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk with { FreeSectors = 10 * 4 });
+        var finished = new List<(BayInstallOutcome Outcome, int InstallsSoFar)>();
+
+        var run = await BayQueueInstaller.RunAsync(
+            "127.0.0.1",
+            [Image("SLUS-20043", "Too big", 11), Image("SLUS-20044", "Fits", 2), Image("SLUS-20045", "Fits too", 2)],
+            port: bay.Port,
+            dataPort: bay.DataPort,
+            finished: new SynchronousProgress<BayQueueResult>(result => finished.Add((result.Outcome, bay.InstallRequests.Count))));
+
+        Assert.Equal(
+            [(BayInstallOutcome.DoesNotFit, 0), (BayInstallOutcome.Installed, 1), (BayInstallOutcome.Installed, 2)],
+            finished);
+        Assert.Equal(run.Results.Select(result => result.Outcome), finished.Select(result => result.Outcome));
+        Assert.StartsWith("PP.SLUS-20044", run.Results[1].PartitionName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LosingLoadoutBayWhenReadingTheListBackKeepsTheResults()
+    {
+        // The first list is read before the games, the second after them.
+        using var bay = new FakeLoadoutBay(disk: Disk) { HangUpOn = (BayWire.CommandListGames, 2) };
+
+        var run = await BayQueueInstaller.RunAsync(
+            "127.0.0.1", [Image("SLUS-20043", "One", 2), Image("SLUS-20044", "Two", 2)], port: bay.Port, dataPort: bay.DataPort);
+
+        Assert.Equal([BayInstallOutcome.Installed, BayInstallOutcome.Installed], run.Results.Select(result => result.Outcome));
+        Assert.Null(run.Library);
+        Assert.False(run.LostConnection);
+    }
+
+    [Fact]
+    public async Task LosingLoadoutBayAfterAFailedCheckKeepsThatResultAsTheNews()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk) { CorruptByteAt = 0, HangUpOn = (BayWire.CommandListGames, 2) };
+
+        var run = await BayQueueInstaller.RunAsync(
+            "127.0.0.1", [Image("SLUS-20043", "One", 2), Image("SLUS-20044", "Two", 2)], checkCopies: true, port: bay.Port, dataPort: bay.DataPort);
+
+        Assert.Equal([BayInstallOutcome.CheckFailed, BayInstallOutcome.CheckFailed], run.Results.Select(result => result.Outcome));
+        Assert.Null(run.Library);
+        Assert.False(run.LostConnection);
+    }
+
+    [Fact]
+    public async Task LosingLoadoutBayDuringAGameIsALostConnection()
+    {
+        // The second game's install is the one that loses the connection.
+        using var bay = new FakeLoadoutBay(disk: Disk) { HangUpOn = (BayWire.CommandInstallBegin, 2) };
+
+        var run = await BayQueueInstaller.RunAsync(
+            "127.0.0.1", [Image("SLUS-20043", "One", 2), Image("SLUS-20044", "Two", 2)], port: bay.Port, dataPort: bay.DataPort);
+
+        Assert.Equal([BayInstallOutcome.Installed, BayInstallOutcome.Failed], run.Results.Select(result => result.Outcome));
+        Assert.Null(run.Library);
+        Assert.True(run.LostConnection);
+    }
+
+    [Fact]
+    public async Task LosingLoadoutBayWhenReadingTheFreeSpaceBackStopsTheQueueAndKeepsTheResults()
+    {
+        // The first free space is read before the games, the second after the first game.
+        using var bay = new FakeLoadoutBay(disk: Disk) { HangUpOn = (BayWire.CommandFreeSpace, 2) };
+
+        var run = await BayQueueInstaller.RunAsync(
+            "127.0.0.1", [Image("SLUS-20043", "One", 2), Image("SLUS-20044", "Two", 2)], port: bay.Port, dataPort: bay.DataPort);
+
+        Assert.Equal([BayInstallOutcome.Installed, BayInstallOutcome.NotRun], run.Results.Select(result => result.Outcome));
+        Assert.Null(run.Library);
+        Assert.True(run.LostConnection);
+    }
+
+    [Fact]
+    public async Task LosingLoadoutBayBeforeAnyGameStillFails()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk) { HangUpOn = (BayWire.CommandListGames, 1) };
+
+        await Assert.ThrowsAsync<LoadoutBayException>(() => BayQueueInstaller.RunAsync(
+            "127.0.0.1", [Image("SLUS-20043", "One", 2)], port: bay.Port, dataPort: bay.DataPort));
+        Assert.Empty(bay.InstallRequests);
+    }
+
+    [Fact]
     public void OnlyAReadyImageWithADiscIdMakesARequest()
     {
         var ready = Image("SLUS-20043", "Moon Wars - Super Rocket Racing", 3);
@@ -93,5 +178,10 @@ public sealed class BayQueueInstallerTests : IDisposable
             HdlDiscType = HdlDiscTypes.Ps2Cd,
             Status = QueueItemStatus.Ready,
         };
+    }
+
+    private sealed class SynchronousProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 }

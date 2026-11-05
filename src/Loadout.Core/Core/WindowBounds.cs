@@ -10,6 +10,20 @@ namespace Loadout.Core;
 /// </summary>
 public sealed record WindowBounds(int Left, int Top, int Width, int Height, bool Maximized)
 {
+    /// <summary>The window moved, and shrunk if it must be, to lie wholly inside the area.</summary>
+    public WindowBounds FitWithin(int left, int top, int width, int height)
+    {
+        var fittedWidth = Math.Min(Width, width);
+        var fittedHeight = Math.Min(Height, height);
+        return this with
+        {
+            Left = Math.Clamp(Left, left, left + width - fittedWidth),
+            Top = Math.Clamp(Top, top, top + height - fittedHeight),
+            Width = fittedWidth,
+            Height = fittedHeight,
+        };
+    }
+
     public string ToJson() => JsonSerializer.Serialize(new Stored
     {
         Left = Left,

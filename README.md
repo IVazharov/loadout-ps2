@@ -9,13 +9,39 @@ Loadout has two parts:
 
 Both parts share one version number.
 
+<!-- showcase:start -->
+![Loadout for PS2 on Windows and Loadout Bay on the PS2, showing the same install at 42%](docs/images/hero.png)
+
+### Send games from your PC
+
+Queue iso, bin and cue, or chd files. Loadout sends them over your network, with their artwork, and checks each game after installing it.
+
+### See what's on the PS2
+
+Covers, sizes and free space. Change a game's title or modes, or remove it.
+
+![The Installed Games page, zoomed in on its free space, transfer modes, disc types and sizes](docs/images/covers.png)
+
+### Follow it on the TV
+
+Loadout Bay shows its address, progress and free disk space. Set its network from the controller.
+
+![Loadout Bay's screen on the PS2, its install progress, and its network settings](docs/images/tv.png)
+
+### Light or dark
+
+Choose a theme, or follow Windows.
+
+![The Installed Games page split diagonally between the dark and light themes](docs/images/themes.png)
+<!-- showcase:end -->
+
 ## Before you start
 
 Loadout does not set up the PS2 for you. You need all of this first.
 
 On the PC:
 
-- 64-bit Windows 11, version 24H2 or later. Windows 10 may work, but apart from its LTSC editions Microsoft does not support .NET 10 there, and Loadout has not been tested on it. Neither has Windows on Arm.
+- 64-bit Windows 11, version 24H2 or later, or 64-bit Windows 10. Loadout starts, connects to Loadout Bay, and passes its tests on Windows 10 Enterprise LTSC 2021 (version 21H2), but installing games from Windows 10 has not been tried, and neither has any other Windows 10 version. Apart from its LTSC editions, Microsoft does not support .NET 10 on Windows 10. Windows on Arm has not been tested.
 - The x64 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0), which Loadout does not include.
 - Nothing to install for SQLite: Loadout uses the copy that comes with Windows (`winsqlite3.dll`). It avoids newer SQLite features and passes its tests on versions as old as 3.12.2. To see your version, run `(Get-Item C:\Windows\System32\winsqlite3.dll).VersionInfo.ProductVersion` in PowerShell. If Windows has no such file, Loadout says so when it starts.
 - A network connection to the same network as the PS2.
@@ -35,7 +61,7 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in.
 2. Download both zips from the [releases page](https://github.com/IVazharov/loadout-ps2/releases).
 3. Copy `loadout-bay.elf` to the USB drive and start it from wLaunchELF. Its screen shows the PS2's address.
-4. Unzip Loadout anywhere you can write and run `Loadout.exe`. It keeps its settings and caches next to the executable. It isn't signed yet, so Windows may warn you about it, and Smart App Control may block it.
+4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed by Open Source Developer Ivan Vazharov. The certificate is new, so Windows may still warn you about it.
 5. In Settings, press **Find Bay** or enter the address from the TV.
 6. On **Install**, add iso, bin and cue, or chd files, then press **Install on PS2**.
 7. Start OPL on the PS2. It lists the games from its hard disk section.
@@ -53,7 +79,7 @@ Loadout goes online for two things only, and neither is part of Loadout or under
 
 Each release has two downloads:
 
-- `Loadout-PS2-<version>-win-x64.zip` holds `Loadout.exe`, this readme, and the licence texts.
+- `Loadout-PS2-<version>-win-x64.zip` holds `LoadoutPS2.exe`, this readme, and the licence texts.
 - `Loadout-Bay-PS2-<version>.zip` holds `loadout-bay.elf`, an example network settings file, a short readme, and the licence texts.
 
 ## Docs

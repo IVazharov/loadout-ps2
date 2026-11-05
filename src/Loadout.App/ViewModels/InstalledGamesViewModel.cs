@@ -129,7 +129,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
         private set => SetField(ref _status, value);
     }
 
-    /// <summary>The page header's summary: "42 GAMES · 812.4 GB FREE OF 931.5", or "42 GAMES · SAVED LIST".</summary>
+    /// <summary>The page header's summary: "42 GAMES · 812.4 GB FREE OF 931.5 GB", or "42 GAMES · SAVED LIST".</summary>
     public string Summary
     {
         get => _summary;
@@ -978,7 +978,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
         Status = PageStatus.Ok(
             Count(library.Games.Count) + " on the PS2",
             "Loadout Bay " + library.Hello.Version + " at " + host + " · " + free + " of " + total + " GB free");
-        Summary = Count(library.Games.Count).ToUpper(CultureInfo.CurrentCulture) + " · " + free + " GB FREE OF " + total;
+        Summary = Count(library.Games.Count).ToUpper(CultureInfo.CurrentCulture) + " · " + free + " GB FREE OF " + total + " GB";
     }
 
     private void SetConnecting(bool value)

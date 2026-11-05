@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Loadout.Bay;
 using Loadout.Core;
 
 namespace Loadout.Images;
@@ -330,6 +331,58 @@ public class DiscScannerTests
 
         var removed = Assert.Single(DiscScanner.ApplyDuplicates([queued], new InstalledGameIndex()));
         Assert.Equal(QueueItemStatus.Ready, removed.Status);
+    }
+
+    [Fact]
+    public async Task ADiscWithAnIncompleteInstallOnThePs2SaysToRemoveItUntilItIsGone()
+    {
+        using var tree = new TempTree();
+        var path = WriteIso(tree, "incomplete.iso", "Incomplete", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
+        var queued = Assert.Single((await ScanAsync(tree, new InstalledGameIndex(), new ScanInput(path, ScanDepth.File))).Items);
+        var incomplete = new InstalledGameIndex();
+        Assert.Equal(AddGameResult.Added, incomplete.TryAdd("SLES-53886", null));
+
+        var row = Assert.Single(DiscScanner.ApplyDuplicates([queued], new InstalledGameIndex(), incomplete));
+        Assert.Equal(QueueItemStatus.Failed, row.Status);
+        Assert.Equal("Incomplete", row.InstallationLabel);
+        Assert.Equal(QueuePreviewItem.IncompleteDetail, row.FriendlyDetail);
+        Assert.Null(BayQueueInstaller.RequestFor(row));
+
+        var removed = Assert.Single(DiscScanner.ApplyDuplicates([queued], new InstalledGameIndex(), new InstalledGameIndex()));
+        Assert.Equal(QueueItemStatus.Ready, removed.Status);
+        Assert.Equal("Not installed", removed.InstallationLabel);
+        Assert.Empty(removed.FriendlyDetail);
+    }
+
+    [Fact]
+    public async Task AWholeCopyOnThePs2CountsOverAnIncompleteOne()
+    {
+        using var tree = new TempTree();
+        var path = WriteIso(tree, "both.iso", "Both", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
+        var queued = Assert.Single((await ScanAsync(tree, new InstalledGameIndex(), new ScanInput(path, ScanDepth.File))).Items);
+        var installed = new InstalledGameIndex();
+        var incomplete = new InstalledGameIndex();
+        installed.TryAdd("SLES-53886", "both.iso");
+        incomplete.TryAdd("SLES-53886", null);
+
+        var row = Assert.Single(DiscScanner.ApplyDuplicates([queued], installed, incomplete));
+
+        Assert.Equal(QueueItemStatus.Duplicate, row.Status);
+        Assert.Equal(InstallationState.Installed, row.InstallationStatus);
+    }
+
+    [Fact]
+    public async Task AGameBeingInstalledReadsAsInstallingAndNoLongerAsReady()
+    {
+        using var tree = new TempTree();
+        var path = WriteIso(tree, "installing.iso", "Installing", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
+        var queued = Assert.Single((await ScanAsync(tree, new InstalledGameIndex(), new ScanInput(path, ScanDepth.File))).Items) with { Installing = true };
+
+        var row = Assert.Single(DiscScanner.ApplyDuplicates([queued], new InstalledGameIndex()));
+
+        Assert.Equal(QueueItemStatus.Installing, row.Status);
+        Assert.Equal("Installing", row.StatusLabel);
+        Assert.Null(BayQueueInstaller.RequestFor(row));
     }
 
     [Fact]

@@ -24,6 +24,9 @@ public sealed record BayQueueResult(QueuePreviewItem Item, BayInstallOutcome Out
 {
     /// <summary>True for a game installed with artwork asked for, when the PS2 ended up with none of it.</summary>
     public bool ArtworkMissing { get; init; }
+
+    /// <summary>The partition the game was installed as, for a game installed.</summary>
+    public string? PartitionName { get; init; }
 }
 
 /// <summary>The game being installed: its place in the queue, and how far its copy is.</summary>
@@ -31,9 +34,16 @@ public sealed record BayQueueProgress(int Index, int Count, QueuePreviewItem Ite
 
 /// <summary>
 /// The queue's results in order, and the PS2's library read again at the end, or null when the
-/// connection was lost before it could be read.
+/// connection was lost before it could be read. Losing it after the games keeps their results.
 /// </summary>
-public sealed record BayQueueRun(IReadOnlyList<BayQueueResult> Results, BayLibrary? Library);
+public sealed record BayQueueRun(IReadOnlyList<BayQueueResult> Results, BayLibrary? Library)
+{
+    /// <summary>
+    /// True when the connection was lost before every game had a result of its own: a game failed for it, or was
+    /// not started. False when only reading back afterwards failed, so each result says what became of its game.
+    /// </summary>
+    public bool LostConnection { get; init; }
+}
 
 /// <summary>
 /// Installs a queue of scanned images through one connection to Loadout Bay. A game already on
@@ -77,6 +87,7 @@ public static class BayQueueInstaller
         int dataPort = BayWire.DataPort,
         MemoryCardRequest? memoryCards = null,
         ArtworkCache? artwork = null,
+        IProgress<BayQueueResult>? finished = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -102,25 +113,32 @@ public static class BayQueueInstaller
         var cardsMade = new HashSet<string>(StringComparer.Ordinal);
         HashSet<string>? artOnPs2 = null;
         var connected = true;
+        var lostAGame = false;
+        void Add(BayQueueResult result)
+        {
+            results.Add(result);
+            finished?.Report(result);
+        }
+
         for (var index = 0; index < items.Count; index++)
         {
             var item = items[index];
             if (!connected || cancellationToken.IsCancellationRequested)
             {
-                results.Add(new BayQueueResult(item, BayInstallOutcome.NotRun, Name(item) + " was not installed: the queue stopped before it."));
+                Add(new BayQueueResult(item, BayInstallOutcome.NotRun, Name(item) + " was not installed: the queue stopped before it."));
                 continue;
             }
 
             var request = RequestFor(item) is { } ready ? ready with { CheckCopy = checkCopies } : null;
             if (request is null)
             {
-                results.Add(new BayQueueResult(item, BayInstallOutcome.NotReady, Name(item) + " was skipped: it is not ready to install (" + item.StatusLabel + ")."));
+                Add(new BayQueueResult(item, BayInstallOutcome.NotReady, Name(item) + " was skipped: it is not ready to install (" + item.StatusLabel + ")."));
                 continue;
             }
 
             if (onPs2.TryGetValue(request.DiscId, out var present))
             {
-                results.Add(present.Incomplete
+                Add(present.Incomplete
                     ? new BayQueueResult(item, BayInstallOutcome.IncompleteOnPs2, Name(item) + " was skipped: an incomplete install of it is on the PS2. Remove it in Installed Games, then install again.")
                     : new BayQueueResult(item, BayInstallOutcome.AlreadyOnPs2, Name(item) + " was skipped: it is already on the PS2 as " + present.PartitionName + "."));
                 continue;
@@ -131,7 +149,7 @@ public static class BayQueueInstaller
             var needed = (ulong)request.TotalBytes / FreeSpace.ApaSectorSizeBytes;
             if (needed > space.FreeSectors)
             {
-                results.Add(new BayQueueResult(item, BayInstallOutcome.DoesNotFit, Name(item) + " was skipped: it needs " + Gb(needed * FreeSpace.ApaSectorSizeBytes) + " GB and the PS2 has " + Gb(space.FreeBytes) + " GB free."));
+                Add(new BayQueueResult(item, BayInstallOutcome.DoesNotFit, Name(item) + " was skipped: it needs " + Gb(needed * FreeSpace.ApaSectorSizeBytes) + " GB and the PS2 has " + Gb(space.FreeBytes) + " GB free."));
                 continue;
             }
 
@@ -165,11 +183,11 @@ public static class BayQueueInstaller
                     message += " " + note;
                 }
 
-                results.Add(new BayQueueResult(item, BayInstallOutcome.Installed, message) { ArtworkMissing = artworkMissing });
+                Add(new BayQueueResult(item, BayInstallOutcome.Installed, message) { ArtworkMissing = artworkMissing, PartitionName = start.PartitionName });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                results.Add(new BayQueueResult(item, BayInstallOutcome.Cancelled, Name(item) + " was cancelled. Its partial copy is on the PS2 as an incomplete install; remove it in Installed Games."));
+                Add(new BayQueueResult(item, BayInstallOutcome.Cancelled, Name(item) + " was cancelled. Its partial copy is on the PS2 as an incomplete install; remove it in Installed Games."));
                 continue;
             }
             catch (LoadoutBayException ex)
@@ -181,29 +199,46 @@ public static class BayQueueInstaller
                     BayWire.StatusCopyDiffers => BayInstallOutcome.CheckFailed,
                     _ => BayInstallOutcome.Failed,
                 };
-                results.Add(new BayQueueResult(item, outcome, Name(item) + (outcome == BayInstallOutcome.Failed ? " failed: " : " was skipped: ") + ex.Message));
+                Add(new BayQueueResult(item, outcome, Name(item) + (outcome == BayInstallOutcome.Failed ? " failed: " : " was skipped: ") + ex.Message));
 
                 // Without a status from Loadout Bay, the failure was the connection itself.
                 connected = ex.Status != 0;
+                lostAGame |= !connected;
             }
             catch (IOException ex)
             {
-                results.Add(new BayQueueResult(item, BayInstallOutcome.Failed, Name(item) + " failed: its image could not be read. " + ex.Message));
+                Add(new BayQueueResult(item, BayInstallOutcome.Failed, Name(item) + " failed: its image could not be read. " + ex.Message));
             }
 
             if (connected)
             {
-                space = await bay.GetFreeSpaceAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    space = await bay.GetFreeSpaceAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (LoadoutBayException)
+                {
+                    connected = false;
+                }
             }
         }
 
+        var lost = lostAGame || results.Any(result => result.Outcome == BayInstallOutcome.NotRun);
         if (!connected)
         {
-            return new BayQueueRun(results, null);
+            return new BayQueueRun(results, null) { LostConnection = lost };
         }
 
-        var games = await bay.ListGamesAsync(CancellationToken.None).ConfigureAwait(false);
-        return new BayQueueRun(results, new BayLibrary(bay.Hello, space, games.Select(game => game.ToInstalledGameRow()).ToList()));
+        // The games are on the PS2 by now: not reading the list back must not lose what became of them.
+        try
+        {
+            var games = await bay.ListGamesAsync(CancellationToken.None).ConfigureAwait(false);
+            return new BayQueueRun(results, new BayLibrary(bay.Hello, space, games.Select(game => game.ToInstalledGameRow()).ToList())) { LostConnection = lost };
+        }
+        catch (LoadoutBayException)
+        {
+            return new BayQueueRun(results, null) { LostConnection = lost };
+        }
     }
 
     // Not cancellable, like the memory card: the game is on the PS2 by now, and this is small.

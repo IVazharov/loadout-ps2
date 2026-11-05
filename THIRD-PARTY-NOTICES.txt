@@ -5,7 +5,7 @@ LICENSE. The downloads also contain the following, under their own licences. By
 using or redistributing the binaries you accept those licences.
 
 ==============================================================================
-In Loadout Bay (loadout-bay.elf, also inside Loadout.exe)
+In Loadout Bay (loadout-bay.elf, also inside LoadoutPS2.exe)
 ==============================================================================
 
 lwIP, newlib and its maths library, gsKit and dmaKit, FatFs, the Barlow fonts,
@@ -1832,7 +1832,7 @@ downloads.
 GCC's runtime library is used under the GCC Runtime Library Exception.
 
 ==============================================================================
-In Loadout (Loadout.exe)
+In Loadout (LoadoutPS2.exe)
 ==============================================================================
 
 Everything above, plus the following. Zstandard reaches Loadout through ZstdSharp;
