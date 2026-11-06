@@ -2,7 +2,7 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
-## Unreleased
+## 0.9.3 - not released yet
 
 ### Changed
 
