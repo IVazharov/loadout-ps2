@@ -19,11 +19,13 @@ NETMAN_OBJS = $(NETMAN_DIR)/src/netman.o $(NETMAN_DIR)/src/rpc_client.o $(NETMAN
 ELF_LOADER_DIR = third_party/ps2sdk-elf-loader2
 
 EE_BIN = loadout-bay.elf
-EE_OBJS = src/main.o src/bench.o src/config.o src/control.o src/discovery.o src/disk.o src/files.o src/games.o src/install.o src/layout.o src/font_data.o src/gfx.o src/netscreen.o src/pad.o src/ui.o src/widgets.o src/upgrade.o src/wire.o $(NETMAN_OBJS) $(IRX:%=build/%_irx.o) build/loadout_hdd_irx.o
+EE_OBJS = src/main.o src/bench.o src/config.o src/control.o src/discovery.o src/disk.o src/files.o src/games.o src/install.o src/layout.o src/font_data.o src/gfx.o src/netscreen.o src/pad.o src/ui.o src/widgets.o src/upgrade.o src/wire.o src/lwip_clock.o $(NETMAN_OBJS) $(IRX:%=build/%_irx.o) build/loadout_hdd_irx.o
 EE_LIBS = -lgskit -ldmakit -lpad -lpatches -lfileXio -lps2ip -lelf-loader2 -lm
 EE_CFLAGS += -Wall -Wextra -Werror -DLOADOUT_VERSION=\"$(VERSION)\"
 EE_INCS += -I$(NETMAN_DIR)/src/include -I$(ELF_LOADER_DIR) -I$(GSKIT)/include
 EE_LDFLAGS += -L$(GSKIT)/lib
+# lwIP's timers take their time from src/lwip_clock.c, not from ps2sdk's sys_now, which jumps after 35 minutes.
+EE_LDFLAGS += -Wl,--wrap=sys_now
 
 all: $(EE_BIN)
 

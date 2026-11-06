@@ -15,6 +15,10 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - In Installed Games, Partition is now the last column, so the others fit at the window's usual width.
 - This Loadout needs the Loadout Bay from the same release, which tells it the free space in OPL's partition. Connect offers the update, as before.
 
+### Fixed
+
+- Loadout Bay no longer stops answering after it has run for about 36 minutes. From then on, a reply that lost a network frame on its way was never sent again, so Connect timed out on the game list ("did not answer within 30 seconds") until Loadout Bay was started again. The fault was in the clock that the PS2's TCP/IP stack, from ps2sdk, takes its time from.
+
 ## 0.9.3 - 2026-11-06
 
 ### Changed
