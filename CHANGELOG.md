@@ -14,7 +14,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - Give each game a memory card, on the Install page, now also makes a new card when the one a game's OPL settings name is missing. It used to leave that game without a card.
 - In Installed Games, Partition is now the last column, so the others fit at the window's usual width.
 - This Loadout needs the Loadout Bay from the same release, which tells it the free space in OPL's partition. Connect offers the update, as before.
-- The readme now says how to give OPL a bigger partition than the 128 MB one it makes itself, so it has room for more memory cards.
+- The readme now says how to give OPL a bigger partition than the 128 MB one it makes itself, so it has room for more memory cards: before OPL makes its own, or later by moving OPL to a new one with its saves.
 
 ### Fixed
 

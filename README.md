@@ -68,6 +68,8 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 
 To start Loadout Bay without the USB drive from then on, see [From the hard disk](ps2/README.md#from-the-hard-disk).
 
+If OPL has already made its 128 MB partition and the memory cards need more room, OPL can move to a bigger one, saves included. Create it with wLaunchELF's HDD Manager under a name that starts with `+`, such as `+OPL2`, and copy everything in `+OPL` into it with wLaunchELF's file browser, the memory cards in `VMC` and Loadout Bay in `APPS` too. Then change the line in `hdd0:/__common/OPL/conf_hdd.cfg` to `hdd_partition=+OPL2`. OPL and Loadout Bay both use the partition that file names. Keep the old `+OPL`, as some setups start OPL itself from it.
+
 ## What Loadout downloads
 
 Loadout goes online for two things only, and neither is part of Loadout or under its licence:
