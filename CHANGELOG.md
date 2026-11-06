@@ -2,7 +2,7 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
-## 0.9.3 - not released yet
+## 0.9.3 - 2026-11-06
 
 ### Changed
 
@@ -14,8 +14,10 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 
 ### Fixed
 
+- Loadout now starts on a Windows 10 without its updates on a recent processor (Intel 11th generation, AMD Zen 3 or later). There, it used to close at once without a word, because .NET stopped it: that Windows doesn't fully support the processor's stack protection (CET), which Loadout no longer asks for.
 - When a game's image can't be read during an install, the app now says so. It used to say that the data connection to Loadout Bay was lost.
 - A game cancelled just after its last byte was sent, which Loadout Bay then installed, now reads Installed. It used to read Cancelled, although the game was on the PS2.
+- When a game fails its check, the install's message now says that it failed. It used to say that the game was skipped, although it had been sent.
 
 ## 0.9.2 - 2026-11-06
 

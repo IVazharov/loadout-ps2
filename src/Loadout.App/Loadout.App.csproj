@@ -11,6 +11,9 @@
     <Product>Loadout for PS2</Product>
     <!-- The mark, rendered by ps2/tools/make_icon.py. -->
     <ApplicationIcon>Assets\loadout.ico</ApplicationIcon>
+    <!-- Not marked CET compatible: on a Windows 10 without its updates and a processor with CET (Intel 11th generation,
+         AMD Zen 3 and later), .NET stops a marked program at start because that Windows doesn't fully support CET. -->
+    <CETCompat>false</CETCompat>
   </PropertyGroup>
 
   <ItemGroup>
