@@ -207,7 +207,9 @@ public static class BayQueueInstaller
                     BayWire.StatusCopyDiffers => BayInstallOutcome.CheckFailed,
                     _ => BayInstallOutcome.Failed,
                 };
-                Add(new BayQueueResult(item, outcome, Name(item) + (outcome == BayInstallOutcome.Failed ? " failed: " : " was skipped: ") + ex.Message)
+                // A game that was sent and failed its check was not skipped.
+                var verb = outcome is BayInstallOutcome.Failed or BayInstallOutcome.CheckFailed ? " failed: " : " was skipped: ";
+                Add(new BayQueueResult(item, outcome, Name(item) + verb + ex.Message)
                 {
                     PartialCopyLeft = ex.PartialCopyLeft,
                 });
