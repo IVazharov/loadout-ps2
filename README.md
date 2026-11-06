@@ -61,7 +61,7 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in.
 2. Download both zips from the [releases page](https://github.com/IVazharov/loadout-ps2/releases).
 3. Copy `loadout-bay.elf` to the USB drive and start it with your homebrew launcher, such as wLaunchELF. Its screen shows the PS2's address.
-4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed by Open Source Developer Ivan Vazharov. The certificate is new, so Windows may still warn you about it.
+4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed by Open Source Developer Ivan Vazharov, and runs with Smart App Control on. The certificate is new, so Windows may still warn you about it.
 5. In Settings, press **Find Bay** or enter the address from the TV.
 6. On **Install**, add iso, bin and cue, or chd files, then press **Install on PS2**.
 7. Start OPL on the PS2. It lists the games from its hard disk section.
