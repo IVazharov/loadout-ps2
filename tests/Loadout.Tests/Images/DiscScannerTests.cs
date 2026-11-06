@@ -334,7 +334,7 @@ public class DiscScannerTests
     }
 
     [Fact]
-    public async Task ADiscWithAnIncompleteInstallOnThePs2SaysToRemoveItUntilItIsGone()
+    public async Task ADiscWithAnIncompleteInstallOnThePs2StaysReadyAndSaysInstallingReplacesIt()
     {
         using var tree = new TempTree();
         var path = WriteIso(tree, "incomplete.iso", "Incomplete", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
@@ -343,10 +343,10 @@ public class DiscScannerTests
         Assert.Equal(AddGameResult.Added, incomplete.TryAdd("SLES-53886", null));
 
         var row = Assert.Single(DiscScanner.ApplyDuplicates([queued], new InstalledGameIndex(), incomplete));
-        Assert.Equal(QueueItemStatus.Failed, row.Status);
+        Assert.Equal(QueueItemStatus.Ready, row.Status);
         Assert.Equal("Incomplete", row.InstallationLabel);
         Assert.Equal(QueuePreviewItem.IncompleteDetail, row.FriendlyDetail);
-        Assert.Null(BayQueueInstaller.RequestFor(row));
+        Assert.NotNull(BayQueueInstaller.RequestFor(row));
 
         var removed = Assert.Single(DiscScanner.ApplyDuplicates([queued], new InstalledGameIndex(), new InstalledGameIndex()));
         Assert.Equal(QueueItemStatus.Ready, removed.Status);

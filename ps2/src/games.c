@@ -154,3 +154,28 @@ int games_check_new(const char *name, const char *disc_id)
     fileXioDclose(dir);
     return status;
 }
+
+int games_find(const char *disc_id, char names[][GAMES_PARTITION_NAME_MAX + 1], int max)
+{
+    char prefix[48];
+    int prefix_length = snprintf(prefix, sizeof(prefix), "PP.%s.", disc_id);
+    int dir = fileXioDopen("hdd0:");
+    if (dir < 0)
+    {
+        return dir;
+    }
+
+    int count = 0;
+    iox_dirent_t entry;
+    while (count < max && fileXioDread(dir, &entry) > 0)
+    {
+        if (is_game(&entry) && strncmp(entry.name, prefix, prefix_length) == 0)
+        {
+            snprintf(names[count], GAMES_PARTITION_NAME_MAX + 1, "%.32s", entry.name);
+            count++;
+        }
+    }
+
+    fileXioDclose(dir);
+    return count;
+}

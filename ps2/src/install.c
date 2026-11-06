@@ -288,6 +288,33 @@ static void refuse_waiting_connections(void)
     }
 }
 
+// Removes a partition by name, with its sub-partitions.
+static int remove_partition(const char *name)
+{
+    char path[48];
+    snprintf(path, sizeof(path), "hdd0:%s", name);
+    return fileXioRemove(path);
+}
+
+// Removes every copy of this game that has no header, such as one cut off by a
+// power loss, so a new install replaces it. A whole copy stays, and
+// games_check_new then refuses the install.
+static int remove_unfinished_copies(const char *disc_id)
+{
+    char names[4][GAMES_PARTITION_NAME_MAX + 1];
+    int count = games_find(disc_id, names, 4);
+    for (int i = 0; i < count; i++)
+    {
+        int status = install_remove_incomplete(names[i]);
+        if (status < 0 && status != -EPERM)
+        {
+            return status;
+        }
+    }
+
+    return count < 0 ? count : 0;
+}
+
 static void close_install(void)
 {
     if (client >= 0)
@@ -333,7 +360,12 @@ int install_begin(const struct install_game *game, char *name, u32 *parts)
     }
 
     make_name(game, partition_name);
-    int status = games_check_new(partition_name, game->disc_id);
+    int status = remove_unfinished_copies(game->disc_id);
+    if (status == 0)
+    {
+        status = games_check_new(partition_name, game->disc_id);
+    }
+
     if (status < 0)
     {
         return status;
@@ -366,9 +398,7 @@ int install_begin(const struct install_game *game, char *name, u32 *parts)
     {
         fileXioClose(partition);
         partition = -1;
-        char path[48];
-        snprintf(path, sizeof(path), "hdd0:%s", partition_name);
-        fileXioRemove(path);
+        remove_partition(partition_name);
         return status;
     }
 
@@ -658,8 +688,9 @@ static int check_copy(status_report report, u32 *bad_block)
     return 0;
 }
 
-int install_end(status_report report, u32 *bad_block)
+int install_end(status_report report, u32 *bad_block, int *removed)
 {
+    *removed = 0;
     if (!active)
     {
         return -ENOENT;
@@ -717,6 +748,12 @@ int install_end(status_report report, u32 *bad_block)
     fileXioClose(partition);
     partition = -1;
     active = 0;
+    // A game without its header is no use to anyone, so the disk never keeps one.
+    if (status != 0)
+    {
+        *removed = remove_partition(partition_name) >= 0;
+    }
+
     report(status == 0 ? STATUS_INSTALLED : status == -EILSEQ ? STATUS_CHECK_FAILED : STATUS_INSTALL_FAILED, NULL,
            STATUS_NO_PROGRESS);
     return status;
@@ -732,6 +769,7 @@ void install_abort(void)
     if (active)
     {
         close_install();
+        remove_partition(partition_name);
     }
 }
 
@@ -869,9 +907,7 @@ int install_remove_incomplete(const char *name)
         }
     }
 
-    char path[48];
-    snprintf(path, sizeof(path), "hdd0:%s", name);
-    return fileXioRemove(path);
+    return remove_partition(name);
 }
 
 int install_delete(const char *name)
@@ -900,9 +936,7 @@ int install_delete(const char *name)
         return -EPERM;
     }
 
-    char path[48];
-    snprintf(path, sizeof(path), "hdd0:%s", name);
-    return fileXioRemove(path);
+    return remove_partition(name);
 }
 
 int install_update(const char *name, const struct install_edit *edit, u8 *entry)

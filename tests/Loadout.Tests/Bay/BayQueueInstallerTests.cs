@@ -12,7 +12,7 @@ public sealed class BayQueueInstallerTests : IDisposable
     public void Dispose() => Directory.Delete(_folder, recursive: true);
 
     [Fact]
-    public async Task ReadyGamesAreInstalledAndGamesOnThePs2AreSkipped()
+    public async Task ReadyGamesAreInstalledGamesOnThePs2AreSkippedAndIncompleteInstallsReplaced()
     {
         using var bay = new FakeLoadoutBay(disk: Disk, games:
         [
@@ -31,12 +31,67 @@ public sealed class BayQueueInstallerTests : IDisposable
         var run = await BayQueueInstaller.RunAsync("127.0.0.1", queue, port: bay.Port, dataPort: bay.DataPort);
 
         Assert.Equal(
-            [BayInstallOutcome.Installed, BayInstallOutcome.AlreadyOnPs2, BayInstallOutcome.IncompleteOnPs2, BayInstallOutcome.NotReady],
+            [BayInstallOutcome.Installed, BayInstallOutcome.AlreadyOnPs2, BayInstallOutcome.Installed, BayInstallOutcome.NotReady],
             run.Results.Select(result => result.Outcome));
-        Assert.Equal(File.ReadAllBytes(starWars.DataFile!), bay.Installed);
-        Assert.Single(bay.InstallRequests);
+        Assert.Equal(File.ReadAllBytes(queue[2].DataFile!), bay.Installed);
+        Assert.Equal(2, bay.InstallRequests.Count);
         Assert.NotNull(run.Library);
-        Assert.Contains("Remove it in Installed Games", run.Results[2].Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(bay.Games, game => game.Partition == "PP.SLUS-20035.HDL.Mythic_s_Keep_");
+    }
+
+    [Fact]
+    public async Task AFailedCheckIsRemovedFromThePs2AndSaysSo()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk) { CorruptByteAt = 5 };
+
+        var run = await BayQueueInstaller.RunAsync("127.0.0.1", [Image("SLUS-20043", "One", 2)], checkCopies: true, port: bay.Port, dataPort: bay.DataPort);
+
+        var result = Assert.Single(run.Results);
+        Assert.Equal(BayInstallOutcome.CheckFailed, result.Outcome);
+        Assert.False(result.PartialCopyLeft);
+        Assert.EndsWith("Its partial copy was removed from the PS2.", result.Message, StringComparison.Ordinal);
+        Assert.Equal(1, bay.RemovedInstalls);
+    }
+
+    [Fact]
+    public async Task APartialCopyLoadoutBayCouldNotRemoveIsReported()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk) { CorruptByteAt = 5, RemovesFailedInstalls = false };
+
+        var run = await BayQueueInstaller.RunAsync("127.0.0.1", [Image("SLUS-20043", "One", 2)], checkCopies: true, port: bay.Port, dataPort: bay.DataPort);
+
+        var result = Assert.Single(run.Results);
+        Assert.True(result.PartialCopyLeft);
+        Assert.Contains("could not be removed", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnImageThatCannotBeReadMidwaySaysSoRatherThanBlamingTheNetwork()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk);
+        var image = Image("SLUS-20043", "Damaged", 4);
+        await using var failing = new FailingStream(File.ReadAllBytes(image.DataFile!), failAfter: 2048);
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+
+        var ex = await Assert.ThrowsAsync<LoadoutBayException>(() => client.InstallAsync(BayQueueInstaller.RequestFor(image)!, failing, dataPort: bay.DataPort));
+
+        Assert.StartsWith("Its image could not be read, so the game was not installed. The chd is damaged.", ex.Message, StringComparison.Ordinal);
+        Assert.EndsWith("Its partial copy was removed from the PS2.", ex.Message, StringComparison.Ordinal);
+        Assert.NotEqual(0, ex.Status);
+    }
+
+    // Gives its bytes, then fails the way a damaged chd does.
+    private sealed class FailingStream(byte[] bytes, int failAfter) : MemoryStream(bytes)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (Position >= failAfter)
+            {
+                throw new IOException("The chd is damaged.");
+            }
+
+            return base.ReadAsync(buffer[..(int)Math.Min(buffer.Length, failAfter - Position)], cancellationToken);
+        }
     }
 
     [Fact]

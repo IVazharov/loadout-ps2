@@ -2,6 +2,19 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
+## Unreleased
+
+### Changed
+
+- When an install fails, is cancelled, or loses Loadout, Loadout Bay now removes the part of the game it had copied, and the app says so. It used to stay on the PS2 as an incomplete install, to be removed in Installed Games.
+- A game with an incomplete install on the PS2, such as one cut off when the PS2 lost power, now reads Ready in the install list, with Incomplete under Installation, and installing it replaces that copy. It used to read Failed until you removed the copy in Installed Games.
+- This Loadout needs the Loadout Bay from the same release. Connect offers the update, as before.
+
+### Fixed
+
+- When a game's image can't be read during an install, the app now says so. It used to say that the data connection to Loadout Bay was lost.
+- A game cancelled just after its last byte was sent, which Loadout Bay then installed, now reads Installed. It used to read Cancelled, although the game was on the PS2.
+
 ## 0.9.2 - 2026-11-06
 
 ### Added

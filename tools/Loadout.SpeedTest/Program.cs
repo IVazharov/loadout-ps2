@@ -31,13 +31,14 @@ const string Usage =
     Lists each game's parts from its header: the game sectors (2048 bytes) in each part and the
     part's first data sector on the disk (512 bytes).
 
-           Loadout.SpeedTest <ps2-address> install <image> [--title <title>] [--check]
+           Loadout.SpeedTest <ps2-address> install <image> [--title <title>] [--check] [--cancel-after <MB>]
 
     Installs a game image (iso, chd, or a cue sheet with its bin) on the PS2's hard disk through Loadout Bay.
     The title defaults to the OPL database's title for the disc ID, as on the Install page, or else the
     one read from the image. --check makes Loadout Bay read the game back
     and compare every MiB before it writes the header. --spoil-checksum <MiB> checks too, but sends that
-    MiB's checksum wrong, to test that the check refuses the copy.
+    MiB's checksum wrong, to test that the check refuses the copy. --cancel-after <MB> cancels the
+    install once that much is on the disk, as Cancel on the Install page does.
 
            Loadout.SpeedTest <ps2-address> read-sectors <partition-name> <part> <first-sector> <count> <file>
 
@@ -265,6 +266,7 @@ if (args[1] == "install")
     string? title = null;
     var check = false;
     int? spoil = null;
+    long? cancelAfter = null;
     for (var i = 3; i < args.Length; i++)
     {
         if (args[i] == "--title" && i + 1 < args.Length)
@@ -279,6 +281,10 @@ if (args[1] == "install")
         {
             check = true;
             spoil = int.Parse(args[++i], CultureInfo.InvariantCulture);
+        }
+        else if (args[i] == "--cancel-after" && i + 1 < args.Length)
+        {
+            cancelAfter = long.Parse(args[++i], CultureInfo.InvariantCulture) * 1024 * 1024;
         }
         else
         {
@@ -301,6 +307,7 @@ if (args[1] == "install")
         using var bay = await LoadoutBayClient.ConnectAsync(args[0]);
         bay.SpoilChecksumAt = spoil;
         using var sectors = game.Open();
+        using var cancel = new CancellationTokenSource();
         var clock = System.Diagnostics.Stopwatch.StartNew();
         // One line per tenth of the game, so a log of the run stays short.
         var shown = -1;
@@ -308,6 +315,12 @@ if (args[1] == "install")
         {
             lock (clock)
             {
+                if (cancelAfter is { } limit && (long)status.WrittenBytes >= limit && !cancel.IsCancellationRequested)
+                {
+                    Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  cancelling at {status.WrittenBytes / SpeedTestWire.BytesPerMegabyte:0} MB on the disk..."));
+                    cancel.Cancel();
+                }
+
                 var tenth = status.Checking ? 10 : (int)(status.WrittenBytes * 10 / Math.Max(status.TotalBytes, 1));
                 if (tenth <= shown)
                 {
@@ -320,11 +333,16 @@ if (args[1] == "install")
                     $"  {status.WrittenBytes / SpeedTestWire.BytesPerMegabyte:0} of {status.TotalBytes / SpeedTestWire.BytesPerMegabyte:0} MB on the disk, {status.WrittenBytes / SpeedTestWire.BytesPerMegabyte / Math.Max(clock.Elapsed.TotalSeconds, 0.001):0.00} MB/s"));
             }
         });
-        var started = await bay.InstallAsync(request, sectors, progress);
+        var started = await bay.InstallAsync(request, sectors, progress, cancellationToken: cancel.Token);
         Console.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
             $"Installed as {started.PartitionName} in {started.Parts} part(s), {clock.Elapsed.TotalSeconds:0.0} s, {request.TotalBytes / SpeedTestWire.BytesPerMegabyte / clock.Elapsed.TotalSeconds:0.00} MB/s."));
         return 0;
+    }
+    catch (BayInstallCancelledException ex)
+    {
+        Console.Error.WriteLine(ex.PartialCopyRemoved ? "Cancelled. Its partial copy was removed from the PS2." : "Cancelled. Its partial copy could not be removed from the PS2.");
+        return 2;
     }
     catch (LoadoutBayException ex)
     {

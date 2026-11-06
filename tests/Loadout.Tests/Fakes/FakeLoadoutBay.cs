@@ -53,6 +53,12 @@ public sealed class FakeLoadoutBay : IDisposable
     /// <summary>How many installs passed the check.</summary>
     public int Checked { get; private set; }
 
+    /// <summary>Whether removing a failed install works, as INSTALL_END's failure reply says.</summary>
+    public bool RemovesFailedInstalls { get; set; } = true;
+
+    /// <summary>How many failed or abandoned installs the fake removed.</summary>
+    public int RemovedInstalls { get; private set; }
+
     private readonly MemoryStream _installed = new();
     private bool _checking;
     private byte[] _checksums = [];
@@ -588,6 +594,10 @@ public sealed class FakeLoadoutBay : IDisposable
             return (InstallBeginStatus, []);
         }
 
+        // An incomplete install of the same disc is replaced, as Loadout Bay does.
+        var discId = Encoding.UTF8.GetString(request, 0, 16).TrimEnd('\0');
+        Games = Games.Where(g => BayGame.DiscIdOfName(g.Partition) != discId || g.Header.AsSpan().ContainsAnyExcept((byte)0)).ToList();
+
         _installTotal = ((long)BinaryPrimitives.ReadUInt32LittleEndian(request.AsSpan(236)) + BinaryPrimitives.ReadUInt32LittleEndian(request.AsSpan(240))) * 2048;
         _checking = (BinaryPrimitives.ReadUInt32LittleEndian(request.AsSpan(248)) & BayWire.InstallFlagCheck) != 0;
         _checksums = new byte[_checking ? (int)((_installTotal + BayWire.CheckBlockBytes - 1) / BayWire.CheckBlockBytes) * 4 : 0];
@@ -662,7 +672,7 @@ public sealed class FakeLoadoutBay : IDisposable
         _dataTask = null;
         if (_installed.Length != _installTotal)
         {
-            return (BayWire.StatusBrokenPipe, []);
+            return (BayWire.StatusBrokenPipe, Failure(0));
         }
 
         if (!_checking)
@@ -683,14 +693,22 @@ public sealed class FakeLoadoutBay : IDisposable
             var sum = Crc32C.Of(held.AsSpan(start, (int)Math.Min(BayWire.CheckBlockBytes, held.Length - start)));
             if (sum != BinaryPrimitives.ReadUInt32LittleEndian(_checksums.AsSpan(block * 4)))
             {
-                var payload = new byte[4];
-                BinaryPrimitives.WriteUInt32LittleEndian(payload, (uint)block);
-                return (BayWire.StatusCopyDiffers, payload);
+                return (BayWire.StatusCopyDiffers, Failure((uint)block));
             }
         }
 
         Checked++;
         return (0, []);
+    }
+
+    // A failed install is removed, and the reply says whether that worked.
+    private byte[] Failure(uint badBlock)
+    {
+        RemovedInstalls += RemovesFailedInstalls ? 1 : 0;
+        var payload = new byte[BayWire.InstallEndFailureBytes];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, badBlock);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), RemovesFailedInstalls ? 1u : 0u);
+        return payload;
     }
 
     private static void WriteEntry(Span<byte> entry, (string Partition, byte[] Header) game)

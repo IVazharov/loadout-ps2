@@ -16,7 +16,7 @@ public static class BayWire
     /// <summary>The port a game's sectors are sent to after INSTALL_BEGIN.</summary>
     public const int DataPort = 45061;
 
-    public const uint ProtocolVersion = 6;
+    public const uint ProtocolVersion = 7;
 
     public const uint Magic = 0x3143424C; // "LBC1"
 
@@ -155,6 +155,12 @@ public static class BayWire
     public const int InstallBeginReplyBytes = EntryNameBytes + 4;
 
     public const int InstallStatusReplyBytes = 24;
+
+    /// <summary>
+    /// A failed INSTALL_END's reply: the first MiB the check found different (0 when it found none), then 1 when
+    /// Loadout Bay removed the game's partitions, as it does with every install that fails.
+    /// </summary>
+    public const int InstallEndFailureBytes = 8;
 
     public const int DiscIdBytes = 16;
 

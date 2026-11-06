@@ -30,4 +30,11 @@ int games_read(const char *name, u8 *out);
 // Returns 0, -EEXIST, or another negative errno.
 int games_check_new(const char *name, const char *disc_id);
 
+// The longest partition name, without its NUL.
+#define GAMES_PARTITION_NAME_MAX 32
+
+// Copies the names of up to max game partitions of this disc ID, whole or not.
+// Returns how many were copied, or a negative errno.
+int games_find(const char *disc_id, char names[][GAMES_PARTITION_NAME_MAX + 1], int max);
+
 #endif

@@ -71,10 +71,12 @@ int install_status(u64 *total, u64 *received, u64 *written);
 // data connection ended before the last byte or checksum, -EILSEQ when the
 // disk holds something else (bad_block is then the first MiB that differs),
 // -ENOENT when no install is open, or the first disk error. Without a 0, no
-// header is written.
-int install_end(status_report report, u32 *bad_block);
+// header is written, and the game's partitions are removed: removed is then 1
+// when that worked.
+int install_end(status_report report, u32 *bad_block, int *removed);
 
-// Closes an open install without writing the header, as when Loadout disconnects.
+// Closes an open install without writing the header and removes its
+// partitions, as when Loadout disconnects.
 void install_abort(void);
 
 // True while an install is open, writing to the disk.

@@ -18,8 +18,18 @@ public sealed class LoadoutBayException : Exception
     /// <summary>Loadout Bay's status (a negative errno value), or 0 when the failure was on the PC's side.</summary>
     public int Status { get; }
 
+    /// <summary>True when an install failed and Loadout Bay could not remove what it had copied.</summary>
+    public bool PartialCopyLeft { get; init; }
+
     /// <summary>True when nothing took the connection: refused, unreachable, or no answer in time.</summary>
     public bool Unreachable { get; init; }
+}
+
+/// <summary>An install cancelled after it began. Loadout Bay removes what it had copied, which <see cref="PartialCopyRemoved"/> says worked.</summary>
+public sealed class BayInstallCancelledException(bool partialCopyRemoved, CancellationToken token)
+    : OperationCanceledException(token)
+{
+    public bool PartialCopyRemoved { get; } = partialCopyRemoved;
 }
 
 /// <summary>
@@ -428,7 +438,8 @@ public sealed class LoadoutBayClient : IDisposable
     /// Installs one game. INSTALL_BEGIN creates its partitions, the sectors go to the data port,
     /// and INSTALL_STATUS reports how much is on the PS2's disk while they do. INSTALL_END follows
     /// in every case, and Loadout Bay writes the game's header only when every sector is on its
-    /// disk, so a copy that stops early, or is cancelled, is never taken for a whole game.
+    /// disk. A copy that stops early, fails, or is cancelled is removed, and the exception says
+    /// whether that worked: cancelling throws <see cref="BayInstallCancelledException"/>.
     /// With <see cref="BayInstallRequest.CheckCopy"/>, a CRC-32C of each MiB follows the data, and
     /// Loadout Bay reads the game back and compares them before it writes the header.
     /// <paramref name="sectors"/> must hold the game's 2048-byte sectors from the first.
@@ -458,6 +469,7 @@ public sealed class LoadoutBayClient : IDisposable
         var imageEnded = false;
         var checksums = game.CheckCopy ? new List<uint>() : null;
         Exception? dataFailure = null;
+        IOException? readFailure = null;
         try
         {
             using var data = new TcpClient();
@@ -493,6 +505,10 @@ public sealed class LoadoutBayClient : IDisposable
         {
             cancelled = true;
         }
+        catch (ImageReadException ex)
+        {
+            readFailure = ex.Failure;
+        }
         catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException)
         {
             dataFailure = ex;
@@ -501,7 +517,7 @@ public sealed class LoadoutBayClient : IDisposable
         // Not cancellable: the install must be closed either way, and a reply cut short would
         // leave the control connection out of step. A check reads the whole game back first, so
         // its reply may take minutes: Loadout Bay is allowed one MiB a second, plus the usual wait.
-        var checking = checksums is not null && !cancelled && !imageEnded && dataFailure is null;
+        var checking = checksums is not null && !cancelled && !imageEnded && dataFailure is null && readFailure is null;
         if (checking)
         {
             progress?.Report(new BayInstallStatus((ulong)game.TotalBytes, (ulong)game.TotalBytes, (ulong)game.TotalBytes, Checking: true));
@@ -509,33 +525,48 @@ public sealed class LoadoutBayClient : IDisposable
 
         var endWait = checking ? ReplyTimeout + TimeSpan.FromSeconds(game.TotalBytes / (double)BayWire.CheckBlockBytes) : ReplyTimeout;
         var (endStatus, endPayload) = await ExchangeAsync(_stream, BayWire.CommandInstallEnd, [], CancellationToken.None, endWait).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        if (cancelled)
+
+        // Loadout Bay removes an install that fails, and says whether that worked.
+        var removed = endStatus != 0 && endPayload.Length == BayWire.InstallEndFailureBytes
+            && BinaryPrimitives.ReadUInt32LittleEndian(endPayload.AsSpan(4)) != 0;
+        var leftover = removed ? " Its partial copy was removed from the PS2."
+            : " Its partial copy could not be removed from the PS2. The next install of this game replaces it.";
+        // Cancelled after the last byte, the game is whole and installed.
+        if ((cancelled || cancellationToken.IsCancellationRequested) && endStatus != 0)
         {
-            throw new OperationCanceledException(cancellationToken);
+            throw new BayInstallCancelledException(removed, cancellationToken);
+        }
+
+        if (readFailure is not null)
+        {
+            throw new LoadoutBayException("Its image could not be read, so the game was not installed. " + readFailure.Message + leftover, endStatus, readFailure) { PartialCopyLeft = !removed };
         }
 
         if (imageEnded)
         {
-            throw new LoadoutBayException("The image ended before the last sector it declares, so the game was not installed.", endStatus);
+            throw new LoadoutBayException("The image ended before the last sector it declares, so the game was not installed." + leftover, endStatus) { PartialCopyLeft = !removed };
         }
 
         if (endStatus == BayWire.StatusBrokenPipe && dataFailure is not null)
         {
-            throw new LoadoutBayException("The data connection to Loadout Bay was lost, so the game was not installed.", endStatus, dataFailure);
+            throw new LoadoutBayException("The data connection to Loadout Bay was lost, so the game was not installed." + leftover, endStatus, dataFailure) { PartialCopyLeft = !removed };
         }
 
-        if (endStatus == BayWire.StatusCopyDiffers && endPayload.Length == 4)
+        if (endStatus == BayWire.StatusCopyDiffers && endPayload.Length == BayWire.InstallEndFailureBytes)
         {
             var block = BinaryPrimitives.ReadUInt32LittleEndian(endPayload);
             throw new LoadoutBayException(
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"The check found that the copy on the PS2 differs from the image at {block} MiB, so the game was not installed. It is left as an incomplete install: remove it and install it again."),
-                endStatus);
+                    $"The check found that the copy on the PS2 differs from the image at {block} MiB, so the game was not installed.{leftover}"),
+                endStatus) { PartialCopyLeft = !removed };
         }
 
-        ThrowIfFailed(endStatus);
+        if (endStatus != 0)
+        {
+            throw new LoadoutBayException(BayWire.DescribeStatus(endStatus) + leftover, endStatus) { PartialCopyLeft = !removed };
+        }
+
         progress?.Report(new BayInstallStatus((ulong)game.TotalBytes, (ulong)game.TotalBytes, (ulong)game.TotalBytes));
         return start;
     }
@@ -556,7 +587,16 @@ public sealed class LoadoutBayClient : IDisposable
         long inBlock = 0;
         for (long sent = 0; sent < totalBytes;)
         {
-            var count = await sectors.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, totalBytes - sent)), cancellationToken).ConfigureAwait(false);
+            int count;
+            try
+            {
+                count = await sectors.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, totalBytes - sent)), cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException ex)
+            {
+                throw new ImageReadException(ex);
+            }
+
             if (count == 0)
             {
                 return false;
@@ -741,6 +781,12 @@ public sealed class LoadoutBayClient : IDisposable
                 ThrowIfFailed(status);
                 return;
         }
+    }
+
+    // The image could not be read while it was sent: the PC's own failure, told apart from the network's.
+    private sealed class ImageReadException(IOException failure) : Exception(failure.Message, failure)
+    {
+        public IOException Failure { get; } = failure;
     }
 
     private static void ThrowIfFailed(int status)

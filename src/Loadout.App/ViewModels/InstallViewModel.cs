@@ -173,7 +173,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         _sentSinceReading = 0;
         _installed.Clear();
         _incomplete.Clear();
-        // An incomplete install is not a game on the PS2: its image reads as failed, saying to remove it first.
+        // An incomplete install is not a game on the PS2: installing its image replaces it.
         foreach (var game in games)
         {
             (game.Incomplete ? _incomplete : _installed).TryAdd(game.DiscId, game.PartitionName);
@@ -512,9 +512,9 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
             row = row with { InstalledFromQueue = true };
             _installed.TryAdd(row.DiscId, result.PartitionName);
         }
-        else if (result.Outcome is BayInstallOutcome.CheckFailed or BayInstallOutcome.Cancelled or BayInstallOutcome.IncompleteOnPs2)
+        else if (result.PartialCopyLeft)
         {
-            // Loadout Bay left an incomplete install, so the row says to remove it before the list is read again.
+            // Loadout Bay could not remove its partial copy, so the row says installing replaces it before the list is read again.
             _incomplete.TryAdd(row.DiscId, null);
         }
 
@@ -643,11 +643,10 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     private static string Outcome(BayInstallOutcome outcome) => outcome switch
     {
         BayInstallOutcome.AlreadyOnPs2 => "is already on the PS2",
-        BayInstallOutcome.IncompleteOnPs2 => "has an incomplete install to remove first",
         BayInstallOutcome.DoesNotFit => "is too large for the free space",
         BayInstallOutcome.NotReady => "is not ready",
-        BayInstallOutcome.CheckFailed => "failed the check and was left as an incomplete install",
-        BayInstallOutcome.Cancelled => "was cancelled and left as an incomplete install",
+        BayInstallOutcome.CheckFailed => "failed the check",
+        BayInstallOutcome.Cancelled => "was cancelled",
         BayInstallOutcome.NotRun => "was not started",
         _ => "failed",
     };
@@ -663,12 +662,11 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         var parts = new[]
         {
             Part(BayInstallOutcome.AlreadyOnPs2, "already on the PS2"),
-            Part(BayInstallOutcome.IncompleteOnPs2, "with an incomplete install to remove first"),
             Part(BayInstallOutcome.DoesNotFit, "too large for the free space"),
             Part(BayInstallOutcome.NotReady, "not ready"),
-            Part(BayInstallOutcome.CheckFailed, "failed the check, left as an incomplete install"),
+            Part(BayInstallOutcome.CheckFailed, "failed the check"),
             Part(BayInstallOutcome.Failed, "failed"),
-            Part(BayInstallOutcome.Cancelled, "cancelled, left as an incomplete install"),
+            Part(BayInstallOutcome.Cancelled, "cancelled"),
             Part(BayInstallOutcome.NotRun, "not started"),
         }.Where(part => part.Length > 0);
         return string.Join(", ", parts) + ". Logs has each game's result.";
@@ -705,7 +703,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         if (_install is not null)
         {
             _install.Cancel();
-            Status = PageStatus.Busy("Cancelling", "The game being copied stays on the PS2 as an incomplete install.");
+            Status = PageStatus.Busy("Cancelling", "Loadout Bay removes the part of the game it has copied.");
             return;
         }
 

@@ -441,15 +441,18 @@ static int install_status_request(u32 length, u8 *out, u32 *out_length)
     return status;
 }
 
-// A copy that the check found different names its first different MiB.
+// An install that failed answers with the first different MiB, when the check
+// found one, and whether its partitions were removed.
 static int install_end_request(u8 *out, u32 *out_length, status_report report)
 {
     u32 bad_block = 0;
-    int status = install_end(report, &bad_block);
-    if (status == -EILSEQ)
+    int removed = 0;
+    int status = install_end(report, &bad_block, &removed);
+    if (status != 0)
     {
         wire_write_u32(out, bad_block);
-        *out_length = 4;
+        wire_write_u32(out + 4, (u32)removed);
+        *out_length = 8;
     }
 
     return status;
@@ -586,7 +589,8 @@ static const char *serve_requests(int fd, status_report report)
             }
 
             // Before the reply: once it has an install's answer, Loadout starts sending and the disk is busy.
-            if (command == COMMAND_INSTALL_BEGIN || command == COMMAND_REMOVE_INCOMPLETE || command == COMMAND_DELETE_GAME)
+            if (command == COMMAND_INSTALL_BEGIN || command == COMMAND_INSTALL_END || command == COMMAND_REMOVE_INCOMPLETE
+                || command == COMMAND_DELETE_GAME)
             {
                 disk_show_free();
             }
@@ -607,12 +611,17 @@ static const char *serve_requests(int fd, status_report report)
     }
 }
 
-// An install that Loadout leaves open ends without its header, and OPL's
+// An install that Loadout leaves open is removed, and OPL's
 // partition is unmounted, so its files are all on the disk.
 static const char *serve_session(int fd, status_report report)
 {
     const char *result = serve_requests(fd, report);
-    install_abort();
+    if (install_busy())
+    {
+        install_abort();
+        disk_show_free();
+    }
+
     files_close();
     return result;
 }

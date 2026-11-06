@@ -11,7 +11,6 @@ public enum BayInstallOutcome
 {
     Installed,
     AlreadyOnPs2,
-    IncompleteOnPs2,
     DoesNotFit,
     NotReady,
     CheckFailed,
@@ -27,6 +26,9 @@ public sealed record BayQueueResult(QueuePreviewItem Item, BayInstallOutcome Out
 
     /// <summary>The partition the game was installed as, for a game installed.</summary>
     public string? PartitionName { get; init; }
+
+    /// <summary>True when the install failed and Loadout Bay could not remove its partial copy, which is then an incomplete install.</summary>
+    public bool PartialCopyLeft { get; init; }
 }
 
 /// <summary>The game being installed: its place in the queue, and how far its copy is.</summary>
@@ -47,9 +49,9 @@ public sealed record BayQueueRun(IReadOnlyList<BayQueueResult> Results, BayLibra
 
 /// <summary>
 /// Installs a queue of scanned images through one connection to Loadout Bay. A game already on
-/// the PS2, whole or not, is skipped by its disc ID, and so is one that cannot fit in the free space.
-/// Only a Ready image is sent. Cancelling stops the game being copied, which stays on the PS2 as an
-/// incomplete install, and leaves the rest of the queue unrun. With <c>checkCopies</c>, Loadout Bay
+/// the PS2 is skipped by its disc ID, and so is one that cannot fit in the free space; an incomplete
+/// install of it is replaced. Only a Ready image is sent. An install that fails or is cancelled is
+/// removed from the PS2 by Loadout Bay. Cancelling leaves the rest of the queue unrun. With <c>checkCopies</c>, Loadout Bay
 /// reads each game back and compares it before the game counts as installed. With <c>memoryCards</c>,
 /// each game installed gets the memory card its plan names (<see cref="BayMemoryCards"/>); a card that
 /// cannot be made is reported in the game's result and does not undo the install. With <c>artwork</c>,
@@ -136,18 +138,19 @@ public static class BayQueueInstaller
                 continue;
             }
 
-            if (onPs2.TryGetValue(request.DiscId, out var present))
+            // An incomplete install of the game is replaced: Loadout Bay removes it before it makes the new one.
+            var replacing = onPs2.TryGetValue(request.DiscId, out var present) && present.Incomplete;
+            if (present is not null && !replacing)
             {
-                Add(present.Incomplete
-                    ? new BayQueueResult(item, BayInstallOutcome.IncompleteOnPs2, Name(item) + " was skipped: an incomplete install of it is on the PS2. Remove it in Installed Games, then install again.")
-                    : new BayQueueResult(item, BayInstallOutcome.AlreadyOnPs2, Name(item) + " was skipped: it is already on the PS2 as " + present.PartitionName + "."));
+                Add(new BayQueueResult(item, BayInstallOutcome.AlreadyOnPs2, Name(item) + " was skipped: it is already on the PS2 as " + present.PartitionName + "."));
                 continue;
             }
 
             // Each 2048-byte sector takes four of the driver's 512-byte sectors. Partitions come in
             // fixed sizes, so a game can still not fit; Loadout Bay then refuses it before writing.
+            // The space an incomplete install holds is unknown, so a game replacing one is left to Loadout Bay.
             var needed = (ulong)request.TotalBytes / FreeSpace.ApaSectorSizeBytes;
-            if (needed > space.FreeSectors)
+            if (!replacing && needed > space.FreeSectors)
             {
                 Add(new BayQueueResult(item, BayInstallOutcome.DoesNotFit, Name(item) + " was skipped: it needs " + Gb(needed * FreeSpace.ApaSectorSizeBytes) + " GB and the PS2 has " + Gb(space.FreeBytes) + " GB free."));
                 continue;
@@ -185,9 +188,14 @@ public static class BayQueueInstaller
 
                 Add(new BayQueueResult(item, BayInstallOutcome.Installed, message) { ArtworkMissing = artworkMissing, PartitionName = start.PartitionName });
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
-                Add(new BayQueueResult(item, BayInstallOutcome.Cancelled, Name(item) + " was cancelled. Its partial copy is on the PS2 as an incomplete install; remove it in Installed Games."));
+                // Cancelled before Loadout Bay began, nothing was copied. Otherwise it removed the copy, or says it could not.
+                var left = ex is BayInstallCancelledException { PartialCopyRemoved: false };
+                Add(new BayQueueResult(item, BayInstallOutcome.Cancelled, Name(item) + " was cancelled."
+                    + (ex is not BayInstallCancelledException ? ""
+                        : left ? " Its partial copy could not be removed from the PS2. The next install of this game replaces it."
+                        : " Its partial copy was removed from the PS2.")) { PartialCopyLeft = left });
                 continue;
             }
             catch (LoadoutBayException ex)
@@ -199,7 +207,10 @@ public static class BayQueueInstaller
                     BayWire.StatusCopyDiffers => BayInstallOutcome.CheckFailed,
                     _ => BayInstallOutcome.Failed,
                 };
-                Add(new BayQueueResult(item, outcome, Name(item) + (outcome == BayInstallOutcome.Failed ? " failed: " : " was skipped: ") + ex.Message));
+                Add(new BayQueueResult(item, outcome, Name(item) + (outcome == BayInstallOutcome.Failed ? " failed: " : " was skipped: ") + ex.Message)
+                {
+                    PartialCopyLeft = ex.PartialCopyLeft,
+                });
 
                 // Without a status from Loadout Bay, the failure was the connection itself.
                 connected = ex.Status != 0;

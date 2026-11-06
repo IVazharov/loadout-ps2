@@ -52,7 +52,7 @@ A request with the wrong magic or a payload over 65664 bytes gets no reply: Load
 
 ### 1: HELLO
 
-Request payload, 4 bytes: the PC's protocol version (currently 6).
+Request payload, 4 bytes: the PC's protocol version (currently 7).
 
 Reply payload, 40 bytes:
 
@@ -117,7 +117,7 @@ Request payload, 252 bytes:
 | 247 | 1 | transfer mode, 4 by default |
 | 248 | 4 | flags: bit 0 asks for the check (see `INSTALL_END`) |
 
-Loadout Bay names the game the way HDLGameInstaller does: `PP.<disc ID>.HDL.<title>`, keeping the first 14 characters of the title and turning each one that is not a letter, a digit or `_` into `_`. A character outside ASCII becomes one `_`. The status is `-EEXIST` when a partition already has that name, or when a game partition with the same disc ID is on the disk, whole or not.
+Loadout Bay names the game the way HDLGameInstaller does: `PP.<disc ID>.HDL.<title>`, keeping the first 14 characters of the title and turning each one that is not a letter, a digit or `_` into `_`. A character outside ASCII becomes one `_`. Loadout Bay first removes every incomplete install of the same disc ID (see `REMOVE_INCOMPLETE`), such as one cut off when the PS2 lost power, so the new install replaces it. The status is `-EEXIST` when a partition still has that name, or when a whole game with the same disc ID is on the disk.
 
 Loadout Bay then creates the partitions:
 
@@ -170,7 +170,12 @@ The status is 0, or the first disk write error. The payload is sent with an erro
 
 ### 7: INSTALL_END
 
-No request payload. A reply payload only with `-EILSEQ`: 4 bytes, the first MiB of the game that differs.
+No request payload. A reply payload only when the install failed, 8 bytes:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 4 | with `-EILSEQ`, the first MiB of the game that differs; otherwise 0 |
+| 4 | 4 | 1 when the game's partitions were removed, 0 when removing them failed |
 
 The PC sends `INSTALL_END` after its last byte, or after it stops sending. Loadout Bay then:
 
@@ -181,9 +186,11 @@ The PC sends `INSTALL_END` after its last byte, or after it stops sending. Loado
 
 The check exists because data can be spoiled between Loadout Bay's memory and the disk, after the network's own checks have passed. PCSX2's emulated network adapter and hard disk do this now and then: a received network frame lands in the data being written. The check reads the game back at the disk's speed, so `INSTALL_END` can take minutes; the PC waits up to one second per MiB, plus 30 seconds.
 
-The status is 0 when the game is installed. Otherwise no header is written, and the partitions stay on the disk as an incomplete install, which `LIST_GAMES` lists with a zero header. The status is then `-EPIPE` when the data or its checksums stopped before the end, `-EILSEQ` when the check found a difference, or else the first disk error. Without an open install the status is `-ENOENT`.
+The status is 0 when the game is installed. Otherwise no header is written, and Loadout Bay removes the game's partitions, as a game without its header is of no use. The status is then `-EPIPE` when the data or its checksums stopped before the end, `-EILSEQ` when the check found a difference, or else the first disk error. Without an open install the status is `-ENOENT`, and the payload's second field is 0.
 
-When the control connection closes with an install open, the install ends the same way, without a header.
+When the control connection closes with an install open, as when Loadout is closed or the PC loses the network, the install ends the same way: without a header, and its partitions removed.
+
+Only a PS2 that loses power, or a removal that fails, leaves an incomplete install on the disk, which `LIST_GAMES` lists with a zero header. The next `INSTALL_BEGIN` of that disc replaces it, and `REMOVE_INCOMPLETE` removes it.
 
 The header comes last on purpose; this is the one difference from HDLGameInstaller, which writes the header before the data. With the header last, a copy that stops early can never be listed as a whole game.
 

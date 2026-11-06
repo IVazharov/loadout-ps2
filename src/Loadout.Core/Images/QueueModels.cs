@@ -20,7 +20,7 @@ public enum InstallationState
     NotInstalled,
     Installed,
 
-    /// <summary>Only an incomplete install of the disc is on the PS2, which has to be removed before it can be installed.</summary>
+    /// <summary>Only an incomplete install of the disc is on the PS2, which installing it replaces.</summary>
     Incomplete,
 }
 
@@ -106,7 +106,7 @@ public sealed record QueuePreviewItem
     };
 
     /// <summary>The Detail of a disc with only an incomplete install on the PS2.</summary>
-    public const string IncompleteDetail = "An incomplete install of it is on the PS2. Remove it in Installed Games, then install again.";
+    public const string IncompleteDetail = "An incomplete install of it is on the PS2. Installing it replaces that copy.";
 
     public string DuplicateLabel => DuplicateStatus switch
     {
@@ -159,8 +159,8 @@ public sealed record QueuePreviewItem
 
     public int TrackCount { get; init; }
 
-    /// <param name="incompleteOnPs2">True when an incomplete install of the disc is on the PS2. Loadout Bay refuses the
-    /// disc until it is removed, so the row says so instead of reading as ready.</param>
+    /// <param name="incompleteOnPs2">True when an incomplete install of the disc is on the PS2. The row stays ready,
+    /// as installing replaces that copy, and says so.</param>
     public QueuePreviewItem Resolve(bool inLibrary, bool inQueue, bool incompleteOnPs2 = false)
     {
         var status = Preliminary;
@@ -175,16 +175,15 @@ public sealed record QueuePreviewItem
         {
             status = QueueItemStatus.Installed;
         }
-        else if (Preliminary == QueueItemStatus.Ready && !inLibrary && incompleteOnPs2)
-        {
-            status = QueueItemStatus.Failed;
-            installation = InstallationState.Incomplete;
-            detail = IncompleteDetail;
-        }
         else if (Preliminary == QueueItemStatus.Ready && (inLibrary || inQueue))
         {
             status = QueueItemStatus.Duplicate;
             duplicate = inLibrary ? DuplicateMatch.InLibrary : DuplicateMatch.InQueue;
+        }
+        else if (Preliminary == QueueItemStatus.Ready && incompleteOnPs2)
+        {
+            installation = InstallationState.Incomplete;
+            detail = IncompleteDetail;
         }
 
         return this with

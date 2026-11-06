@@ -105,7 +105,7 @@ public static class DiscScanner
         return (kept, leftOut);
     }
 
-    /// <param name="incomplete">The discs with only an incomplete install on the PS2, which read as failed until it is removed.</param>
+    /// <param name="incomplete">The discs with only an incomplete install on the PS2, which installing replaces.</param>
     public static IReadOnlyList<QueuePreviewItem> ApplyDuplicates(
         IReadOnlyList<QueuePreviewItem> items,
         InstalledGameIndex? installed,
