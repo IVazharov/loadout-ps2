@@ -58,7 +58,7 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 
 ## Get started
 
-1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in.
+1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in. OPL makes it 128 MB: room for about a dozen 8 MB memory cards beside the artwork, and it can't safely be made bigger later. For more, create a partition named `+OPL` of the size you want with wLaunchELF's HDD Manager before OPL first opens that list, and OPL uses it instead. 1 GB holds cards for about a hundred games.
 2. Download both zips from the [releases page](https://github.com/IVazharov/loadout-ps2/releases).
 3. Copy `loadout-bay.elf` to the USB drive and start it with your homebrew launcher, such as wLaunchELF. Its screen shows the PS2's address.
 4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed by Open Source Developer Ivan Vazharov, and runs with Smart App Control on. The certificate is new, so Windows may still warn you about it.
