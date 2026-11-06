@@ -18,7 +18,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ArtworkCache artworkCache,
         ArtworkDownloader artworkDownloader,
         OperationLog log,
-        string defaultCacheDirectory,
         Func<Question, bool> confirm,
         Func<Question, int?> choose,
         IDiscTitleCatalog titles,
@@ -31,7 +30,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         var stored = settingsStore.Load();
         // After an install, the list read from the PS2 goes to Installed Games and is saved, as after Connect.
         Install = new InstallViewModel(
-            new DiscScanOptions(defaultCacheDirectory),
             log,
             CurrentHost,
             library => AfterInstallAsync(savedList, library),
@@ -41,9 +39,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             artworkDownloader)
         {
             CheckInstalls = stored.CheckInstalls,
-            CacheDirectory = string.IsNullOrWhiteSpace(stored.CacheDirectory) ? defaultCacheDirectory : stored.CacheDirectory,
         };
-        Settings = new SettingsViewModel(settingsStore, stored, Install, log, defaultCacheDirectory);
+        Settings = new SettingsViewModel(settingsStore, stored, Install, log);
         Installed = new InstalledGamesViewModel(
             artworkCache,
             () => Settings.Host,

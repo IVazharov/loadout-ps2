@@ -319,7 +319,7 @@
                             Command="{Binding CancelCommand}"
                             Visibility="{Binding IsWorking, Converter={StaticResource VisibleWhenTrue}}" />
                     <Button Content="Add _files…"
-                            ToolTip="Adds disc images: iso, bin, cue or chd. The cache directory for converted chd files is in Settings."
+                            ToolTip="Adds disc images: iso, bin, cue or chd."
                             Command="{Binding AddFilesCommand}" />
                     <Button Margin="8,0,0,0"
                             Content="Add f_older…"
@@ -486,7 +486,7 @@
                     <c:ChamferBorder Style="{StaticResource EmptyState}" Visibility="{Binding IsEmpty, Converter={StaticResource VisibleWhenTrue}}">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
                             <TextBlock Style="{StaticResource EmptyHeadline}" Text="Add games to install" />
-                            <TextBlock Style="{StaticResource EmptyDetail}" Text="iso, bin, cue and chd files, or whole folders. The cache directory for converted chd files is in Settings." />
+                            <TextBlock Style="{StaticResource EmptyDetail}" Text="iso, bin, cue and chd files, or whole folders." />
                             <StackPanel HorizontalAlignment="Center" Orientation="Horizontal">
                                 <Button Style="{StaticResource PrimaryButton}" Content="Add files…" Command="{Binding AddFilesCommand}" />
                                 <Button Margin="8,0,0,0" Content="Add folder…" Command="{Binding AddFolderCommand}" />
@@ -744,30 +744,12 @@
                                     <ColumnDefinition Width="180" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Style="{StaticResource FieldLabel}" Text="Cache folder" />
-                                <DockPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <Button DockPanel.Dock="Right" Margin="8,0,0,0" MinWidth="104" Content="Use _default" Command="{Binding UseDefaultCacheCommand}"
-                                            IsEnabled="{Binding CanUseDefaultCache}"
-                                            ToolTip="The cache folder in Loadout's data folder, next to the executable." />
-                                    <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Br_owse…" Command="{Binding BrowseCacheCommand}"
-                                            AutomationProperties.Name="Browse for the cache folder" />
-                                    <TextBox IsReadOnly="True"
-                                             Text="{Binding CacheDirectory, Mode=OneWay}"
-                                             ToolTip="{Binding CacheDirectory}"
-                                             AutomationProperties.Name="Cache folder" />
-                                </DockPanel>
-                            </Grid>
-                            <Grid Style="{StaticResource SettingsRow}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="180" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
                                 <TextBlock Style="{StaticResource FieldLabel}" Text="Check games" />
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                     <CheckBox Content="Check each game after installing" IsChecked="{Binding CheckInstalls}" />
                                     <c:InfoTip Margin="8,0,0,0"
                                                AutomationProperties.Name="More about checking games"
-                                               ToolTip="Loadout Bay reads the whole game back from the PS2's disk and compares every MiB with the image before the game counts as installed. A copy that differs stays an incomplete install. This adds the time it takes to read the game back." />
+                                               ToolTip="Loadout Bay reads the whole game back from the PS2's disk and compares every MiB with the image before the game counts as installed. Loadout Bay removes a copy that differs. This adds the time it takes to read the game back." />
                                 </StackPanel>
                             </Grid>
                             <TextBlock Style="{StaticResource SettingsNote}" Text="Reads the game back from the PS2 and compares it. Slower." />

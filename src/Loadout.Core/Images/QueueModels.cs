@@ -63,11 +63,10 @@ public static class HdlDiscTypes
 
 public sealed record ScanInput(string Path, ScanDepth Depth);
 
-public sealed record ScanProgress(int Completed, int Total, string CurrentPath, double? Percent);
+public sealed record ScanProgress(int Completed, int Total, string CurrentPath);
 
 public sealed record DiscScanResult(
     IReadOnlyList<QueuePreviewItem> Items,
-    IReadOnlyList<string> LeftoverTemporaryFiles,
     bool Cancelled)
 {
     /// <summary>Selected images left unread because <see cref="DiscScanOptions.Queued"/> names them.</summary>

@@ -6,6 +6,8 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 
 ### Changed
 
+- A chd is now read as it's sent to the PS2. Loadout used to convert each chd to an iso, or a bin and cue, when you added it, and kept that copy, so adding a folder of chd files took a while and wrote all those games to your disk again. The Cache folder setting is gone with it.
+- A damaged chd now shows when its install reaches the damage: the install stops, says the image could not be read, and Loadout Bay removes the partial copy. Adding a chd used to read it whole, so the damage showed then.
 - When an install fails, is cancelled, or loses Loadout, Loadout Bay now removes the part of the game it had copied, and the app says so. It used to stay on the PS2 as an incomplete install, to be removed in Installed Games.
 - A game with an incomplete install on the PS2, such as one cut off when the PS2 lost power, now reads Ready in the install list, with Incomplete under Installation, and installing it replaces that copy. It used to read Failed until you removed the copy in Installed Games.
 - This Loadout needs the Loadout Bay from the same release. Connect offers the update, as before.

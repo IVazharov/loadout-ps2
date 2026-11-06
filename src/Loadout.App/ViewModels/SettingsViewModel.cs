@@ -38,7 +38,6 @@ public sealed class SettingsViewModel : ObservableObject
     private readonly AppSettingsStore _store;
     private readonly InstallViewModel _install;
     private readonly OperationLog _log;
-    private readonly string _defaultCacheDirectory;
     private string _host;
     private string _addressNote;
     private AddressNoteKind _noteKind;
@@ -49,13 +48,12 @@ public sealed class SettingsViewModel : ObservableObject
     private CancellationTokenSource? _findRun;
     private bool _windowsDark = AppTheme.WindowsIsDark();
 
-    public SettingsViewModel(AppSettingsStore store, AppSettings stored, InstallViewModel install, OperationLog log, string defaultCacheDirectory)
+    public SettingsViewModel(AppSettingsStore store, AppSettings stored, InstallViewModel install, OperationLog log)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         ArgumentNullException.ThrowIfNull(stored);
         _install = install ?? throw new ArgumentNullException(nameof(install));
         _log = log ?? throw new ArgumentNullException(nameof(log));
-        _defaultCacheDirectory = defaultCacheDirectory;
 
         // A host name saved by an older Loadout can't go in the editor; the editor starts empty.
         _host = Ipv4Text.IsValid(stored.Ps2Host) ? stored.Ps2Host.Trim() : string.Empty;
@@ -72,8 +70,6 @@ public sealed class SettingsViewModel : ObservableObject
                 SetNote(AddressNoteKind.Plain, HelpNote);
             }
         });
-        BrowseCacheCommand = new RelayCommand(BrowseCache);
-        UseDefaultCacheCommand = new RelayCommand(() => SetCacheDirectory(string.Empty));
         AppTheme.WindowsModeChanged += () =>
         {
             _windowsDark = AppTheme.WindowsIsDark();
@@ -92,10 +88,6 @@ public sealed class SettingsViewModel : ObservableObject
     public ICommand CancelFindCommand { get; }
 
     public ICommand AddressEditedCommand { get; }
-
-    public ICommand BrowseCacheCommand { get; }
-
-    public ICommand UseDefaultCacheCommand { get; }
 
     /// <summary>The Loadout Bays the last search found, when it found more than one, sorted by address.</summary>
     public ObservableCollection<FoundBayRow> FoundBays { get; } = [];
@@ -190,10 +182,6 @@ public sealed class SettingsViewModel : ObservableObject
 
     private string HelpNote => _host.Length == 0 ? EnterAddress : AddressHelp;
 
-    public string CacheDirectory => _install.CacheDirectory;
-
-    public bool CanUseDefaultCache => !string.Equals(CacheDirectory, _defaultCacheDirectory, StringComparison.OrdinalIgnoreCase);
-
     public bool CheckInstalls
     {
         get => _install.CheckInstalls;
@@ -230,39 +218,6 @@ public sealed class SettingsViewModel : ObservableObject
         : _windowsDark
             ? "System follows Windows' app mode (now dark)."
             : "System follows Windows' app mode (now light).";
-
-    // An empty folder is stored as "use the default", so the default can move with the data folder.
-    private void SetCacheDirectory(string stored)
-    {
-        var shown = stored.Length == 0 ? _defaultCacheDirectory : stored;
-        if (string.Equals(shown, CacheDirectory, StringComparison.OrdinalIgnoreCase) && stored.Length > 0)
-        {
-            return;
-        }
-
-        _install.CacheDirectory = shown;
-        OnPropertyChanged(nameof(CacheDirectory));
-        OnPropertyChanged(nameof(CanUseDefaultCache));
-        Save(InstallSection, settings => settings with { CacheDirectory = stored });
-    }
-
-    private void BrowseCache()
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "Select the cache folder",
-            Multiselect = false,
-        };
-        if (Directory.Exists(CacheDirectory))
-        {
-            dialog.InitialDirectory = CacheDirectory;
-        }
-
-        if (dialog.ShowDialog() == true)
-        {
-            SetCacheDirectory(dialog.FolderName);
-        }
-    }
 
     // Writes one change over what is stored. An old host name the editor couldn't show is not kept.
     private bool Save(SettingsSection section, Func<AppSettings, AppSettings> change)

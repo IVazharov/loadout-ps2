@@ -16,7 +16,6 @@ public sealed class SettingsTests : IDisposable
         var settings = store.Load();
 
         Assert.Equal(string.Empty, settings.Ps2Host);
-        Assert.Equal(string.Empty, settings.CacheDirectory);
         Assert.Equal(ThemeChoice.System, settings.Theme);
         Assert.False(store.HasRow());
     }
@@ -28,13 +27,11 @@ public sealed class SettingsTests : IDisposable
         store.Save(AppSettings.Defaults with
         {
             Ps2Host = "127.0.0.1",
-            CacheDirectory = "C:\\Cache",
             Theme = ThemeChoice.Dark,
         });
 
         var again = new AppSettingsStore(Database).Load();
         Assert.Equal("127.0.0.1", again.Ps2Host);
-        Assert.Equal("C:\\Cache", again.CacheDirectory);
         Assert.Equal(ThemeChoice.Dark, again.Theme);
 
         store.Save(again with { Theme = ThemeChoice.Light });
@@ -135,7 +132,6 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(Path.Combine(exe, "Loadout.settings.json"), layout.SettingsFile);
         Assert.True(File.Exists(layout.SettingsFile));
         Assert.Equal(Path.Combine(exe, "data", "loadout.sqlite"), layout.DatabaseFile);
-        Assert.Equal(Path.Combine(exe, "data", "conversion-cache"), layout.ConversionCache);
         Assert.Equal(Path.Combine(exe, "data", "artwork-cache"), layout.ArtworkCache);
         Assert.True(Directory.Exists(Path.Combine(exe, "data")));
     }

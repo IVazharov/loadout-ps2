@@ -3,7 +3,6 @@ namespace Loadout.Persistence;
 public sealed record PortableLayout(
     string SettingsFile,
     string DatabaseFile,
-    string ConversionCache,
     string ArtworkCache);
 
 /// <summary>
@@ -35,7 +34,6 @@ public static class PortableData
         return new PortableLayout(
             settings,
             Path.Combine(data, DatabaseFileName),
-            Path.Combine(data, "conversion-cache"),
             Path.Combine(data, "artwork-cache"));
     }
 }

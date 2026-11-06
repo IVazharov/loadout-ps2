@@ -1,8 +1,8 @@
 namespace Loadout.Images;
 
 /// <summary>
-/// Sequential 2048-byte user data from an ISO or a 2352-byte MODE1/MODE2 image.
-/// One sector is buffered. The file is not loaded into memory.
+/// Sequential 2048-byte user data from an ISO or a 2352-byte MODE1/MODE2 image, or from a chd, read
+/// as the iso or bin chdman extracts from it. One sector is buffered. The file is not loaded into memory.
 /// </summary>
 public sealed class IsoUserDataStream : Stream
 {
@@ -10,7 +10,7 @@ public sealed class IsoUserDataStream : Stream
 
     private static ReadOnlySpan<byte> Sync => [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
 
-    private readonly FileStream _file;
+    private readonly Stream _file;
     private readonly int _stride;
     private readonly int _dataOffset;
     private readonly byte[] _raw;
@@ -20,7 +20,7 @@ public sealed class IsoUserDataStream : Stream
     private long _position;
     private bool _disposed;
 
-    private IsoUserDataStream(FileStream file, int stride, int dataOffset)
+    private IsoUserDataStream(Stream file, int stride, int dataOffset)
     {
         _file = file;
         _stride = stride;
@@ -45,13 +45,15 @@ public sealed class IsoUserDataStream : Stream
 
     public static IsoUserDataStream Open(string path)
     {
-        var file = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 4096,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        Stream file = ChdImageStream.IsChd(path)
+            ? ChdImageStream.Open(path)
+            : new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
         try
         {
             var (stride, offset) = Detect(file);
@@ -175,7 +177,7 @@ public sealed class IsoUserDataStream : Stream
         _pendingOffset = 0;
     }
 
-    private static (int Stride, int Offset) Detect(FileStream file)
+    private static (int Stride, int Offset) Detect(Stream file)
     {
         var probe = new byte[16];
         var count = file.Read(probe, 0, probe.Length);

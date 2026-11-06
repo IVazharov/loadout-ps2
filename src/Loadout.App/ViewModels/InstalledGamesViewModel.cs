@@ -178,7 +178,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
     public string EditorHint =>
         _selection.Length == 0 || _selected is null ? "Select one game to change its title, disc type, modes or transfer mode."
         : _selection.Length > 1 ? _selection.Length.ToString(CultureInfo.CurrentCulture) + " games selected. Select one to change it."
-        : !BayGameChanges.CanEdit(_selected) ? "An incomplete install can't be changed. Remove it and install it again."
+        : !BayGameChanges.CanEdit(_selected) ? "An incomplete install can't be changed. Installing the game again replaces it."
         : _connecting ? "Wait for the current task to finish."
         : "";
 

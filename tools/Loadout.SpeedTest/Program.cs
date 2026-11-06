@@ -21,6 +21,11 @@ const string Usage =
     Checks a kept disk run in a raw disk image, such as PCSX2's DEV9hdd.raw. The start sector
     is the one PFS Shell lists for LOADOUT.SPEEDTEST, in decimal or 0x hex.
 
+           Loadout.SpeedTest read-image <image>
+
+    Reads a game image's 2048-byte sectors the way an install sends them, and prints their SHA-256 and
+    how fast they were read. A chd is decoded as it is read, with nothing written to the disk.
+
            Loadout.SpeedTest <ps2-address> bay
 
     Greets Loadout Bay on its control port and prints its version, the hard disk's size and free space,
@@ -145,6 +150,32 @@ if (args[0] == "vmc-image")
 
     await File.WriteAllBytesAsync(args[2], VmcImage.Create(cardSize, DateTimeOffset.Now));
     Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Wrote a {cardSize} MB memory card to {args[2]}."));
+    return 0;
+}
+
+if (args[0] == "read-image")
+{
+    if (args.Length != 2)
+    {
+        return UsageError();
+    }
+
+    // As an install reads it: the 2048-byte sectors from the first, a buffer at a time.
+    using var sectors = IsoUserDataStream.Open(args[1]);
+    using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+    var buffer = new byte[256 * 1024];
+    long total = 0;
+    var clock = System.Diagnostics.Stopwatch.StartNew();
+    int count;
+    while ((count = await sectors.ReadAsync(buffer.AsMemory())) > 0)
+    {
+        hash.AppendData(buffer, 0, count);
+        total += count;
+    }
+
+    Console.WriteLine(string.Create(
+        CultureInfo.InvariantCulture,
+        $"{total} bytes of 2048-byte sectors, SHA-256 {Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()}, {clock.Elapsed.TotalSeconds:0.0} s, {total / SpeedTestWire.BytesPerMegabyte / clock.Elapsed.TotalSeconds:0.0} MB/s."));
     return 0;
 }
 

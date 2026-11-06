@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json;
 using Loadout.Bay;
 using Loadout.Core;
 
@@ -395,7 +394,7 @@ public class DiscScannerTests
         var result = await DiscScanner.ScanAsync(
             [new ScanInput(tree.Root, ScanDepth.Directory)],
             null,
-            new DiscScanOptions(tree.Cache) { Queued = new HashSet<string>([queued], StringComparer.OrdinalIgnoreCase) });
+            new DiscScanOptions { Queued = new HashSet<string>([queued], StringComparer.OrdinalIgnoreCase) });
 
         Assert.Equal(fresh, Assert.Single(result.Items).SourceFile);
         Assert.Equal([queued], result.AlreadyQueued);
@@ -456,7 +455,7 @@ public class DiscScannerTests
         var path = WriteIso(tree, "one.iso", "One", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
         var seen = new ListProgress();
 
-        await DiscScanner.ScanAsync([new ScanInput(path, ScanDepth.File)], null, new DiscScanOptions(tree.Cache), seen);
+        await DiscScanner.ScanAsync([new ScanInput(path, ScanDepth.File)], null, new DiscScanOptions(), seen);
 
         Assert.Contains(seen.Reports, report => report.CurrentPath == path && report.Total == 1);
     }
@@ -471,28 +470,46 @@ public class DiscScannerTests
         var result = await ScanChdAsync(tree, dvdNamed, cdNamed);
 
         var dvd = Assert.Single(result.Items, item => item.SourceFile == dvdNamed);
-        Assert.Equal(ChdCacheLayout.Iso(tree.Cache, dvdNamed), dvd.DataFile);
+        Assert.Equal(dvdNamed, dvd.DataFile);
         Assert.Equal("SLUS-20001", dvd.DiscId);
         var cd = Assert.Single(result.Items, item => item.SourceFile == cdNamed);
-        Assert.Equal(ChdCacheLayout.Bin(tree.Cache, cdNamed), cd.DataFile);
+        Assert.Equal(cdNamed, cd.DataFile);
         Assert.Equal("SLES-53886", cd.DiscId);
     }
 
     [Fact]
-    public async Task ExtractedCdIsReadFromTheCueSheetItWrites()
+    public async Task AChdIsReadInPlaceWithNothingWritten()
+    {
+        using var tree = new TempTree();
+        var dvd = WriteDvdChd(tree, "dvd.chd", "Dvd", "BOOT2 = cdrom0:\\SLUS_200.01;1\n");
+        var cd = WriteCdChd(tree, "cd.chd");
+        var before = Directory.GetFiles(tree.Root, "*", SearchOption.AllDirectories).ToDictionary(path => path, File.ReadAllBytes);
+
+        var result = await ScanChdAsync(tree, dvd, cd);
+
+        Assert.All(result.Items, item => Assert.Equal(QueueItemStatus.Ready, item.Status));
+        var after = Directory.GetFiles(tree.Root, "*", SearchOption.AllDirectories);
+        Assert.Equal(before.Keys.Order(), after.Order());
+        Assert.All(after, path => Assert.Equal(before[path], File.ReadAllBytes(path)));
+    }
+
+    [Fact]
+    public async Task ACdChdIsReadThroughTheSheetChdmanWouldWrite()
     {
         using var tree = new TempTree();
         var chd = WriteCdChd(tree, "game.chd");
 
-        var result = await ScanChdAsync(tree, chd);
+        var item = Assert.Single((await ScanChdAsync(tree, chd)).Items);
 
-        var item = Assert.Single(result.Items);
         Assert.Equal(QueueItemStatus.Ready, item.Status);
         Assert.Equal("SLES-53886", item.DiscId);
-        Assert.Equal(ChdCacheLayout.Bin(tree.Cache, chd), item.DataFile);
-        var sheet = await File.ReadAllTextAsync(ChdCacheLayout.Cue(tree.Cache, chd));
-        Assert.Contains("FILE \"" + Path.GetFileName(ChdCacheLayout.Bin(tree.Cache, chd)) + "\" BINARY", sheet);
-        Assert.Empty(result.LeftoverTemporaryFiles);
+        Assert.Equal(chd, item.DataFile);
+
+        // An install reads the 2048-byte user data of each sector, as from the bin chdman would write.
+        using var sectors = IsoUserDataStream.Open(chd);
+        var first = new byte[IsoUserDataStream.UserSectorSize * 17];
+        sectors.ReadExactly(first);
+        Assert.Equal("CD001"u8.ToArray(), first.AsSpan((16 * IsoUserDataStream.UserSectorSize) + 1, 5).ToArray());
     }
 
     [Fact]
@@ -523,72 +540,7 @@ public class DiscScannerTests
     }
 
     [Fact]
-    public async Task CacheSkipsOnlyAfterTheOutputIsValidated()
-    {
-        using var tree = new TempTree();
-        var chd = WriteDvdChd(tree, "game.chd", "Cached", "BOOT2 = cdrom0:\\SLES_538.86;1\n", trailingBytes: 64);
-        var source = await File.ReadAllBytesAsync(chd);
-        var keep = Path.Combine(tree.Root, "keep.iso");
-        await File.WriteAllBytesAsync(keep, [1, 2, 3, 4]);
-        Directory.CreateDirectory(tree.Cache);
-        var iso = ChdCacheLayout.Iso(tree.Cache, chd);
-        await File.WriteAllBytesAsync(iso, DiscImageBuilder.Build("Other", "BOOT2 = cdrom0:\\SCES_111.11;1\n"));
-
-        var first = Assert.Single((await ScanChdAsync(tree, chd)).Items);
-        Assert.Equal("SLES-53886", first.DiscId);
-        Assert.Equal(source, await File.ReadAllBytesAsync(chd));
-        Assert.Equal(new byte[] { 1, 2, 3, 4 }, await File.ReadAllBytesAsync(keep));
-
-        // A conversion replaces the file, so an old time on it shows that none ran.
-        var marked = new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
-        File.SetLastWriteTimeUtc(iso, marked);
-        var second = Assert.Single((await ScanChdAsync(tree, chd)).Items);
-        Assert.Equal(marked, File.GetLastWriteTimeUtc(iso));
-        Assert.Equal(QueueItemStatus.Ready, second.Status);
-        Assert.Equal("SLES-53886", second.DiscId);
-
-        await File.WriteAllBytesAsync(iso, new byte[new FileInfo(iso).Length]);
-        File.SetLastWriteTimeUtc(iso, marked);
-        var third = Assert.Single((await ScanChdAsync(tree, chd)).Items);
-        Assert.NotEqual(marked, File.GetLastWriteTimeUtc(iso));
-        Assert.Equal("SLES-53886", third.DiscId);
-        Assert.Equal(QueueItemStatus.Ready, third.Status);
-
-        // The same length and time, but other contents.
-        File.SetLastWriteTimeUtc(iso, marked);
-        var mtime = File.GetLastWriteTimeUtc(chd);
-        var mutated = await File.ReadAllBytesAsync(chd);
-        mutated[^1] ^= 0x5A;
-        await File.WriteAllBytesAsync(chd, mutated);
-        File.SetLastWriteTimeUtc(chd, mtime);
-        Assert.Equal(source.Length, new FileInfo(chd).Length);
-        await ScanChdAsync(tree, chd);
-        Assert.NotEqual(marked, File.GetLastWriteTimeUtc(iso));
-    }
-
-    [Fact]
-    public async Task CacheRecordStoresTheSourceIdentity()
-    {
-        using var tree = new TempTree();
-        var chd = WriteDvdChd(tree, "game.chd", "Cached", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
-        await ScanChdAsync(tree, chd);
-
-        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(ChdCacheLayout.IndexPath(tree.Cache)));
-        var record = document.RootElement.GetProperty("records")[0];
-        Assert.Equal("valid", record.GetProperty("status").GetString());
-        Assert.Equal(Path.GetFullPath(chd), record.GetProperty("sourcePath").GetString());
-        Assert.Equal(new FileInfo(chd).Length, record.GetProperty("sourceLength").GetInt64());
-        Assert.Equal(new FileInfo(chd).LastWriteTimeUtc.Ticks, record.GetProperty("sourceMtimeUtcTicks").GetInt64());
-        Assert.False(string.IsNullOrWhiteSpace(record.GetProperty("fingerprint").GetString()));
-        Assert.Equal(ChdFile.ReaderVersion, record.GetProperty("toolVersion").GetString());
-        Assert.Equal("SLES-53886", record.GetProperty("discId").GetString());
-        var output = record.GetProperty("outputPath").GetString();
-        Assert.True(File.Exists(output));
-        Assert.StartsWith(Path.GetFullPath(tree.Cache), output);
-    }
-
-    [Fact]
-    public async Task ADamagedChdIsNotPublishedAndCanBeReplaced()
+    public async Task DamageWhereTheInstallReadsStopsIt()
     {
         using var tree = new TempTree();
         var chd = Path.Combine(tree.Root, "damaged.chd");
@@ -596,23 +548,11 @@ public class DiscScannerTests
         damaged[damaged.Length / 2] ^= 0x5A;
         await File.WriteAllBytesAsync(chd, damaged);
 
-        var first = await ScanChdAsync(tree, chd);
-
-        var item = Assert.Single(first.Items);
-        Assert.Equal(QueueItemStatus.Failed, item.Status);
-        Assert.Contains("damaged", item.Detail, StringComparison.Ordinal);
-        Assert.Contains("not published", item.Detail, StringComparison.Ordinal);
-        Assert.False(File.Exists(ChdCacheLayout.Iso(tree.Cache, chd)));
-        Assert.Empty(first.LeftoverTemporaryFiles);
-        using (var document = JsonDocument.Parse(await File.ReadAllTextAsync(ChdCacheLayout.IndexPath(tree.Cache))))
-        {
-            Assert.Equal("incomplete", document.RootElement.GetProperty("records")[0].GetProperty("status").GetString());
-        }
-
-        ChdTestFile.WriteDvd(chd, DiscImageBuilder.Build("Game", "BOOT2 = cdrom0:\\SLES_538.86;1\n"));
-        var second = Assert.Single((await ScanChdAsync(tree, chd)).Items);
-        Assert.Equal(QueueItemStatus.Ready, second.Status);
-        Assert.Equal("SLES-53886", second.DiscId);
+        // The scan reads only the disc's first sectors, so the damage shows when the install reaches it.
+        Assert.Single((await ScanChdAsync(tree, chd)).Items);
+        using var sectors = IsoUserDataStream.Open(chd);
+        var ex = Assert.Throws<ChdException>(() => sectors.CopyTo(Stream.Null));
+        Assert.Contains("damaged", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -632,7 +572,7 @@ public class DiscScannerTests
     [Theory]
     [InlineData("GDDD", "not a PS2")]
     [InlineData("XXXX", "does not say")]
-    public async Task OtherKindsOfChdAreNotConverted(string tag, string detail)
+    public async Task OtherKindsOfChdAreRefused(string tag, string detail)
     {
         using var tree = new TempTree();
         var chd = Path.Combine(tree.Root, "game.chd");
@@ -643,57 +583,37 @@ public class DiscScannerTests
         Assert.Equal(QueueItemStatus.Failed, item.Status);
         Assert.Contains(detail, item.Detail, StringComparison.Ordinal);
         Assert.Null(item.DiscId);
-        Assert.False(File.Exists(ChdCacheLayout.Iso(tree.Cache, chd)));
     }
 
     [Fact]
-    public async Task CancellationDoesNotPublishOrDeleteTheSource()
+    public async Task ACancelledScanStopsBetweenImages()
     {
         using var tree = new TempTree();
-
-        // Long enough to take more than one step, so a cancel between them can be seen.
-        var first = WriteDvdChd(tree, "a.chd", "Big", "BOOT2 = cdrom0:\\SLES_538.86;1\n", extraSectors: 20000);
+        var first = WriteDvdChd(tree, "a.chd", "Big", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
         var second = WriteDvdChd(tree, "b.chd", "Other", "BOOT2 = cdrom0:\\SLES_538.87;1\n");
-        var source = await File.ReadAllBytesAsync(first);
         using var cancel = new CancellationTokenSource();
-        var progress = new CancelOnPercent(cancel);
 
         var result = await DiscScanner.ScanAsync(
             [new ScanInput(first, ScanDepth.File), new ScanInput(second, ScanDepth.File)],
             null,
-            new DiscScanOptions(tree.Cache),
-            progress,
+            new DiscScanOptions(),
+            new CancelOnFirstReport(cancel),
             cancel.Token);
 
         Assert.True(result.Cancelled);
-        Assert.Single(result.Items);
-        Assert.False(File.Exists(ChdCacheLayout.Iso(tree.Cache, first)));
-        Assert.Equal(source, await File.ReadAllBytesAsync(first));
-        Assert.Empty(result.LeftoverTemporaryFiles);
-    }
-
-    [Fact]
-    public async Task ConversionReportsItsPercent()
-    {
-        using var tree = new TempTree();
-        var chd = WriteDvdChd(tree, "game.chd", "Game", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
-        var progress = new ListProgress();
-
-        await DiscScanner.ScanAsync([new ScanInput(chd, ScanDepth.File)], null, new DiscScanOptions(tree.Cache), progress);
-
-        Assert.Contains(progress.Reports, report => report.Percent == 100.0 && report.CurrentPath == chd);
+        Assert.Equal(first, Assert.Single(result.Items).SourceFile);
     }
 
     private static async Task<DiscScanResult> ScanAsync(TempTree tree, params ScanInput[] inputs)
         => await ScanAsync(tree, null, inputs);
 
     private static async Task<DiscScanResult> ScanAsync(TempTree tree, InstalledGameIndex? installed, params ScanInput[] inputs)
-        => await DiscScanner.ScanAsync(inputs, installed, new DiscScanOptions(tree.Cache));
+        => await DiscScanner.ScanAsync(inputs, installed, new DiscScanOptions());
 
     private static async Task<DiscScanResult> ScanChdAsync(TempTree tree, params string[] chds)
     {
         var inputs = chds.Select(path => new ScanInput(path, ScanDepth.File)).ToArray();
-        return await DiscScanner.ScanAsync(inputs, null, new DiscScanOptions(tree.Cache));
+        return await DiscScanner.ScanAsync(inputs, null, new DiscScanOptions());
     }
 
     private static string WriteDvdChd(TempTree tree, string name, string label, string cnf, int extraSectors = 0, int trailingBytes = 0)
@@ -735,8 +655,6 @@ public class DiscScannerTests
 
         public string Root { get; }
 
-        public string Cache => Path.Combine(Root, "cache");
-
         public void Dispose()
         {
             TempDirectory.Delete(Root);
@@ -751,17 +669,11 @@ internal sealed class ListProgress : IProgress<ScanProgress>
     public void Report(ScanProgress value) => Reports.Add(value);
 }
 
-internal sealed class CancelOnPercent : IProgress<ScanProgress>
+internal sealed class CancelOnFirstReport : IProgress<ScanProgress>
 {
     private readonly CancellationTokenSource _cancel;
 
-    public CancelOnPercent(CancellationTokenSource cancel) => _cancel = cancel;
+    public CancelOnFirstReport(CancellationTokenSource cancel) => _cancel = cancel;
 
-    public void Report(ScanProgress value)
-    {
-        if (value.Percent != null)
-        {
-            _cancel.Cancel();
-        }
-    }
+    public void Report(ScanProgress value) => _cancel.Cancel();
 }

@@ -21,7 +21,6 @@ namespace Loadout.App;
 /// </summary>
 public sealed class InstallViewModel : ObservableObject, IDisposable
 {
-    private readonly DiscScanOptions _options;
     private readonly InstalledGameIndex _installed = new();
     private readonly InstalledGameIndex _incomplete = new();
     private readonly List<QueuePreviewItem> _scanned = new();
@@ -37,7 +36,6 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     private bool _createMemoryCards;
     private int _memoryCardSize = VmcImage.DefaultSize;
     private CancellationTokenSource? _install;
-    private string _cacheDirectory;
     private CancellationTokenSource? _scan;
     private int _scansRunning;
     private int _generation;
@@ -47,7 +45,6 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     private ulong _sentSinceReading;
 
     public InstallViewModel(
-        DiscScanOptions options,
         OperationLog log,
         Func<string> hostFor,
         Func<BayLibrary, Task> onLibraryRead,
@@ -60,11 +57,9 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         _artworkDownloader = artworkDownloader ?? throw new ArgumentNullException(nameof(artworkDownloader));
         _titles = titles ?? throw new ArgumentNullException(nameof(titles));
         _confirm = confirm ?? throw new ArgumentNullException(nameof(confirm));
-        _options = options ?? throw new ArgumentNullException(nameof(options));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _hostFor = hostFor ?? throw new ArgumentNullException(nameof(hostFor));
         _onLibraryRead = onLibraryRead ?? throw new ArgumentNullException(nameof(onLibraryRead));
-        _cacheDirectory = options.CacheDirectory;
         Items = new ObservableCollection<QueuePreviewItem>();
         AddFilesCommand = new AsyncRelayCommand(AddFilesAsync, OnScanFailed);
         AddFolderCommand = new AsyncRelayCommand(() => AddFolderAsync(recursive: false), OnScanFailed);
@@ -105,12 +100,6 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     public string Summary => InstallQueueSummary.Describe(Items, _space, _sentSinceReading);
 
     public bool HasSelection => _selection.Length > 0;
-
-    public string CacheDirectory
-    {
-        get => _cacheDirectory;
-        set => SetField(ref _cacheDirectory, value);
-    }
 
     /// <summary>
     /// When set, Loadout Bay reads each game back from its disk and compares it with what was sent
@@ -276,12 +265,11 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         _scan = new CancellationTokenSource();
         var token = _scan.Token;
         Status = PageStatus.Busy("Scanning", inputs.Count == 1 ? inputs[0].Path : inputs.Count.ToString(CultureInfo.CurrentCulture) + " files");
-        var cacheDirectory = string.IsNullOrWhiteSpace(CacheDirectory) ? _options.CacheDirectory : CacheDirectory.Trim();
-        var options = new DiscScanOptions(cacheDirectory)
+        var options = new DiscScanOptions
         {
-            Queued =new HashSet<string>(_scanned.Select(item => item.SourceFile), StringComparer.OrdinalIgnoreCase),
+            Queued = new HashSet<string>(_scanned.Select(item => item.SourceFile), StringComparer.OrdinalIgnoreCase),
         };
-        // On a worker thread: without a chd to convert, a scan has nothing to wait for and would hold the window.
+        // On a worker thread: walking folders and reading images would hold the window.
         // It gets no list of installed games, which a connect can change meanwhile; WithoutDuplicates and Publish
         // below compare against it here on the UI thread.
         var result = await Task.Run(() => DiscScanner.ScanAsync(inputs, null, options, cancellationToken: token));
@@ -328,11 +316,6 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         if (left > 0)
         {
             added.Add("left out " + left.ToString(CultureInfo.CurrentCulture) + " already in the queue or on the PS2");
-        }
-
-        if (result.LeftoverTemporaryFiles.Count > 0)
-        {
-            added.Add(result.LeftoverTemporaryFiles.Count.ToString(CultureInfo.CurrentCulture) + " temporary files were left over");
         }
 
         var detail = string.Join(", ", added) + ".";

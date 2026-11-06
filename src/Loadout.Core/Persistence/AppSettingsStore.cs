@@ -17,12 +17,10 @@ public enum ThemeChoice
 /// </summary>
 public sealed record AppSettings(
     string Ps2Host,
-    string CacheDirectory,
     ThemeChoice Theme,
     bool CheckInstalls = true)
 {
     public static AppSettings Defaults { get; } = new(
-        string.Empty,
         string.Empty,
         ThemeChoice.System);
 
@@ -48,7 +46,7 @@ public sealed class AppSettingsStore
             CREATE TABLE IF NOT EXISTS app_settings (
                 id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
                 ps2_host TEXT NOT NULL,
-                -- Unused, and always written empty: older files have it NOT NULL.
+                -- Unused, and always written empty: older files have them NOT NULL.
                 chdman_path TEXT NOT NULL,
                 cache_directory TEXT NOT NULL,
                 dark_mode INTEGER NOT NULL
@@ -70,7 +68,7 @@ public sealed class AppSettingsStore
         using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT ps2_host, cache_directory, dark_mode, check_installs, theme
+            SELECT ps2_host, dark_mode, check_installs, theme
             FROM app_settings
             WHERE id = 1;
             """;
@@ -82,9 +80,8 @@ public sealed class AppSettingsStore
 
         return new AppSettings(
             reader.GetString(0),
-            reader.GetString(1),
-            ReadTheme(reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetInt32(2) != 0),
-            reader.GetInt32(3) != 0);
+            ReadTheme(reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(1) != 0),
+            reader.GetInt32(2) != 0);
     }
 
     public bool HasRow()
@@ -104,7 +101,6 @@ public sealed class AppSettingsStore
             """
             UPDATE app_settings SET
                 ps2_host = $host,
-                cache_directory = $cache,
                 dark_mode = $dark,
                 check_installs = $check,
                 theme = $theme
@@ -113,12 +109,11 @@ public sealed class AppSettingsStore
             """
             INSERT INTO app_settings (
                 id, ps2_host, chdman_path, cache_directory, dark_mode, check_installs, theme)
-            VALUES (1, $host, '', $cache, $dark, $check, $theme);
+            VALUES (1, $host, '', '', $dark, $check, $theme);
             """,
             parameters =>
             {
                 parameters.AddWithValue("$host", settings.Ps2Host.Trim());
-                parameters.AddWithValue("$cache", settings.CacheDirectory ?? string.Empty);
                 // Kept for an older Loadout opening the same file.
                 parameters.AddWithValue("$dark", settings.Theme == ThemeChoice.Light ? 0 : 1);
                 parameters.AddWithValue("$check", settings.CheckInstalls ? 1 : 0);

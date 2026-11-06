@@ -51,9 +51,12 @@ internal readonly record struct CueDecision(bool Supported, string? Reason, Sect
 
 internal static class CueSheetParser
 {
-    public static CueSheet Parse(string cuePath)
+    public static CueSheet Parse(string cuePath) => Parse(File.ReadAllLines(cuePath), cuePath);
+
+    /// <summary>Parses a sheet's lines, with file names relative to the folder of sheetPath.</summary>
+    public static CueSheet Parse(IEnumerable<string> lines, string sheetPath)
     {
-        var directory = Path.GetDirectoryName(Path.GetFullPath(cuePath)) ?? string.Empty;
+        var directory = Path.GetDirectoryName(Path.GetFullPath(sheetPath)) ?? string.Empty;
         var files = new List<CueFileEntry>();
         string? currentPath = null;
         string? currentType = null;
@@ -88,7 +91,7 @@ internal static class CueSheetParser
             tracks = null;
         }
 
-        foreach (var raw in File.ReadAllLines(cuePath))
+        foreach (var raw in lines)
         {
             var line = raw.Trim();
             if (line.Length == 0 || line.StartsWith("REM", StringComparison.OrdinalIgnoreCase))
@@ -135,7 +138,7 @@ internal static class CueSheetParser
         }
 
         FlushFile();
-        return new CueSheet(Path.GetFullPath(cuePath), files);
+        return new CueSheet(Path.GetFullPath(sheetPath), files);
     }
 
     public static bool References(string cuePath, string binPath)

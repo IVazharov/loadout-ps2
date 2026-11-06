@@ -14,7 +14,7 @@ Both parts share one version number.
 
 ### Send games from your PC
 
-Queue iso, bin and cue, or chd files. Loadout sends them over your network, with their artwork, and checks each game after installing it.
+Queue iso, bin and cue, or chd files. Loadout sends them over your network, with their artwork, and checks each game after installing it. A chd is read as it's sent, with no converted copy on your disk.
 
 ### See what's on the PS2
 

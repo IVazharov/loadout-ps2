@@ -44,7 +44,6 @@ public partial class MainWindow : LoadoutWindow
             artworkCache,
             new ArtworkDownloader(new Luden02ArtworkProvider(Http), artworkCache),
             new OperationLog(),
-            layout.ConversionCache,
             Confirm,
             question => QuestionDialog.Choose(this, question),
             new OplCfgTitleCatalog(Http, new DiscTitleCache(layout.DatabaseFile)),

@@ -18,7 +18,7 @@ public sealed record GameImageSource(BayInstallRequest Request, string DataFile)
     public static async Task<GameImageSource?> ScanAsync(string imagePath, string? title)
     {
         var work = Path.Combine(Path.GetTempPath(), "Loadout.SpeedTest");
-        var options = new DiscScanOptions(Path.Combine(work, "cache"));
+        var options = new DiscScanOptions();
         var scan = await DiscScanner.ScanAsync([new ScanInput(imagePath, ScanDepth.File)], null, options);
 
         // As on the Install page, the OPL database's title replaces the one read from the disc.

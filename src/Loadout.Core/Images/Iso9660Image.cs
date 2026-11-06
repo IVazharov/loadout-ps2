@@ -52,12 +52,15 @@ internal static class Iso9660Image
 {
     private static ReadOnlySpan<byte> Sync => [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
 
+    /// <summary>Reads an iso or bin, or a chd as the iso or bin chdman extracts from it.</summary>
     public static ImageFacts Read(string path, SectorLayout? forcedLayout, bool declaredCompactDisc)
     {
         try
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return Read(stream, path, forcedLayout, declaredCompactDisc);
+            using Stream stream = ChdImageStream.IsChd(path)
+                ? ChdImageStream.Open(path)
+                : new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return ReadFacts(stream, path, forcedLayout, declaredCompactDisc);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -65,7 +68,20 @@ internal static class Iso9660Image
         }
     }
 
-    private static ImageFacts Read(FileStream stream, string path, SectorLayout? forcedLayout, bool declaredCompactDisc)
+    /// <summary>Reads an image from an open, seekable stream. The path names it in a failure.</summary>
+    public static ImageFacts Read(Stream stream, string path, SectorLayout? forcedLayout, bool declaredCompactDisc)
+    {
+        try
+        {
+            return ReadFacts(stream, path, forcedLayout, declaredCompactDisc);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ImageFacts.Failed(path, ex.Message);
+        }
+    }
+
+    private static ImageFacts ReadFacts(Stream stream, string path, SectorLayout? forcedLayout, bool declaredCompactDisc)
     {
         var length = stream.Length;
         if (!TryResolveLayout(stream, length, forcedLayout, out var layout, out var layoutError))
@@ -238,7 +254,7 @@ internal static class Iso9660Image
         };
 
     private static bool TryResolveLayout(
-        FileStream stream,
+        Stream stream,
         long length,
         SectorLayout? forcedLayout,
         out SectorLayout layout,
@@ -300,14 +316,14 @@ internal static class Iso9660Image
         return true;
     }
 
-    private static bool ModeMatches(FileStream stream, SectorLayout layout)
+    private static bool ModeMatches(Stream stream, SectorLayout layout)
     {
         Span<byte> header = stackalloc byte[16];
         stream.Position = 0;
         return stream.Read(header) == 16 && header[15] == (layout == SectorLayout.Mode1Raw2352 ? 1 : 2);
     }
 
-    private static bool TryReadDirectory(FileStream stream, SectorLayout layout, byte[] pvd, out List<DirectoryEntry> entries)
+    private static bool TryReadDirectory(Stream stream, SectorLayout layout, byte[] pvd, out List<DirectoryEntry> entries)
     {
         entries = new List<DirectoryEntry>();
         if (pvd.Length < 190 || pvd[156] < 34)
@@ -381,7 +397,7 @@ internal static class Iso9660Image
         return true;
     }
 
-    private static byte[] ReadFileBytes(FileStream stream, SectorLayout layout, uint extent, uint length)
+    private static byte[] ReadFileBytes(Stream stream, SectorLayout layout, uint extent, uint length)
     {
         var capped = length > 64 * 1024 ? 64 * 1024 : length;
         var data = new byte[capped];
@@ -410,7 +426,7 @@ internal static class Iso9660Image
         return data;
     }
 
-    private static bool TryReadUserSector(FileStream stream, SectorLayout layout, uint lsn, byte[] destination)
+    private static bool TryReadUserSector(Stream stream, SectorLayout layout, uint lsn, byte[] destination)
     {
         var stride = Stride(layout);
         var offset = DataOffset(layout);
@@ -436,7 +452,7 @@ internal static class Iso9660Image
         return true;
     }
 
-    private static bool RawSectorHasSync(FileStream stream, uint lsn, int stride)
+    private static bool RawSectorHasSync(Stream stream, uint lsn, int stride)
     {
         var position = (long)lsn * stride;
         if (position < 0 || position + 12 > stream.Length)

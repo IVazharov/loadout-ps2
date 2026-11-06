@@ -26,26 +26,83 @@ public sealed class ChdFileTests : IDisposable
 
     [Theory]
     [MemberData(nameof(Expected))]
-    public void ExtractsWhatChdmanExtracts(string name, string sha256)
+    public void ReadsWhatChdmanExtracts(string name, string sha256)
     {
-        using var chd = ChdFile.Open(Path.Combine(Fixtures, name));
+        using var image = ChdImageStream.Open(Path.Combine(Fixtures, name));
+        Assert.Equal(sha256, Convert.ToHexString(SHA256.HashData(image)).ToLowerInvariant());
         if (name.StartsWith("dvd", StringComparison.Ordinal))
         {
-            Assert.Equal(ChdImageKind.Dvd, chd.Kind);
-            var iso = Path.Combine(_work, "out.iso");
-            ChdExtractor.ToIso(chd, iso, null, CancellationToken.None);
-            Assert.Equal(sha256, Sha256(iso));
+            Assert.Empty(image.Tracks);
             return;
         }
 
-        Assert.Equal(ChdImageKind.Cd, chd.Kind);
-        var cue = Path.Combine(_work, "out.cue");
-        var bin = Path.Combine(_work, "out.bin");
-        ChdExtractor.ToCueAndBin(chd, cue, bin, null, CancellationToken.None);
-        Assert.Equal(sha256, Sha256(bin));
+        Assert.NotEmpty(image.Tracks);
         Assert.Equal(
-            File.ReadAllBytes(Path.Combine(Fixtures, "sheets", Path.ChangeExtension(name, ".cue"))),
-            File.ReadAllBytes(cue));
+            File.ReadAllText(Path.Combine(Fixtures, "sheets", Path.ChangeExtension(name, ".cue"))),
+            ChdTracks.Sheet(image.Tracks, "out.bin"));
+    }
+
+    [Theory]
+    [InlineData("dvd-default.chd")]
+    [InlineData("dvd-all-large-hunk.chd")]
+    [InlineData("cd-mix.chd")]
+    [InlineData("cd-mode1.chd")]
+    [InlineData("cd-cooked.chd")]
+    public void ReadsTheSameBytesInAnyOrderAndAnySize(string name)
+    {
+        var path = Path.Combine(Fixtures, name);
+        var whole = ReadWhole(path);
+        using var image = ChdImageStream.Open(path);
+        Assert.Equal(whole.Length, image.Length);
+
+        // Backwards in odd pieces, across frames, hunks and tracks, then past the end.
+        var random = new Random(7);
+        for (var round = 0; round < 200; round++)
+        {
+            var start = random.NextInt64(0, whole.Length);
+            var piece = new byte[random.Next(1, 70000)];
+            image.Position = start;
+            var read = image.Read(piece);
+            Assert.Equal((int)Math.Min(piece.Length, whole.Length - start), read);
+            Assert.True(whole.AsSpan((int)start, read).SequenceEqual(piece.AsSpan(0, read)));
+        }
+
+        image.Seek(0, SeekOrigin.End);
+        Assert.Equal(0, image.Read(new byte[16]));
+    }
+
+    [Theory]
+    [InlineData("dvd-default.chd", 2048)]
+    [InlineData("cd-mix.chd", 2352)]
+    [InlineData("cd-large-hunk.chd", 1000)]
+    public async Task ReadsInOrderAsTheInstallDoes(string name, int piece)
+    {
+        var path = Path.Combine(Fixtures, name);
+        var whole = ReadWhole(path);
+        using var image = ChdImageStream.Open(path);
+        using var copy = new MemoryStream();
+        var buffer = new byte[piece];
+        int count;
+        while ((count = await image.ReadAsync(buffer.AsMemory())) > 0)
+        {
+            copy.Write(buffer, 0, count);
+        }
+
+        Assert.Equal(whole, copy.ToArray());
+    }
+
+    [Fact]
+    public void ClosingItWhileItDecodesAheadIsSafe()
+    {
+        using (var image = ChdImageStream.Open(Path.Combine(Fixtures, "dvd-default.chd")))
+        {
+            var buffer = new byte[100000];
+            image.ReadExactly(buffer);
+        }
+
+        // Decoding ahead stops with the stream, and the file is free again.
+        File.Copy(Path.Combine(Fixtures, "dvd-default.chd"), Path.Combine(_work, "copy.chd"));
+        using var reopened = File.Open(Path.Combine(_work, "copy.chd"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
     }
 
     [Fact]
@@ -68,28 +125,17 @@ public sealed class ChdFileTests : IDisposable
         bytes[64] ^= 0xFF;
         var path = Path.Combine(_work, "wrong-hash.chd");
         File.WriteAllBytes(path, bytes);
-        using var original = ChdFile.Open(Path.Combine(Fixtures, "dvd-default.chd"));
-        using var chd = ChdFile.Open(path);
 
-        Assert.Equal(ReadAll(original), ReadAll(chd));
+        Assert.Equal(ReadWhole(Path.Combine(Fixtures, "dvd-default.chd")), ReadWhole(path));
     }
 
     [Fact]
-    public void ProgressReachesAHundredPercent()
-    {
-        using var chd = ChdFile.Open(Path.Combine(Fixtures, "dvd-default.chd"));
-        var reports = new List<double>();
-        chd.ReadAll((_, _) => { }, reports.Add, CancellationToken.None);
-        Assert.Equal(100.0, reports[^1]);
-    }
-
-    [Fact]
-    public void ACancelledReadStops()
+    public void ACancelledDecodeStops()
     {
         using var chd = ChdFile.Open(Path.Combine(Fixtures, "dvd-default.chd"));
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
-        Assert.ThrowsAny<OperationCanceledException>(() => chd.ReadAll((_, _) => { }, null, cancelled.Token));
+        Assert.ThrowsAny<OperationCanceledException>(() => chd.DecodeHunks(0, 1, new byte[chd.HunkBytes], cancelled.Token));
     }
 
     [Theory]
@@ -114,12 +160,10 @@ public sealed class ChdFileTests : IDisposable
             damaged[offset] ^= 0x55;
             var path = Path.Combine(_work, "damaged.chd");
             File.WriteAllBytes(path, damaged);
-            using var original = ChdFile.Open(Path.Combine(Fixtures, name));
-            var expected = ReadAll(original);
+            var expected = ReadWhole(Path.Combine(Fixtures, name));
             try
             {
-                using var chd = ChdFile.Open(path);
-                Assert.Equal(expected, ReadAll(chd));
+                Assert.Equal(expected, ReadWhole(path));
             }
             catch (ChdException ex)
             {
@@ -135,11 +179,7 @@ public sealed class ChdFileTests : IDisposable
         var path = Path.Combine(_work, "cut.chd");
         File.WriteAllBytes(path, bytes[..(bytes.Length / 2)]);
 
-        var ex = Assert.Throws<ChdException>(() =>
-        {
-            using var chd = ChdFile.Open(path);
-            chd.ReadAll((_, _) => { }, null, CancellationToken.None);
-        });
+        var ex = Assert.Throws<ChdException>(() => ReadWhole(path));
         Assert.Contains("ends early", ex.Message, StringComparison.Ordinal);
     }
 
@@ -207,16 +247,11 @@ public sealed class ChdFileTests : IDisposable
 
     public void Dispose() => TempDirectory.Delete(_work);
 
-    private static string ReadAll(ChdFile chd)
+    private static byte[] ReadWhole(string path)
     {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        chd.ReadAll((buffer, count) => hash.AppendData(buffer, 0, count), null, CancellationToken.None);
-        return Convert.ToHexString(hash.GetHashAndReset());
-    }
-
-    private static string Sha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        using var image = ChdImageStream.Open(path);
+        using var copy = new MemoryStream();
+        image.CopyTo(copy);
+        return copy.ToArray();
     }
 }

@@ -59,6 +59,7 @@ internal sealed class ChdFile : IDisposable
     private readonly string[] _compressors;
     private readonly long _mapOffset;
     private readonly uint _hunkCount;
+    private readonly ConcurrentBag<ChdDecoders> _decoders = [];
     private byte[]? _map;
     private byte[] _window = [];
     private long _windowStart;
@@ -124,18 +125,26 @@ internal sealed class ChdFile : IDisposable
         return cd ? ChdImageKind.Cd : ChdImageKind.Unknown;
     }
 
+    public uint HunkCount => _hunkCount;
+
+    /// <summary>The most hunks to decode in one batch: about 16 MB, and at least one.</summary>
+    public int BatchHunks => (int)Math.Min(_hunkCount, (uint)Math.Max(1, BatchBytes / HunkBytes));
+
     /// <summary>
-    /// Hands over the whole image in order, in pieces of whole hunks except perhaps the last. Hunks
-    /// are decompressed side by side.
+    /// Decodes count hunks from first into destination, side by side. One call at a time: the
+    /// batch's stored data is read in one go, into a window the next call replaces.
     /// </summary>
-    public void ReadAll(Action<byte[], int> sink, Action<double>? progress, CancellationToken cancellationToken)
+    public void DecodeHunks(uint first, int count, byte[] destination, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(sink);
+        ArgumentNullException.ThrowIfNull(destination);
+        if (count < 1 || first + (ulong)count > _hunkCount || destination.Length < (long)count * HunkBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count));
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         LoadMap();
-        var batchHunks = (int)Math.Min(_hunkCount, Math.Max(1, BatchBytes / HunkBytes));
-        var buffer = new byte[batchHunks * HunkBytes];
-        var pool = new ConcurrentBag<ChdDecoders>();
+        LoadWindow(first, count);
         var options = new ParallelOptions
         {
             CancellationToken = cancellationToken,
@@ -143,47 +152,32 @@ internal sealed class ChdFile : IDisposable
         };
         try
         {
-            long done = 0;
-            for (uint first = 0; first < _hunkCount; first += (uint)batchHunks)
-            {
-                var start = first;
-                var count = (int)Math.Min(_hunkCount - first, (uint)batchHunks);
-                LoadWindow(first, count);
-                try
+            Parallel.For(
+                0,
+                count,
+                options,
+                () => _decoders.TryTake(out var decoders) ? decoders : new ChdDecoders(_compressors, HunkBytes),
+                (index, _, decoders) =>
                 {
-                    Parallel.For(
-                        0,
-                        count,
-                        options,
-                        () => pool.TryTake(out var decoders) ? decoders : new ChdDecoders(_compressors, HunkBytes),
-                        (index, _, decoders) =>
-                        {
-                            ReadHunk(start + (uint)index, buffer.AsSpan(index * HunkBytes, HunkBytes), decoders);
-                            return decoders;
-                        },
-                        pool.Add);
-                }
-                catch (AggregateException ex) when (ex.InnerException != null)
-                {
-                    ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-                }
-
-                var bytes = (int)Math.Min(count * (long)HunkBytes, LogicalBytes - done);
-                sink(buffer, bytes);
-                done += bytes;
-                progress?.Invoke(100.0 * done / LogicalBytes);
-            }
+                    ReadHunk(first + (uint)index, destination.AsSpan(index * HunkBytes, HunkBytes), decoders);
+                    return decoders;
+                },
+                _decoders.Add);
         }
-        finally
+        catch (AggregateException ex) when (ex.InnerException != null)
         {
-            foreach (var decoders in pool)
-            {
-                decoders.Dispose();
-            }
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
         }
     }
 
-    public void Dispose() => _handle.Dispose();
+    public void Dispose()
+    {
+        _handle.Dispose();
+        while (_decoders.TryTake(out var decoders))
+        {
+            decoders.Dispose();
+        }
+    }
 
     private static ChdFile ReadHeader(SafeFileHandle handle)
     {
