@@ -41,7 +41,7 @@ Loadout does not set up the PS2 for you. You need all of this first.
 
 On the PC:
 
-- 64-bit Windows 11, version 24H2 or later, or 64-bit Windows 10. Loadout starts, connects to Loadout Bay, and passes its tests on Windows 10 Enterprise LTSC 2021 (version 21H2), but installing games from Windows 10 has not been tried, and neither has any other Windows 10 version. Apart from its LTSC editions, Microsoft does not support .NET 10 on Windows 10. Windows on Arm has not been tested.
+- 64-bit Windows 11, version 24H2 or later, or 64-bit Windows 10. On Windows 10 Enterprise LTSC 2021 (version 21H2), Loadout passes its tests, connects to Loadout Bay, and installs games, though its installs from there have only gone to Loadout Bay in the PCSX2 emulator. No other Windows 10 version has been tried. Apart from its LTSC editions, Microsoft does not support .NET 10 on Windows 10. Windows on Arm has not been tested.
 - The x64 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0), which Loadout does not include.
 - Nothing to install for SQLite: Loadout uses the copy that comes with Windows (`winsqlite3.dll`). It avoids newer SQLite features and passes its tests on versions as old as 3.12.2. To see your version, run `(Get-Item C:\Windows\System32\winsqlite3.dll).VersionInfo.ProductVersion` in PowerShell. If Windows has no such file, Loadout says so when it starts.
 - A network connection to the same network as the PS2.
@@ -50,7 +50,7 @@ On the PS2:
 
 - **A fat PS2** (SCPH-3000x to SCPH-5000x) with the official network adapter or a compatible one, and an internal hard disk. Slim models have no internal hard disk, so they cannot receive games.
 - **A hard disk formatted for the PS2.** Loadout Bay does not format disks. wLaunchELF's HDD Manager can. Only the PS2's first internal hard disk is used.
-- **A way to start homebrew**, such as FreeMcBoot or Free HDBoot, and **[wLaunchELF](https://github.com/ps2homebrew/wLaunchELF)** to start Loadout Bay the first time.
+- **A way to start homebrew and run an ELF from a USB drive**, such as FreeMcBoot or Free HDBoot with [wLaunchELF](https://github.com/ps2homebrew/wLaunchELF), to start Loadout Bay the first time. Other launchers should work too, as long as they tell Loadout Bay where it was started from, which it needs to save its settings and updates. wLaunchELF and OPL's Apps menu are the ones it has been tried with.
 - **[Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader)**, which plays the games. Loadout only installs them.
 - **A USB drive formatted as FAT32.** Loadout Bay also starts from a memory card, but updates sent from Loadout can only be saved to a USB drive or the hard disk.
 
@@ -60,7 +60,7 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 
 1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in.
 2. Download both zips from the [releases page](https://github.com/IVazharov/loadout-ps2/releases).
-3. Copy `loadout-bay.elf` to the USB drive and start it from wLaunchELF. Its screen shows the PS2's address.
+3. Copy `loadout-bay.elf` to the USB drive and start it with your homebrew launcher, such as wLaunchELF. Its screen shows the PS2's address.
 4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed by Open Source Developer Ivan Vazharov. The certificate is new, so Windows may still warn you about it.
 5. In Settings, press **Find Bay** or enter the address from the TV.
 6. On **Install**, add iso, bin and cue, or chd files, then press **Install on PS2**.

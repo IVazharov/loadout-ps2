@@ -60,7 +60,7 @@ Reply payload, 40 bytes:
 |---|---|---|
 | 0 | 4 | Loadout Bay's protocol version |
 | 4 | 4 | flags: bit 0 is set when a usable hard disk was found |
-| 8 | 16 | Loadout Bay's version: major.minor, then the build number (the count of commits after the first), such as `0.9.0` |
+| 8 | 16 | Loadout Bay's version, major.minor.patch, such as `0.9.0` |
 | 24 | 16 | the run tag this copy was started with by `ELF_RUN`, NUL-padded; all zeros when a launcher started it |
 
 When the protocol versions differ, the status is `-EPROTONOSUPPORT` and the payload is still sent, so the PC can name the Loadout Bay version it found.

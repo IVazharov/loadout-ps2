@@ -20,10 +20,7 @@ jobs:
     name: Windows build, test, and publish
     runs-on: windows-latest
     steps:
-      # The whole history, so the build number is the real one.
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -69,8 +66,6 @@ jobs:
         run: apk add --no-cache build-base git
 
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Build the ELF
         run: |

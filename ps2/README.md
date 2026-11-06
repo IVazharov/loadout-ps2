@@ -2,12 +2,12 @@
 
 Loadout Bay is the PS2 side of Loadout. It runs on a fat PS2 with a network adapter and an internal hard disk formatted for the PS2.
 
-You also need a way to start homebrew, such as FreeMcBoot or Free HDBoot, with wLaunchELF, and Open PS2 Loader (OPL) to play the games. Loadout Bay includes none of these. The full list is at https://github.com/IVazharov/loadout-ps2#before-you-start.
+You also need a way to start homebrew and run an ELF, such as FreeMcBoot or Free HDBoot with wLaunchELF, and Open PS2 Loader (OPL) to play the games. Loadout Bay includes none of these. The full list is at https://github.com/IVazharov/loadout-ps2#before-you-start.
 
 ## Start it
 
 1. Copy `loadout-bay.elf` to a USB drive formatted as FAT32. A memory card also works, but updates sent from Loadout can't be saved there.
-2. On the PS2, open wLaunchELF and start `loadout-bay.elf`.
+2. On the PS2, start `loadout-bay.elf` with your homebrew launcher, such as wLaunchELF. Any launcher that tells it where it was started from will do: it saves its settings and updates there.
 
 The screen shows what Loadout Bay is doing, the console's address and network settings, the hard disk, and the last speed test.
 

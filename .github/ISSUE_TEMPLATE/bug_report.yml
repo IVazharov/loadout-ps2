@@ -1,0 +1,51 @@
+name: Something went wrong
+description: Tell us what happened with Loadout or Loadout Bay.
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: input
+    id: loadout-version
+    attributes:
+      label: Loadout version
+      description: In the title bar of the Windows app.
+      placeholder: "0.9.2"
+    validations:
+      required: true
+  - type: input
+    id: bay-version
+    attributes:
+      label: Loadout Bay version
+      description: At the top right of Loadout Bay's screen on the TV, if you got that far.
+      placeholder: "0.9.2"
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows
+      options:
+        - Windows 11
+        - Windows 10
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: ps2
+    attributes:
+      label: PS2 model, network adapter and hard disk
+      description: The model is on the label under the console.
+      placeholder: "SCPH-50004, official network adapter, 500 GB IDE hard disk"
+  - type: input
+    id: opl
+    attributes:
+      label: OPL version
+      placeholder: "1.2.0 Beta-2210"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: On Loadout's Logs page, press Copy all and paste it here. If Loadout made an error log, Open error log folder shows it; attach that file too.
+      render: text

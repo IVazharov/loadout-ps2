@@ -1,10 +1,8 @@
 # Loadout Bay, the PS2 side of Loadout. Builds with the ps2dev toolchain.
-# The version is ../VERSION's major.minor, then the build number: the count of
-# commits after the first, as Directory.Build.props counts it for Loadout. Every commit builds a
-# new version, and the same commit always the same one (0 outside git).
+# The version is the whole of ../VERSION (major.minor.patch), shared with Loadout, which a release
+# commit raises by hand.
 
-BUILD := $(shell git -c safe.directory='*' -C .. rev-list --count --skip=1 HEAD 2>/dev/null)
-VERSION ?= $(strip $(shell tr -d '\r' < ../VERSION)).$(if $(BUILD),$(BUILD),0)
+VERSION ?= $(strip $(shell tr -d '\r' < ../VERSION))
 
 # IOP modules from ps2sdk, embedded in the ELF: file I/O, USB storage, network, hard disk, and PFS.
 IRX = iomanX fileXio bdm bdmfs_fatfs usbd usbmass_bd ps2dev9 netman smap ps2atad ps2fs

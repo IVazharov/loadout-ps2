@@ -25,7 +25,7 @@ The result is `ps2/loadout-bay.elf`.
 
 ## Version
 
-`VERSION` holds the major.minor of both apps. The .NET build and the ps2 Makefile read it and add the build number, the count of commits after the first, so they need the full history: a shallow clone counts fewer, and a build outside git uses 0. A Windows build embeds `ps2/loadout-bay.elf` when it exists, to offer it to a PS2 that runs another version, so build the ELF first.
+`VERSION` holds the version of both apps, major.minor.patch, such as `0.9.2`. The .NET build and the ps2 Makefile read it as it is. It changes only in a release commit, so commits between releases build the version of the last release. A Windows build embeds `ps2/loadout-bay.elf` when it exists, to offer it to a PS2 that runs another version, so build the ELF first.
 
 ## Tests never dial a console
 
@@ -61,9 +61,9 @@ Add a line to [CHANGELOG.md](CHANGELOG.md) for anything a user would notice, und
 
 ## Releases
 
-A release is built from a commit on `main`. Its version is `VERSION` (major.minor), then the build number. A maintainer makes sure `CHANGELOG.md` has a `## <major.minor>.<build> - <date>` section, which supplies the notes, and pushes the tag `v<major.minor>.<build>`, such as `v0.9.1`. The build number is that of the last commit before the tag, so work it out before committing the section. The release workflow refuses a tag that does not match the commit's version or has no changelog section, before it builds anything. It then builds and tests both apps, and creates a draft GitHub release with both downloads. A version below 1.0.0 is a prerelease.
+A release is built from a commit on `main` that raises `VERSION`, such as from `0.9.2` to `0.9.3`, and gives `CHANGELOG.md` a `## <version> - <date>` section, which supplies the notes. A maintainer then pushes the tag `v<version>`, such as `v0.9.3`. The release workflow refuses a tag that does not match `VERSION` or has no changelog section, before it builds anything. It then builds and tests both apps, and creates a draft GitHub release with both downloads. A version below 1.0.0 is a prerelease.
 
-The maintainer then logs in to SimplySign Desktop and runs `tools/sign-release.ps1 -Tag v<major.minor>.<build>`, which signs `LoadoutPS2.exe` with a timestamp and replaces it in the draft's zip. Running it again with `-Publish` publishes the release.
+The maintainer then logs in to SimplySign Desktop and runs `tools/sign-release.ps1 -Tag v<version>`, which signs `LoadoutPS2.exe` with a timestamp and replaces it in the draft's zip. Running it again with `-Publish` publishes the release.
 
 ## Commits and pull requests
 

@@ -16,18 +16,15 @@ jobs:
       - name: Install build tools
         run: apk add --no-cache build-base git zip
 
-      # The whole history, so the build number (the count of commits after the first) is the real one.
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      - name: Check the tag against VERSION, the build number, and the changelog
+      - name: Check the tag against VERSION and the changelog
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           version="${GITHUB_REF_NAME#v}"
-          expected="$(tr -d '\r\n' < VERSION).$(git rev-list --count --skip=1 HEAD)"
+          expected="$(tr -d '\r\n' < VERSION)"
           if [ "$version" != "$expected" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match this commit's version ($expected)." >&2
+            echo "Tag $GITHUB_REF_NAME does not match VERSION ($expected)." >&2
             exit 1
           fi
           notes="$(awk -v heading="## $version" '{ sub(/\r$/, "") } /^## / { inside = ($0 == heading || index($0, heading " ") == 1); next } inside' CHANGELOG.md | tr -d '[:space:]')"
@@ -63,8 +60,6 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -78,8 +73,8 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Tag ${{ github.ref_name }} is not v<major>.<minor>.<patch>."
           }
-          $expected = (Get-Content VERSION -Raw).Trim() + '.' + (git rev-list --count --skip=1 HEAD)
-          if ($version -ne $expected) { throw "Tag ${{ github.ref_name }} does not match this commit's version ($expected)." }
+          $expected = (Get-Content VERSION -Raw).Trim()
+          if ($version -ne $expected) { throw "Tag ${{ github.ref_name }} does not match VERSION ($expected)." }
           # Below 1.0.0, the release is a prerelease.
           $prerelease = $version.StartsWith('0.')
           "version=$version" >> $env:GITHUB_OUTPUT
