@@ -32,6 +32,15 @@
             <StackPanel Grid.Column="1">
                 <TextBlock x:Name="TitleText" Style="{StaticResource Text.DialogTitle}" TextWrapping="Wrap" />
                 <TextBlock x:Name="BodyText" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource AppMuted}" />
+                <!-- A question with a Picker: its label and options, which change the items and the note below. -->
+                <StackPanel x:Name="PickerRow" Margin="0,16,0,0" Orientation="Horizontal" Visibility="Collapsed">
+                    <TextBlock x:Name="PickerLabel" VerticalAlignment="Center" />
+                    <ComboBox x:Name="PickerBox"
+                              Margin="12,0,0,0"
+                              MinWidth="80"
+                              VerticalAlignment="Center"
+                              SelectionChanged="PickerBox_OnSelectionChanged" />
+                </StackPanel>
                 <Border x:Name="ItemBox"
                         Margin="0,16,0,0"
                         Background="{DynamicResource AppSurface}"
@@ -55,6 +64,7 @@
                         </ItemsControl>
                     </ScrollViewer>
                 </Border>
+                <TextBlock x:Name="NoteText" Margin="0,12,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
                 <!-- A question with ChooseItem: one of the items, the first selected. -->
                 <ListBox x:Name="ChoiceList"
                          Margin="0,16,0,0"

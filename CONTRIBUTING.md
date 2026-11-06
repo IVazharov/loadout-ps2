@@ -25,7 +25,11 @@ The result is `ps2/loadout-bay.elf`.
 
 ## Version
 
-`VERSION` holds the version of both apps, major.minor.patch, such as `0.9.2`. The .NET build and the ps2 Makefile read it as it is. It changes only in a release commit, so commits between releases build the version of the last release. A Windows build embeds `ps2/loadout-bay.elf` when it exists, to offer it to a PS2 that runs another version, so build the ELF first.
+`VERSION` holds the version of both apps, following [Semantic Versioning](https://semver.org): `0.9.3` for a release, and between releases the next version with a pre-release suffix, such as `0.10.0-dev.1`. The .NET build and the ps2 Makefile read it as it is.
+
+Work between releases goes on the branch `next`; `main` holds the latest release. Each commit that changes Loadout or Loadout Bay raises the suffix's number by one (`0.10.0-dev.1`, then `0.10.0-dev.2`), so every build reports its own version, and Connect offers a Loadout Bay built from another commit. Other commits keep it. Below 1.0.0, a new feature or a change that breaks compatibility raises the minor number, and a fix the patch number. The release drops the suffix.
+
+A Windows build embeds `ps2/loadout-bay.elf` when it exists, to offer it to a PS2 that runs another version, so build the ELF first.
 
 ## Tests never dial a console
 
@@ -57,11 +61,11 @@ Do not commit game images, saves, BIOS files, virtual hard disks, or artwork.
 
 Docs use short, plain, declarative sentences. They describe the apps as they are now. History belongs in the changelog and git, not in the docs.
 
-Add a line to [CHANGELOG.md](CHANGELOG.md) for anything a user would notice, under the next release's section at the top. Internal changes do not need an entry.
+Add a line to [CHANGELOG.md](CHANGELOG.md) for anything a user would notice, under `## Unreleased` at the top. Internal changes do not need an entry.
 
 ## Releases
 
-A release is built from a commit on `main` that raises `VERSION`, such as from `0.9.2` to `0.9.3`, and gives `CHANGELOG.md` a `## <version> - <date>` section, which supplies the notes. A maintainer then pushes the tag `v<version>`, such as `v0.9.3`. The release workflow refuses a tag that does not match `VERSION` or has no changelog section, before it builds anything. It then builds and tests both apps, and creates a draft GitHub release with both downloads. A version below 1.0.0 is a prerelease.
+A release is built from a commit on `next` that drops the suffix from `VERSION`, such as from `0.10.0-dev.7` to `0.10.0`, and renames `## Unreleased` in `CHANGELOG.md` to `## <version> - <date>`, which supplies the notes. `main` then moves to that commit, and a maintainer pushes the tag `v<version>`, such as `v0.10.0`. The release workflow refuses a tag that does not match `VERSION` or has no changelog section, before it builds anything, so a `-dev` version is never released. It then builds and tests both apps, and creates a draft GitHub release with both downloads. A version below 1.0.0 is a prerelease.
 
 The maintainer then logs in to SimplySign Desktop and runs `tools/sign-release.ps1 -Tag v<version>`, which signs `LoadoutPS2.exe` with a timestamp and replaces it in the draft's zip. Running it again with `-Publish` publishes the release.
 

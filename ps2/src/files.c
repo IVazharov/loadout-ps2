@@ -7,6 +7,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <hdd-ioctl.h>
 #include <io_common.h>
 #include <iox_stat.h>
 #include <stdio.h>
@@ -374,6 +375,32 @@ int files_runs(u32 folder, const char *name, u32 *runs)
     }
 
     *runs = stat.private_3;
+    return 0;
+}
+
+// PFS counts its space in zones: the free ones times the zone size, as wLaunchELF reads it.
+int files_space(u64 *free_bytes)
+{
+    *free_bytes = 0;
+    if (install_busy())
+    {
+        return -EBUSY;
+    }
+
+    int status = mount_opl();
+    if (status < 0)
+    {
+        return status;
+    }
+
+    int zone = fileXioDevctl(MOUNT_POINT, PDIOC_ZONESZ, NULL, 0, NULL, 0);
+    int zones = fileXioDevctl(MOUNT_POINT, PDIOC_ZONEFREE, NULL, 0, NULL, 0);
+    if (zone < 0 || zones < 0)
+    {
+        return zone < 0 ? zone : zones;
+    }
+
+    *free_bytes = (u64)zone * (u64)zones;
     return 0;
 }
 

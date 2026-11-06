@@ -18,7 +18,7 @@ Queue iso, bin and cue, or chd files. Loadout sends them over your network, with
 
 ### See what's on the PS2
 
-Covers, sizes and free space. Change a game's title or modes, or remove it.
+Covers, sizes, memory cards and free space. Change a game's title or modes, give games a memory card, or remove them.
 
 ![The Installed Games page, zoomed in on its free space, transfer modes, disc types and sizes](docs/images/covers.png)
 

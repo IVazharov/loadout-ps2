@@ -97,6 +97,9 @@ public sealed class FakeLoadoutBay : IDisposable
     /// <summary>What FILE_RUNS answers for a file; 2 (its inode and one run of data) when not set.</summary>
     public Dictionary<(BayFolder Folder, string Name), int> FileRuns { get; } = [];
 
+    /// <summary>What FILE_SPACE answers: the free bytes in OPL's partition. Files written here don't change it.</summary>
+    public long OplFreeBytes { get; set; } = 512L << 20;
+
     /// <summary>The tag the running copy names in its greeting; ELF_RUN sets it, as a restart would.</summary>
     public string RunTag { get; set; } = string.Empty;
 
@@ -199,6 +202,7 @@ public sealed class FakeLoadoutBay : IDisposable
                 BayWire.CommandElfRun => ElfRun(request),
                 BayWire.CommandElfSave => ElfSave(request),
                 BayWire.CommandFileRuns => FileRunsOf(request),
+                BayWire.CommandFileSpace => FileSpace(request),
                 _ => (BayWire.StatusNotImplemented, Array.Empty<byte>()),
             };
             greeted |= command == BayWire.CommandHello && status == 0;
@@ -544,6 +548,23 @@ public sealed class FakeLoadoutBay : IDisposable
 
         var payload = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(payload, (uint)FileRuns.GetValueOrDefault(key, 2));
+        return (0, payload);
+    }
+
+    private (int Status, byte[] Payload) FileSpace(byte[] request)
+    {
+        if (request.Length != 0)
+        {
+            return (BayWire.StatusInvalid, []);
+        }
+
+        if (!HasOplPartition)
+        {
+            return (BayWire.StatusNotFound, []);
+        }
+
+        var payload = new byte[8];
+        BinaryPrimitives.WriteUInt64LittleEndian(payload, (ulong)OplFreeBytes);
         return (0, payload);
     }
 

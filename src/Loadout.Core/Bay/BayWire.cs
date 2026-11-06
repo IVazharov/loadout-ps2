@@ -16,7 +16,7 @@ public static class BayWire
     /// <summary>The port a game's sectors are sent to after INSTALL_BEGIN.</summary>
     public const int DataPort = 45061;
 
-    public const uint ProtocolVersion = 7;
+    public const uint ProtocolVersion = 8;
 
     public const uint Magic = 0x3143424C; // "LBC1"
 
@@ -108,6 +108,9 @@ public static class BayWire
 
     /// <summary>Counts the block runs a file's PFS inode lists; OPL refuses a VMC with 11 or more.</summary>
     public const uint CommandFileRuns = 22;
+
+    /// <summary>The free bytes in OPL's partition, where new memory cards go.</summary>
+    public const uint CommandFileSpace = 23;
 
     /// <summary>OPL takes a VMC on the hard disk only when its inode lists fewer block runs than this.</summary>
     public const int VmcMaxRuns = 11;

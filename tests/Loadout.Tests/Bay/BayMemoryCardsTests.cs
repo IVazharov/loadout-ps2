@@ -17,17 +17,64 @@ public sealed class BayMemoryCardsTests : IDisposable
     {
         using var bay = new FakeLoadoutBay(disk: Disk);
         bay.Files[(BayFolder.Vmc, "SLUS_202.97_0.bin")] = [1, 2, 3];
+        bay.Files[(BayFolder.Vmc, "generic.bin")] = [4];
         bay.Files[(BayFolder.Cfg, "SLUS_200.43.cfg")] = "$VMC_0=generic\r\n"u8.ToArray();
+        bay.Files[(BayFolder.Cfg, "SLES_538.86.cfg")] = "$VMC_0=lost\r\n"u8.ToArray();
+        bay.Files[(BayFolder.Cfg, "SLES_501.11.cfg")] = "$VMC_0=has space\r\n"u8.ToArray();
 
-        var plans = await BayMemoryCards.PlanAsync("127.0.0.1", [Image("SLUS-20297", 1), Image("SLUS-20043", 1), Image("SCUS-97399", 1)], bay.Port);
+        var plans = await BayMemoryCards.PlanAsync(
+            "127.0.0.1",
+            [Image("SLUS-20297", 1), Image("SLUS-20043", 1), Image("SCUS-97399", 1), Image("SLES-53886", 1), Image("SLES-50111", 1)],
+            bay.Port);
 
         Assert.Equal(
             [
                 new MemoryCardPlan("SLUS-20297", "SLUS_202.97_0", MemoryCardState.CardThere, null),
                 new MemoryCardPlan("SLUS-20043", "SLUS_200.43_0", MemoryCardState.SettingsNameACard, "generic"),
                 new MemoryCardPlan("SCUS-97399", "SCUS_973.99_0", MemoryCardState.None, null),
+                // A card the settings name that is gone gets a new card of that name.
+                new MemoryCardPlan("SLES-53886", "lost", MemoryCardState.CardMissing, "lost"),
+                // Unless Loadout Bay can't write that name: then it is left alone.
+                new MemoryCardPlan("SLES-50111", "SLES_501.11_0", MemoryCardState.SettingsNameACard, "has space"),
             ],
             plans);
+    }
+
+    [Fact]
+    public async Task AMissingCardIsMadeAgainUnderTheNameItsSettingsHold()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk);
+        bay.Files[(BayFolder.Cfg, "SLUS_202.97.cfg")] = "$DMA=4\r\n$VMC_0=lost\r\n"u8.ToArray();
+        var plan = Assert.Single(await BayMemoryCards.PlanAsync("127.0.0.1", [Image("SLUS-20297", 1)], bay.Port));
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+
+        var done = await BayMemoryCards.GiveCardAsync(client, plan, 16, replaceExisting: false, new HashSet<string>(), DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(16 * 1024 * 1024, bay.Files[(BayFolder.Vmc, "lost.bin")].Length);
+        Assert.Equal("$DMA=4\r\n$VMC_0=lost\r\n", Encoding.ASCII.GetString(bay.Files[(BayFolder.Cfg, "SLUS_202.97.cfg")]));
+        Assert.Contains("which was missing", done, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ABatchCountsOneCardForGamesThatShareItAndTheSpaceItNeeds()
+    {
+        var plans = new[]
+        {
+            new MemoryCardPlan("SCES-53286", "XEBP_100.01_0", MemoryCardState.None, null),
+            new MemoryCardPlan("SCUS-97429", "XEBP_100.01_0", MemoryCardState.None, null),
+            new MemoryCardPlan("SLES-53886", "lost", MemoryCardState.CardMissing, "lost"),
+            new MemoryCardPlan("SLUS-20297", "SLUS_202.97_0", MemoryCardState.CardThere, null),
+            new MemoryCardPlan("SLUS-20043", "SLUS_200.43_0", MemoryCardState.SettingsNameACard, "generic"),
+        };
+
+        var batch = MemoryCardBatch.Of(plans, 8);
+
+        Assert.Equal(new MemoryCardBatch(GamesGettingNew: 3, NewCards: 2, Remade: 1, UseCardThere: 1, Kept: 1, NeededBytes: 2 * ((8L << 20) + MemoryCardBatch.OverheadBytesPerCard)), batch);
+        Assert.True(batch.DoesAnything);
+        Assert.True(batch.Fits(batch.NeededBytes));
+        Assert.False(batch.Fits(batch.NeededBytes - 1));
+        Assert.Equal(2 * ((64L << 20) + MemoryCardBatch.OverheadBytesPerCard), MemoryCardBatch.Of(plans, 64).NeededBytes);
+        Assert.False(MemoryCardBatch.Of([plans[4]], 8).DoesAnything);
     }
 
     [Fact]
@@ -71,12 +118,14 @@ public sealed class BayMemoryCardsTests : IDisposable
     {
         using var bay = new FakeLoadoutBay(disk: Disk);
         bay.Files[(BayFolder.Cfg, "SLUS_202.97.cfg")] = "$VMC_0=mine\r\n"u8.ToArray();
+        bay.Files[(BayFolder.Vmc, "mine.bin")] = [9];
         var game = Image("SLUS-20297", 2);
         var plans = await BayMemoryCards.PlanAsync("127.0.0.1", [game], bay.Port);
 
         var run = await BayQueueInstaller.RunAsync("127.0.0.1", [game], port: bay.Port, dataPort: bay.DataPort, memoryCards: new MemoryCardRequest(8, plans, ReplaceExisting: true));
 
-        Assert.DoesNotContain(bay.Files.Keys, key => key.Folder == BayFolder.Vmc);
+        Assert.Equal([(BayFolder.Vmc, "mine.bin")], bay.Files.Keys.Where(key => key.Folder == BayFolder.Vmc));
+        Assert.Equal([9], bay.Files[(BayFolder.Vmc, "mine.bin")]);
         Assert.Equal("$VMC_0=mine\r\n", Encoding.ASCII.GetString(bay.Files[(BayFolder.Cfg, "SLUS_202.97.cfg")]));
         Assert.Contains("already name a memory card, mine", run.Results[0].Message, StringComparison.Ordinal);
     }

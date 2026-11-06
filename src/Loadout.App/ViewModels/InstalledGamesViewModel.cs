@@ -9,6 +9,7 @@ using Loadout.Images;
 using Loadout.Library;
 using Loadout.Metadata;
 using Loadout.Persistence;
+using Loadout.Vmc;
 
 namespace Loadout.App;
 
@@ -76,6 +77,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
         FindBayCommand = new AsyncRelayCommand(FindBayAsync);
         CancelSearchCommand = new RelayCommand(() => _searchRun?.Cancel());
         RemoveCommand = new AsyncRelayCommand(RemoveAsync);
+        GiveCardsCommand = new AsyncRelayCommand(GiveCardsAsync);
         PutBayOnDiskCommand = new AsyncRelayCommand(PutBayOnDiskAsync);
         SaveEditCommand = new AsyncRelayCommand(SaveEditAsync);
         RevertCommand = new RelayCommand(Revert);
@@ -101,6 +103,9 @@ public sealed class InstalledGamesViewModel : ObservableObject
     public ICommand CancelSearchCommand { get; }
 
     public ICommand RemoveCommand { get; }
+
+    /// <summary>Gives the selected games that have no memory card, or a missing one, a new card in OPL's VMC folder.</summary>
+    public ICommand GiveCardsCommand { get; }
 
     public ICommand PutBayOnDiskCommand { get; }
 
@@ -167,6 +172,9 @@ public sealed class InstalledGamesViewModel : ObservableObject
 
     /// <summary>True when every selected game is one Loadout Bay can remove.</summary>
     public bool CanRemove => !_connecting && _selection.Length > 0 && _selection.All(BayGameChanges.CanRemove);
+
+    /// <summary>True when the list was read from the PS2 and a selected game has no memory card, or a missing one.</summary>
+    public bool CanGiveCards => !_connecting && _connected && _selection.Any(game => game.CanGetMemoryCard);
 
     /// <summary>True when one whole game is selected, so the editor has a header to change.</summary>
     public bool CanEdit => !_connecting && _selection.Length == 1 && _selected is not null && BayGameChanges.CanEdit(_selected);
@@ -261,6 +269,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(selected);
         _selection = selected.ToArray();
         OnPropertyChanged(nameof(CanRemove));
+        OnPropertyChanged(nameof(CanGiveCards));
         OnEditorChanged();
     }
 
@@ -707,6 +716,192 @@ public sealed class InstalledGamesViewModel : ObservableObject
         }
     }
 
+    // The cards and settings are read again first, so the question says what is on the PS2 now, with the
+    // free space in OPL's partition. A card already there is used and never replaced: it may hold saves.
+    private async Task GiveCardsAsync()
+    {
+        var games = _selection.Where(game => game.CanGetMemoryCard).ToList();
+        var host = _hostFor().Trim();
+        if (!CanGiveCards || host.Length == 0 || games.Count == 0)
+        {
+            return;
+        }
+
+        var titles = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var game in games)
+        {
+            if (DiscId.TryParse(game.DiscId, out var id))
+            {
+                titles.TryAdd(id.Canonical, game.Title);
+            }
+        }
+
+        var shown = Status;
+        SetConnecting(true);
+        Status = PageStatus.Busy("Reading the memory cards on the PS2", "And the free space in OPL's partition, where new cards go.");
+        IReadOnlyList<MemoryCardPlan> plans;
+        long free;
+        try
+        {
+            using var bay = await LoadoutBayClient.ConnectAsync(host);
+            plans = await BayMemoryCards.PlanAsync(bay, titles.Keys.Select(key => DiscId.TryParse(key, out var id) ? id : default).ToList());
+            free = await bay.GetOplFreeBytesAsync();
+        }
+        catch (LoadoutBayException ex)
+        {
+            Status = PageStatus.Error("Couldn't read the memory cards", ex.Message);
+            _log.Add(Status.LogLine);
+            return;
+        }
+        finally
+        {
+            SetConnecting(false);
+        }
+
+        Status = shown;
+        var sizes = VmcImage.Sizes;
+        // The selected games that have a card stay as they are; the question names them, so none goes unmentioned.
+        var having = _selection
+            .Where(game => !game.Incomplete && game.MemoryCard is { Kind: MemoryCardKind.Present })
+            .Select(game => game.Title + ": already has its card, VMC/" + game.MemoryCard!.Card + ".bin")
+            .ToList();
+        if (_choose(CardsQuestion(games, plans, titles, having, free, sizes)) is not { } choice)
+        {
+            return;
+        }
+
+        await GiveCardsAsync(host, plans, titles, sizes[choice]);
+    }
+
+    private async Task GiveCardsAsync(string host, IReadOnlyList<MemoryCardPlan> plans, Dictionary<string, string> titles, int size)
+    {
+        var work = plans.Where(plan => plan.State != MemoryCardState.SettingsNameACard).ToList();
+        var given = new List<string>();
+        var failed = new List<string>();
+        SetConnecting(true);
+        Status = PageStatus.Busy("Giving memory cards", string.Create(CultureInfo.CurrentCulture, $"0 of {work.Count}"), 0);
+        try
+        {
+            using var bay = await LoadoutBayClient.ConnectAsync(host);
+            var made = new HashSet<string>(StringComparer.Ordinal);
+            var now = DateTimeOffset.Now;
+            foreach (var plan in work)
+            {
+                var title = titles.GetValueOrDefault(plan.DiscId, plan.DiscId);
+                try
+                {
+                    _log.Add(title + ": " + await BayMemoryCards.GiveCardAsync(bay, plan, size, replaceExisting: false, made, now));
+                    given.Add(title);
+                }
+                catch (LoadoutBayException ex) when (ex.Status != 0)
+                {
+                    // Loadout Bay answered, so the connection is still good for the next game, unless the partition is full.
+                    failed.Add(title);
+                    _log.Add(title + " got no memory card. " + ex.Message);
+                    if (ex.Status == BayWire.StatusNoSpace)
+                    {
+                        failed.AddRange(work.Skip(given.Count + failed.Count).Select(next => titles.GetValueOrDefault(next.DiscId, next.DiscId)));
+                        break;
+                    }
+                }
+
+                var done = given.Count + failed.Count;
+                Status = PageStatus.Busy("Giving memory cards", string.Create(CultureInfo.CurrentCulture, $"{done} of {work.Count}"), done * 100.0 / work.Count);
+            }
+
+            Status = failed.Count == 0
+                ? PageStatus.Ok(given.Count == 1 ? given[0] + " has a memory card" : Count(given.Count) + " have a memory card", "Logs has each card's name.")
+                : PageStatus.Warn(
+                    string.Create(CultureInfo.CurrentCulture, $"{given.Count} of {Count(work.Count)} have a memory card"),
+                    "No card for: " + string.Join(", ", failed) + ". Logs has the reasons.");
+        }
+        catch (LoadoutBayException ex)
+        {
+            Status = PageStatus.Error(
+                given.Count == 0 ? "No memory card was given" : string.Create(CultureInfo.CurrentCulture, $"{given.Count} of {Count(work.Count)} have a memory card"),
+                ex.Message);
+        }
+        finally
+        {
+            SetConnecting(false);
+        }
+
+        _log.Add(Status.LogLine);
+
+        // The list is read again, so the column shows the cards. The cards stay the news unless that read fails.
+        var status = Status;
+        await ConnectAsync(searchIfUnreachable: false);
+        if (Status.Kind == StatusKind.Ok)
+        {
+            Status = status;
+        }
+    }
+
+    private static Question CardsQuestion(
+        List<InstalledGameRow> games,
+        IReadOnlyList<MemoryCardPlan> plans,
+        Dictionary<string, string> titles,
+        List<string> having,
+        long free,
+        IReadOnlyList<int> sizes)
+    {
+        var one = games.Count == 1;
+        return new Question(
+            one ? "Give " + games[0].Title + " a memory card?" : "Give " + Count(games.Count) + " a memory card?",
+            "A new card goes into OPL's VMC folder, named as OPL names it, and is set in slot 1 of the game's OPL settings. "
+            + "A card already on the PS2 is used as it is, with its saves. 8 MB is the size of Sony's cards and holds any game's saves; some games accept only 8 MB.",
+            one ? "_Give it a card" : "_Give memory cards",
+            "_Cancel",
+            Picker: new QuestionPicker(
+                "Card size",
+                sizes.Select(size => size.ToString(CultureInfo.CurrentCulture) + " MB").ToList(),
+                Math.Max(0, sizes.ToList().IndexOf(VmcImage.DefaultSize)),
+                index => CardsView(plans, titles, having, free, sizes[index])));
+    }
+
+    // One line a game, and the space the new cards need against the free space in OPL's partition.
+    private static QuestionView CardsView(IReadOnlyList<MemoryCardPlan> plans, Dictionary<string, string> titles, List<string> having, long free, int size)
+    {
+        var batch = MemoryCardBatch.Of(plans, size);
+        var mb = size.ToString(CultureInfo.CurrentCulture) + " MB";
+        var first = new Dictionary<string, string>(StringComparer.Ordinal);
+        var items = new List<string>();
+        foreach (var plan in plans)
+        {
+            var title = titles.GetValueOrDefault(plan.DiscId, plan.DiscId);
+            var file = "VMC/" + plan.FileName;
+            items.Add(plan.State switch
+            {
+                MemoryCardState.SettingsNameACard => title + ": keeps the card its OPL settings name, " + plan.SettingsCard,
+                MemoryCardState.CardThere => title + ": the card already on the PS2, " + file + ", with its saves",
+                _ when first.TryGetValue(plan.Card, out var owner) => title + ": shares " + file + " with " + owner + ", as OPL groups them",
+                MemoryCardState.CardMissing => title + ": a new " + mb + " card in place of the missing " + file,
+                _ => title + ": a new " + mb + " card, " + file,
+            });
+            if (plan.State is MemoryCardState.None or MemoryCardState.CardMissing)
+            {
+                first.TryAdd(plan.Card, title);
+            }
+        }
+
+        items.AddRange(having);
+
+        // Shown to the nearest MB (three 8 MB cards need 24); the check itself uses the bytes.
+        var needed = Mb(batch.NeededBytes, nearest: true);
+        var room = Mb(free, nearest: false);
+        if (!batch.DoesAnything)
+        {
+            return new QuestionView(items, "Each of these games already has a memory card.", NoteIsWarning: false, CanConfirm: false);
+        }
+
+        return batch.Fits(free)
+            ? new QuestionView(items, batch.NewCards == 0 ? "No new card is needed." : "Needs " + needed + " · OPL's partition has " + room + " free", false, true)
+            : new QuestionView(items, "Needs " + needed + ", but OPL's partition has " + room + " free. Choose a smaller card, or fewer games.", true, false);
+    }
+
+    private static string Mb(long bytes, bool nearest) =>
+        (nearest ? (bytes + (1L << 19)) >> 20 : bytes >> 20).ToString(CultureInfo.CurrentCulture) + " MB";
+
     private static string Join(string detail, string more) => detail.Length == 0 ? more : detail + " " + more;
 
     private static Question CleanUpQuestion(List<InstalledGameRow> games) =>
@@ -979,6 +1174,10 @@ public sealed class InstalledGamesViewModel : ObservableObject
             Count(library.Games.Count) + " on the PS2",
             "Loadout Bay " + library.Hello.Version + " at " + host + " · " + free + " of " + total + " GB free");
         Summary = Count(library.Games.Count).ToUpper(CultureInfo.CurrentCulture) + " · " + free + " GB FREE OF " + total + " GB";
+        if (library.MemoryCardError is { } error)
+        {
+            _log.Add("Memory cards weren't read from the PS2: " + error);
+        }
     }
 
     private void SetConnecting(bool value)
@@ -988,6 +1187,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
         OnPropertyChanged(nameof(CanFind));
         OnPropertyChanged(nameof(IsSearching));
         OnPropertyChanged(nameof(CanRemove));
+        OnPropertyChanged(nameof(CanGiveCards));
         OnEditorChanged();
     }
 
@@ -995,6 +1195,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
     {
         _connected = value;
         OnPropertyChanged(nameof(ConnectLabel));
+        OnPropertyChanged(nameof(CanGiveCards));
         OnListChanged();
     }
 

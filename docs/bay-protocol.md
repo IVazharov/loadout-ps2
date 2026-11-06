@@ -52,7 +52,7 @@ A request with the wrong magic or a payload over 65664 bytes gets no reply: Load
 
 ### 1: HELLO
 
-Request payload, 4 bytes: the PC's protocol version (currently 7).
+Request payload, 4 bytes: the PC's protocol version (currently 8).
 
 Reply payload, 40 bytes:
 
@@ -296,7 +296,7 @@ Statuses:
 
 ### OPL's files
 
-Commands 13 to 17 and 22 read and write files in four folders of the partition Open PS2 Loader keeps its own files in: `ART` (artwork, `<startup>_COV.png` and so on), `CFG` (game settings, `<startup>.cfg`), `VMC` (virtual memory cards, `<name>.bin`), and `APPS/Loadout-Bay` (Loadout Bay itself as an OPL app: `loadout-bay.elf`, the `title.cfg` that lists it in OPL's Apps menu, and an optional `loadout-bay.cfg`). Loadout Bay finds that partition the way OPL does: `hdd0:__common` holds `OPL/conf_hdd.cfg`, whose `hdd_partition` names it, and without that file it is `+OPL`. A partition whose name starts with `+` holds the folders at its root; any other holds them in an `OPL` folder. Loadout Bay never creates the partition, which OPL makes the first time it lists games from the hard disk. It creates a folder when a file is first written there.
+Commands 13 to 17 and 22 read and write files in four folders of the partition Open PS2 Loader keeps its own files in, and 23 measures its free space: `ART` (artwork, `<startup>_COV.png` and so on), `CFG` (game settings, `<startup>.cfg`), `VMC` (virtual memory cards, `<name>.bin`), and `APPS/Loadout-Bay` (Loadout Bay itself as an OPL app: `loadout-bay.elf`, the `title.cfg` that lists it in OPL's Apps menu, and an optional `loadout-bay.cfg`). Loadout Bay finds that partition the way OPL does: `hdd0:__common` holds `OPL/conf_hdd.cfg`, whose `hdd_partition` names it, and without that file it is `+OPL`. A partition whose name starts with `+` holds the folders at its root; any other holds them in an `OPL` folder. Loadout Bay never creates the partition, which OPL makes the first time it lists games from the hard disk. It creates a folder when a file is first written there.
 
 The partition is mounted for the first file command and unmounted when the connection ends. While an install is open, every file command gets `-EBUSY`.
 
@@ -349,6 +349,10 @@ Request payload, 72 bytes: the fields above. No reply payload. Deletes the file 
 ### 22: FILE_RUNS
 
 Request payload, 72 bytes: the fields above. Reply payload, 4 bytes: the number of block runs the file's PFS inode lists, its own block included (`number_data`, which ps2sdk's PFS driver gives in the stat's `private_3`). OPL reads the same count from the inode and refuses a VMC on the hard disk as fragmented when it is 11 or more, so Loadout checks a new card with it.
+
+### 23: FILE_SPACE
+
+No request payload. Reply payload, 8 bytes: the free bytes in OPL's partition, the free zones times the zone size (`PDIOC_ZONEFREE` and `PDIOC_ZONESZ` of ps2sdk's PFS driver). New memory cards go there, and the partition is often far smaller than the hard disk, so Loadout checks that the cards it is about to make fit. The statuses are the file commands' common ones.
 
 ### A new Loadout Bay
 

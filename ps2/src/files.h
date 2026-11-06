@@ -54,6 +54,10 @@ int files_commit(u32 folder, const char *name, u32 size);
 // negative errno.
 int files_runs(u32 folder, const char *name, u32 *runs);
 
+// The free space in OPL's partition, in bytes, where new memory cards go.
+// Returns 0 or a negative errno.
+int files_space(u64 *free_bytes);
+
 // Deletes a file. Returns 0, -ENOENT, or a negative errno.
 int files_delete(u32 folder, const char *name);
 

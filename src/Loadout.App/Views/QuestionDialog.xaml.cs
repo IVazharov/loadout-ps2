@@ -3,6 +3,7 @@ using System.Media;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -16,6 +17,7 @@ public partial class QuestionDialog : LoadoutWindow
 
     private readonly Question _question;
     private readonly Action? _confirmAction;
+    private QuestionView? _view;
 
     private QuestionDialog(Window? owner, Question question, Action? confirmAction)
     {
@@ -58,6 +60,14 @@ public partial class QuestionDialog : LoadoutWindow
             ItemBox.Visibility = Visibility.Visible;
         }
 
+        if (question.Picker is { } picker)
+        {
+            PickerLabel.Text = picker.Label;
+            AutomationProperties.SetName(PickerBox, picker.Label);
+            PickerBox.ItemsSource = picker.Options;
+            PickerRow.Visibility = Visibility.Visible;
+        }
+
         ConfirmButton.Content = question.ConfirmLabel;
         CancelButton.Content = question.CancelLabel;
 
@@ -72,6 +82,12 @@ public partial class QuestionDialog : LoadoutWindow
         else if (confirmAction is null)
         {
             ConfirmButton.SetResourceReference(StyleProperty, "PrimaryButton");
+        }
+
+        // After the buttons have their styles: the first view may turn Confirm off.
+        if (question.Picker is { } first)
+        {
+            PickerBox.SelectedIndex = first.Selected;
         }
 
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, _) => Clipboard.SetText(PlainText())));
@@ -98,11 +114,31 @@ public partial class QuestionDialog : LoadoutWindow
     // True when the user chose Confirm.
     public static bool Ask(Window owner, Question question) => new QuestionDialog(owner, question, null).Run();
 
-    // The index of the item chosen with Confirm, or null for Cancel. The question has ChooseItem and items.
+    // The index of the item chosen with Confirm, or null for Cancel. The question has ChooseItem and items,
+    // or a Picker, whose option it returns.
     public static int? Choose(Window owner, Question question)
     {
         var dialog = new QuestionDialog(owner, question, null);
-        return dialog.Run() && dialog.ChoiceList.SelectedIndex >= 0 ? dialog.ChoiceList.SelectedIndex : null;
+        var list = question.Picker is null ? (Selector)dialog.ChoiceList : dialog.PickerBox;
+        return dialog.Run() && list.SelectedIndex >= 0 ? list.SelectedIndex : null;
+    }
+
+    // The picker's option decides the items, the note, and whether Confirm can be pressed.
+    private void PickerBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_question.Picker is not { } picker || PickerBox.SelectedIndex < 0)
+        {
+            return;
+        }
+
+        var view = picker.Show(PickerBox.SelectedIndex);
+        ItemList.ItemsSource = view.Items;
+        ItemBox.Visibility = view.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NoteText.Text = view.Note;
+        NoteText.Visibility = view.Note.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NoteText.SetResourceReference(TextBlock.ForegroundProperty, view.NoteIsWarning ? "AppWarn" : "AppMuted");
+        ConfirmButton.IsEnabled = view.CanConfirm;
+        _view = view;
     }
 
     // A notice: Confirm runs the action and leaves the dialog open, Cancel closes it.
@@ -153,9 +189,14 @@ public partial class QuestionDialog : LoadoutWindow
     private string PlainText()
     {
         var parts = new List<string> { _question.Title, _question.Body };
-        if (_question.Items is { Count: > 0 } items)
+        if ((_view?.Items ?? _question.Items) is { Count: > 0 } items)
         {
             parts.Add(string.Join(Environment.NewLine, items));
+        }
+
+        if (_view is { Note.Length: > 0 } view)
+        {
+            parts.Add(view.Note);
         }
 
         return string.Join(Environment.NewLine + Environment.NewLine, parts);

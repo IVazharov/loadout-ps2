@@ -81,10 +81,12 @@ const string Usage =
            Loadout.SpeedTest <ps2-address> file put art|cfg|vmc|app <name> <file>
            Loadout.SpeedTest <ps2-address> file rm art|cfg|vmc|app <name>
            Loadout.SpeedTest <ps2-address> file runs art|cfg|vmc|app <name>
+           Loadout.SpeedTest <ps2-address> file space
 
     Lists, reads, writes, or deletes a file in the ART, CFG, or VMC folder of OPL's partition. A put
     replaces the file only once all of it is on the PS2, and never replaces a memory card: rm it
     first. runs prints how many block runs the file's inode lists, which OPL checks for a VMC.
+    space prints the free space in OPL's partition, where memory cards go.
 
            Loadout.SpeedTest verify-game <disk-image> <partition-name> <image>
 
@@ -455,6 +457,22 @@ if (args[1] == "remove-incomplete")
         using var bay = await LoadoutBayClient.ConnectAsync(args[0]);
         await bay.RemoveIncompleteAsync(args[2]);
         Console.WriteLine($"Removed the incomplete install {args[2]}.");
+        return 0;
+    }
+    catch (LoadoutBayException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+if (args[1] == "file" && args.Length == 3 && args[2] == "space")
+{
+    try
+    {
+        using var bay = await LoadoutBayClient.ConnectAsync(args[0]);
+        var free = await bay.GetOplFreeBytesAsync();
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"OPL's partition: {free} bytes free ({free / (1024.0 * 1024.0):0.0} MiB)."));
         return 0;
     }
     catch (LoadoutBayException ex)

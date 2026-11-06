@@ -2,6 +2,19 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
+## Unreleased
+
+### Added
+
+- Installed Games has a Memory card column: the size of the card in slot 1 of each game's OPL settings, "shared" when other games use the same card, or Missing when the card the settings name is not on the PS2. Its tooltip names the card and the games that share it.
+- Give memory cards gives the selected games a card at once, from 8 to 64 MB, and a new card in place of a missing one. A card already on the PS2 is used as it is, with its saves, and never replaced. Before anything is written, it lists what each game gets and checks that the new cards fit in OPL's partition.
+
+### Changed
+
+- Give each game a memory card, on the Install page, now also makes a new card when the one a game's OPL settings name is missing. It used to leave that game without a card.
+- In Installed Games, Partition is now the last column, so the others fit at the window's usual width.
+- This Loadout needs the Loadout Bay from the same release, which tells it the free space in OPL's partition. Connect offers the update, as before.
+
 ## 0.9.3 - 2026-11-06
 
 ### Changed

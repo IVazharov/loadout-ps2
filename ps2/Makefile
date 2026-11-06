@@ -1,6 +1,6 @@
 # Loadout Bay, the PS2 side of Loadout. Builds with the ps2dev toolchain.
-# The version is the whole of ../VERSION (major.minor.patch), shared with Loadout. The first commit
-# after a release that changes Loadout or Loadout Bay raises it by hand.
+# The version is the whole of ../VERSION, shared with Loadout: major.minor.patch for a release, with a
+# -dev.N suffix between releases (CONTRIBUTING.md).
 
 VERSION ?= $(strip $(shell tr -d '\r' < ../VERSION))
 

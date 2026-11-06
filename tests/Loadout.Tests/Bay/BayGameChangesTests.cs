@@ -28,7 +28,10 @@ public sealed class BayGameChangesTests
         Assert.Equal(BayWire.DescribeStatus(BayWire.StatusNotFound), failure.Reason);
         Assert.Empty(bay.Games);
         Assert.Equal(
-            [BayWire.CommandHello, BayWire.CommandFreeSpace, BayWire.CommandListGames, BayWire.CommandHello, BayWire.CommandRemoveIncomplete, BayWire.CommandDeleteGame, BayWire.CommandDeleteGame],
+            [
+                BayWire.CommandHello, BayWire.CommandFreeSpace, BayWire.CommandListGames, BayWire.CommandFileList, BayWire.CommandFileList,
+                BayWire.CommandHello, BayWire.CommandRemoveIncomplete, BayWire.CommandDeleteGame, BayWire.CommandDeleteGame,
+            ],
             bay.Commands);
     }
 

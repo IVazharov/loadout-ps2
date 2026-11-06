@@ -18,10 +18,20 @@ public sealed record InstalledGameRow(
     byte DiscType,
     uint Sectors,
     string? ArtPath = null,
-    bool Incomplete = false)
+    bool Incomplete = false,
+    MemoryCardStatus? MemoryCard = null)
 {
     /// <summary>What a screen reader says for the row.</summary>
     public override string ToString() => Incomplete ? Title + ", incomplete install" : Title;
+
+    /// <summary>The Memory card column: a dash, the card's size, or Missing; empty while the cards are unknown (a saved list).</summary>
+    public string MemoryCardLabel => MemoryCard?.Label ?? "";
+
+    /// <summary>The Memory card column's tooltip, or null while the cards are unknown.</summary>
+    public string? MemoryCardDetail => MemoryCard?.Detail;
+
+    /// <summary>True when the game could get a memory card: whole, and its card is none, missing, or not read yet.</summary>
+    public bool CanGetMemoryCard => !Incomplete && MemoryCard?.Kind != MemoryCardKind.Present;
 
     /// <summary>The OPL compatibility modes, as the Game details panel numbers them.</summary>
     public string ModesLabel => Modes(CompatibilityModeFlags);

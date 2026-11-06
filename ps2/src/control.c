@@ -44,6 +44,7 @@ _Static_assert(MAX_REPLY_BYTES >= FILES_CHUNK_MAX && MAX_REPLY_BYTES >= 8 + FILE
 #define COMMAND_ELF_RUN 20
 #define COMMAND_ELF_SAVE 21
 #define COMMAND_FILE_RUNS 22
+#define COMMAND_FILE_SPACE 23
 
 #define HELLO_REPLY_BYTES (24 + UPGRADE_TAG_BYTES)
 #define HELLO_FLAG_DISK 0x1u
@@ -368,6 +369,31 @@ static int file_runs(u32 length, u8 *out, u32 *out_length)
     return 0;
 }
 
+// No request payload. Reply: the free bytes in OPL's partition.
+static int file_space(u32 length, u8 *out, u32 *out_length)
+{
+    if (length != 0)
+    {
+        return -EINVAL;
+    }
+
+    if (!disk_ready())
+    {
+        return -ENODEV;
+    }
+
+    u64 free_bytes = 0;
+    int status = files_space(&free_bytes);
+    if (status < 0)
+    {
+        return status;
+    }
+
+    wire_write_u64(out, free_bytes);
+    *out_length = 8;
+    return 0;
+}
+
 static int file_delete(u32 length)
 {
     int status = length == FILE_FIELDS_BYTES ? file_name(length, 0) : -EINVAL;
@@ -582,6 +608,9 @@ static const char *serve_requests(int fd, status_report report)
                 break;
             case COMMAND_FILE_RUNS:
                 status = file_runs(length, out, &out_length);
+                break;
+            case COMMAND_FILE_SPACE:
+                status = file_space(length, out, &out_length);
                 break;
             default:
                 status = -ENOSYS;

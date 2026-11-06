@@ -14,8 +14,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Loadout and Loadout Bay share one version, the whole of VERSION (major.minor.patch). The first
-         commit after a release that changes either of them raises it by hand; other commits keep it. -->
+    <!-- Loadout and Loadout Bay share one version, the whole of VERSION: major.minor.patch for a release,
+         with a -dev.N suffix between releases (CONTRIBUTING.md). The file and assembly versions take the
+         part before the suffix; the informational version, which Loadout shows, keeps it whole. -->
     <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</Version>
     <InformationalVersion>$(Version)</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>

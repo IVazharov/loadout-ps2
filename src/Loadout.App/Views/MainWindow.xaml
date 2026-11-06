@@ -123,6 +123,11 @@
                             ToolTip="Deletes the selected games, whole or incomplete, from the PS2's hard disk."
                             IsEnabled="{Binding CanRemove}"
                             Command="{Binding RemoveCommand}" />
+                    <Button Margin="8,0,0,0"
+                            Content="_Give memory cards…"
+                            ToolTip="Gives each selected game without a memory card, or with a missing one, a new card in OPL's VMC folder, set in slot 1 of its OPL settings. Cards already on the PS2 are kept, with their saves."
+                            IsEnabled="{Binding CanGiveCards}"
+                            Command="{Binding GiveCardsCommand}" />
                     <Button Margin="16,0,0,0"
                             Content="Put Loadout Bay on the hard disk…"
                             ToolTip="Copies this Loadout's Loadout Bay into APPS/Loadout-Bay, so OPL's Apps menu starts it without the USB drive."

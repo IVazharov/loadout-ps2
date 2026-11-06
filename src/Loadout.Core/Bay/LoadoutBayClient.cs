@@ -323,6 +323,19 @@ public sealed class LoadoutBayClient : IDisposable
         return (int)BinaryPrimitives.ReadUInt32LittleEndian(payload);
     }
 
+    /// <summary>The free bytes in OPL's partition, where memory cards go. It is often far smaller than the hard disk's free space.</summary>
+    public async Task<long> GetOplFreeBytesAsync(CancellationToken cancellationToken = default)
+    {
+        var (status, payload) = await ExchangeAsync(_stream, BayWire.CommandFileSpace, [], cancellationToken).ConfigureAwait(false);
+        ThrowIfFileFailed(status, BayFolder.Vmc, null);
+        if (payload.Length != 8)
+        {
+            throw new LoadoutBayException("Loadout Bay's answer about the space in OPL's partition has the wrong size.");
+        }
+
+        return (long)BinaryPrimitives.ReadUInt64LittleEndian(payload);
+    }
+
     /// <summary>Sends a new Loadout Bay ELF, which waits in memory for <see cref="RunElfAsync"/> or <see cref="SaveElfAsync"/>.</summary>
     public async Task SendElfAsync(ReadOnlyMemory<byte> elf, IProgress<long>? progress = null, CancellationToken cancellationToken = default)
     {

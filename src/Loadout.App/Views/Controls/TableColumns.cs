@@ -52,6 +52,17 @@ public static class TableColumns
     public static readonly DependencyProperty MeasurePathProperty = DependencyProperty.RegisterAttached(
         "MeasurePath", typeof(string), typeof(TableColumns));
 
+    /// <summary>
+    /// Room after a right-aligned value, which the cell template's right margin takes, so the next
+    /// column's left-aligned text doesn't run into it. A fit counts it in the width.
+    /// </summary>
+    public static readonly DependencyProperty TrailingGapProperty = DependencyProperty.RegisterAttached(
+        "TrailingGap", typeof(double), typeof(TableColumns), new PropertyMetadata(0.0));
+
+    public static double GetTrailingGap(GridViewColumn column) => (double)column.GetValue(TrailingGapProperty);
+
+    public static void SetTrailingGap(GridViewColumn column, double value) => column.SetValue(TrailingGapProperty, value);
+
     /// <summary>A bool property of the row; where it is true the cell also shows <see cref="ExtraTextProperty"/>.</summary>
     public static readonly DependencyProperty ExtraWhenProperty = DependencyProperty.RegisterAttached(
         "ExtraWhen", typeof(string), typeof(TableColumns));
@@ -557,7 +568,7 @@ public static class TableColumns
                     cells = Math.Max(cells, width + (hasExtra ? extra : 0));
                 }
 
-                cells += CellPadding;
+                cells += CellPadding + GetTrailingGap(column);
             }
 
             return Math.Ceiling(Math.Max(header, cells)) + 1;

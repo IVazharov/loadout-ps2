@@ -123,6 +123,28 @@ public sealed class BayFileTests
         Assert.Equal(BayWire.StatusNotFound, missing.Status);
     }
 
+    [Fact]
+    public async Task TheFreeSpaceInOplsPartitionIsAskedFor()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk) { OplFreeBytes = 410L << 20 };
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+
+        Assert.Equal(410L << 20, await client.GetOplFreeBytesAsync());
+        Assert.Equal(BayWire.CommandFileSpace, bay.Commands[^1]);
+    }
+
+    [Fact]
+    public async Task WithoutOplsPartitionItsFreeSpaceIsRefused()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk) { HasOplPartition = false };
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+
+        var error = await Assert.ThrowsAsync<LoadoutBayException>(() => client.GetOplFreeBytesAsync());
+
+        Assert.Equal(BayWire.StatusNotFound, error.Status);
+        Assert.Contains("no OPL partition", error.Message, StringComparison.Ordinal);
+    }
+
     // Progress<T> posts to the thread pool; this one reports in order, on the caller's thread.
     private sealed class SynchronousProgress(Action<long> report) : IProgress<long>
     {

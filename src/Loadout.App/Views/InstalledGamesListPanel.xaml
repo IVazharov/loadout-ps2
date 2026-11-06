@@ -69,11 +69,6 @@
                         </DataTemplate>
                     </GridViewColumn.CellTemplate>
                 </GridViewColumn>
-                <GridViewColumn Header="Partition"
-                                DisplayMemberBinding="{Binding PartitionName}"
-                                c:TableColumns.Id="partition"
-                                c:TableColumns.MinWidth="100"
-                                c:TableColumns.MaxAutoWidth="320" />
                 <GridViewColumn Header="Modes"
                                 DisplayMemberBinding="{Binding ModesLabel}"
                                 c:TableColumns.Id="modes"
@@ -93,14 +88,34 @@
                                 local:GameColumnSort.SortPath="Sectors"
                                 c:TableColumns.Id="size"
                                 c:TableColumns.MinWidth="72"
-                                c:TableColumns.MaxAutoWidth="110"
-                                c:TableColumns.MeasurePath="SizeLabel">
+                                c:TableColumns.MaxAutoWidth="126"
+                                c:TableColumns.MeasurePath="SizeLabel"
+                                c:TableColumns.TrailingGap="16">
                     <GridViewColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Cell}" Text="{Binding SizeLabel, Mode=OneWay}" />
+                            <!-- Right-aligned, with a gap before the next column's left-aligned text. -->
+                            <TextBlock Margin="0,0,16,0" HorizontalAlignment="Right" Style="{StaticResource Text.Cell}" Text="{Binding SizeLabel, Mode=OneWay}" />
                         </DataTemplate>
                     </GridViewColumn.CellTemplate>
                 </GridViewColumn>
+                <GridViewColumn Header="Memory card"
+                                local:GameColumnSort.SortPath="MemoryCardLabel"
+                                c:TableColumns.Id="memorycard"
+                                c:TableColumns.MinWidth="96"
+                                c:TableColumns.MaxAutoWidth="140"
+                                c:TableColumns.MeasurePath="MemoryCardLabel">
+                    <GridViewColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource Text.Cell}" Text="{Binding MemoryCardLabel, Mode=OneWay}" ToolTip="{Binding MemoryCardDetail, Mode=OneWay}" />
+                        </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+                <!-- Last: the most technical column, and a wide one, so the rest fit at the window's usual width. -->
+                <GridViewColumn Header="Partition"
+                                DisplayMemberBinding="{Binding PartitionName}"
+                                c:TableColumns.Id="partition"
+                                c:TableColumns.MinWidth="100"
+                                c:TableColumns.MaxAutoWidth="320" />
             </GridView>
         </ListView.View>
     </ListView>

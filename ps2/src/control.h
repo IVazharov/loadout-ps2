@@ -9,7 +9,7 @@
 #include "status.h"
 
 #define CONTROL_PORT 45060
-#define CONTROL_PROTOCOL_VERSION 7
+#define CONTROL_PROTOCOL_VERSION 8
 
 // Opens the control port. Returns 0, or -1 if it cannot be opened.
 int control_open(void);
