@@ -21,7 +21,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Func<Question, bool> confirm,
         Func<Question, int?> choose,
         IDiscTitleCatalog titles,
-        Func<byte[]?> bundledBay)
+        Func<byte[]?> bundledBay,
+        Loadout.Updates.GitHubReleaseFeed releases)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(savedList);
@@ -53,6 +54,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             bundledBay);
         Artwork = new ArtworkViewModel(artworkCache, artworkDownloader, () => Settings.Host, () => Installed.Games, log);
         Logs = new LogsViewModel(log);
+        About = new AboutViewModel(releases, log);
         Pages =
         [
             new NavPage { Title = "Installed Games", Content = Installed, Number = 1 },
@@ -60,6 +62,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             new NavPage { Title = "Artwork", Content = Artwork, Number = 3 },
             new NavPage { Title = "Settings", Content = Settings, Number = 4 },
             new NavPage { Title = "Logs", Content = Logs, Number = 5 },
+            new NavPage { Title = "About", Content = About, Number = 6 },
         ];
         _selected = Pages[0];
         ShowInstalledCommand = new RelayCommand(() => SelectedPage = Pages[0]);
@@ -92,6 +95,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public LogsViewModel Logs { get; }
 
+    public AboutViewModel About { get; }
+
     public IReadOnlyList<NavPage> Pages { get; }
 
     public NavPage SelectedPage
@@ -112,6 +117,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         Install.Dispose();
         Artwork.Dispose();
+        About.Dispose();
     }
 
     /// <summary>One line in Logs for an exception nothing else handled.</summary>

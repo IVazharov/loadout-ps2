@@ -36,6 +36,9 @@
   <ItemGroup>
     <!-- The Loadout Bay of this version, offered to a PS2 that runs another. Built in ps2/; without it nothing is offered. -->
     <EmbeddedResource Include="..\..\ps2\loadout-bay.elf" LogicalName="loadout-bay.elf" Condition="Exists('..\..\ps2\loadout-bay.elf')" />
+    <!-- Shown on the About page; the zip has the same files next to the executable. -->
+    <EmbeddedResource Include="..\..\LICENSE" LogicalName="LICENSE" />
+    <EmbeddedResource Include="..\..\THIRD-PARTY-NOTICES.txt" LogicalName="THIRD-PARTY-NOTICES.txt" />
   </ItemGroup>
 
 </Project>

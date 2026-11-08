@@ -47,7 +47,8 @@ public partial class MainWindow : LoadoutWindow
             Confirm,
             question => QuestionDialog.Choose(this, question),
             new OplCfgTitleCatalog(Http, new DiscTitleCache(layout.DatabaseFile)),
-            BundledBay);
+            BundledBay,
+            new Loadout.Updates.GitHubReleaseFeed(Http, ProductInfo.Version));
         DataContext = viewModel;
         for (var i = 0; i < viewModel.Pages.Count; i++)
         {
@@ -280,6 +281,26 @@ public partial class MainWindow : LoadoutWindow
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            (DataContext as MainViewModel)?.ReportUnexpected(ex);
+        }
+    }
+
+    // The About page's links: the button's Tag is the https address, opened in the default browser.
+    private void OpenLink_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string address }
+            || !Uri.TryCreate(address, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             (DataContext as MainViewModel)?.ReportUnexpected(ex);
         }

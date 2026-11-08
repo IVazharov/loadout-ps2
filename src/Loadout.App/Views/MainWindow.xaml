@@ -831,6 +831,158 @@
                 </c:ChamferBorder>
             </DockPanel>
         </DataTemplate>
+        <!-- About: a section heading as in Settings, without the "Saved" note. -->
+        <Style x:Key="AboutHeading" TargetType="Border">
+            <Setter Property="DockPanel.Dock" Value="Top" />
+            <Setter Property="Margin" Value="0,24,0,8" />
+            <Setter Property="Padding" Value="0,0,0,6" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppDivider}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style x:Key="AboutLine" TargetType="TextBlock" BasedOn="{StaticResource Text.Detail}">
+            <Setter Property="Foreground" Value="{DynamicResource AppText}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <DataTemplate DataType="{x:Type local:AboutViewModel}">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top">
+                    <TextBlock Style="{StaticResource Text.PageTitle}" Text="ABOUT" AutomationProperties.Name="About" />
+                </Grid>
+                <!-- At most 760 wide, at the left, as Settings; the licence text takes the rest of the height. -->
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MaxWidth="760" />
+                    </Grid.ColumnDefinitions>
+                    <DockPanel Margin="0,0,16,0">
+                        <StackPanel DockPanel.Dock="Top">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Text.DialogTitle}"
+                                           Foreground="{DynamicResource AppText}"
+                                           VerticalAlignment="Center"
+                                           Text="{x:Static local:AboutViewModel.Version}" />
+                                <Button Margin="16,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding CheckCommand}"
+                                        IsEnabled="{Binding CanCheck}"
+                                        AutomationProperties.Name="Check for updates"
+                                        ToolTip="Asks GitHub whether a newer Loadout is out.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Control Width="16"
+                                                 Height="16"
+                                                 Margin="0,0,8,0"
+                                                 Style="{StaticResource Spinner}"
+                                                 Visibility="{Binding IsChecking, Converter={StaticResource VisibleWhenTrue}}" />
+                                        <AccessText VerticalAlignment="Center" Text="_Check for updates" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <TextBlock Margin="0,2,0,0"
+                                       Style="{StaticResource Text.Body}"
+                                       Foreground="{DynamicResource AppMuted}"
+                                       Text="{x:Static local:AboutViewModel.Author}" />
+                            <!-- The last check's result; the line keeps its height, so nothing below moves. -->
+                            <StackPanel Margin="0,10,0,0" MinHeight="18" Orientation="Horizontal">
+                                <TextBlock Text="{Binding CheckResult}" VerticalAlignment="Center" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Detail}">
+                                            <Setter Property="Foreground" Value="{DynamicResource AppMuted}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasOffer}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource AppText}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding CheckFailed}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource AppError}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <Button Margin="12,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Style="{StaticResource LinkButton}"
+                                        Content="Open its release page"
+                                        Tag="{Binding OfferPage}"
+                                        Click="OpenLink_OnClick"
+                                        Visibility="{Binding HasOffer, Converter={StaticResource VisibleWhenTrue}}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Style="{StaticResource AboutHeading}">
+                            <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="LINKS"
+                                       AutomationProperties.Name="Links" AutomationProperties.HeadingLevel="Level2" />
+                        </Border>
+                        <WrapPanel DockPanel.Dock="Top">
+                            <Button Style="{StaticResource LinkButton}" Content="GitHub page"
+                                    Tag="{x:Static local:AboutViewModel.RepositoryUrl}" Click="OpenLink_OnClick"
+                                    ToolTip="{x:Static local:AboutViewModel.RepositoryUrl}" />
+                            <Button Margin="24,0,0,0" Style="{StaticResource LinkButton}" Content="Report a problem"
+                                    Tag="{x:Static local:AboutViewModel.IssuesUrl}" Click="OpenLink_OnClick"
+                                    ToolTip="{x:Static local:AboutViewModel.IssuesUrl}" />
+                            <Button Margin="24,0,0,0" Style="{StaticResource LinkButton}" Content="Changelog"
+                                    Tag="{x:Static local:AboutViewModel.ChangelogUrl}" Click="OpenLink_OnClick"
+                                    ToolTip="{x:Static local:AboutViewModel.ChangelogUrl}" />
+                        </WrapPanel>
+
+                        <Border Style="{StaticResource AboutHeading}">
+                            <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="DATA"
+                                       AutomationProperties.Name="Data" AutomationProperties.HeadingLevel="Level2" />
+                        </Border>
+                        <StackPanel DockPanel.Dock="Top">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource AboutLine}" Text="Game titles and settings come from " />
+                                <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center"
+                                        Content="the PS2-OPL-CFG-Database by Thecat1080"
+                                        Tag="{x:Static local:AboutViewModel.TitleDatabaseUrl}" Click="OpenLink_OnClick"
+                                        ToolTip="{x:Static local:AboutViewModel.TitleDatabaseUrl}" />
+                                <TextBlock Style="{StaticResource AboutLine}" Text="." />
+                            </StackPanel>
+                            <StackPanel Margin="0,6,0,0" Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource AboutLine}" Text="Artwork comes from " />
+                                <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center"
+                                        Content="the psx-ps2-opl-art-database by Luden02"
+                                        Tag="{x:Static local:AboutViewModel.ArtworkDatabaseUrl}" Click="OpenLink_OnClick"
+                                        ToolTip="{x:Static local:AboutViewModel.ArtworkDatabaseUrl}" />
+                                <TextBlock Style="{StaticResource AboutLine}" Text=". The images belong to their owners." />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Style="{StaticResource AboutHeading}">
+                            <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="LICENCES"
+                                       AutomationProperties.Name="Licences" AutomationProperties.HeadingLevel="Level2" />
+                        </Border>
+                        <Border DockPanel.Dock="Top"
+                                HorizontalAlignment="Left"
+                                BorderBrush="{DynamicResource AppBorder}"
+                                BorderThickness="1"
+                                SnapsToDevicePixels="True">
+                            <StackPanel Orientation="Horizontal"
+                                        KeyboardNavigation.TabNavigation="Once"
+                                        PreviewKeyDown="Segments_OnPreviewKeyDown"
+                                        AutomationProperties.Name="Licence text">
+                                <RadioButton Style="{StaticResource Segment}" GroupName="AboutText" Content="Loadout (MIT)"
+                                             IsChecked="{Binding Shown, Converter={StaticResource EnumMatch}, ConverterParameter=Licence}" />
+                                <RadioButton Style="{StaticResource Segment}" GroupName="AboutText" Content="Third-party notices"
+                                             IsChecked="{Binding Shown, Converter={StaticResource EnumMatch}, ConverterParameter=Notices}" />
+                            </StackPanel>
+                        </Border>
+                        <c:ChamferBorder Margin="0,12,0,0"
+                                         Chamfer="6"
+                                         Background="{DynamicResource AppSurface}"
+                                         BorderBrush="{DynamicResource AppBorder}"
+                                         BorderThickness="1"
+                                         ClipContent="True">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="True" AutomationProperties.Name="Licence text">
+                                <TextBlock Margin="12,10,12,12"
+                                           Style="{StaticResource Text.Detail}"
+                                           Foreground="{DynamicResource AppText}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding ShownText}" />
+                            </ScrollViewer>
+                        </c:ChamferBorder>
+                    </DockPanel>
+                </Grid>
+            </DockPanel>
+        </DataTemplate>
     </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>

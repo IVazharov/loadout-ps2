@@ -72,10 +72,13 @@ If OPL has already made its 128 MB partition and the memory cards need more room
 
 ## What Loadout downloads
 
-Loadout goes online for two things only, and neither is part of Loadout or under its licence:
+Loadout goes online for three things only:
 
 - Game titles and settings data come from the [PS2-OPL-CFG-Database](https://github.com/Thecat1080/PS2-OPL-CFG-Database) by Thecat1080.
 - Artwork comes from the [psx-ps2-opl-art-database](https://github.com/Luden02/psx-ps2-opl-art-database) by Luden02, when you press **Download artwork**. The images belong to their owners.
+- When you press **Check for updates** on the About page, Loadout reads its list of releases from GitHub.
+
+The game data and the artwork are not part of Loadout or under its licence.
 
 ## Downloads
 

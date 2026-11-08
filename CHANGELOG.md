@@ -9,6 +9,8 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - Installed Games has a Memory card column: the size of the card in slot 1 of each game's OPL settings, "shared" when other games use the same card, or Missing when the card the settings name is not on the PS2. Its tooltip names the card and the games that share it.
 - Give memory cards gives the selected games a card at once, from 8 to 64 MB, and a new card in place of a missing one. A card already on the PS2 is used as it is, with its saves, and never replaced. Before anything is written, it lists what each game gets and checks that the new cards fit in OPL's partition.
 
+- An About page (Ctrl+6) shows Loadout's version and author, links to the GitHub page, the issues page and the changelog, where the game data and the artwork come from, and the licence texts. Its Check for updates asks GitHub whether a newer Loadout is out.
+
 ### Changed
 
 - Give each game a memory card, on the Install page, now also makes a new card when the one a game's OPL settings name is missing. It used to leave that game without a card.
