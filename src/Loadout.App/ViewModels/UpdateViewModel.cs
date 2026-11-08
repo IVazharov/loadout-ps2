@@ -68,6 +68,7 @@ public sealed class UpdateViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(CanUpdate));
                 OnPropertyChanged(nameof(StatusIsError));
                 OnPropertyChanged(nameof(DismissLabel));
+                OnPropertyChanged(nameof(DismissName));
             }
         }
     }
@@ -101,6 +102,9 @@ public sealed class UpdateViewModel : ObservableObject, IDisposable
         UpdatePhase.Failed => "_Close",
         _ => "_Later",
     };
+
+    /// <summary>The dismiss button's name for screen readers, without the access key mark.</summary>
+    public string DismissName => DismissLabel.Replace("_", string.Empty, StringComparison.Ordinal);
 
     /// <summary>Stops a download that is still running; the swap itself can't be stopped.</summary>
     public void Cancel()

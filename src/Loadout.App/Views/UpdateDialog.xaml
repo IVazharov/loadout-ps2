@@ -23,7 +23,8 @@
                         Content="Release page"
                         ToolTip="{Binding ReleasePage}"
                         Click="ReleasePage_OnClick" />
-                <Button x:Name="DismissButton" DockPanel.Dock="Right" Margin="8,0,0,0" IsCancel="True" Click="Dismiss_OnClick">
+                <Button x:Name="DismissButton" DockPanel.Dock="Right" Margin="8,0,0,0" IsCancel="True" Click="Dismiss_OnClick"
+                        AutomationProperties.Name="{Binding DismissName}">
                     <AccessText Text="{Binding DismissLabel}" />
                 </Button>
                 <Button x:Name="UpdateButton"
@@ -31,6 +32,7 @@
                         Style="{StaticResource PrimaryButton}"
                         IsDefault="True"
                         IsEnabled="{Binding CanUpdate}"
+                        AutomationProperties.Name="Update now"
                         Click="Update_OnClick">
                     <AccessText Text="_Update now" />
                 </Button>
@@ -92,7 +94,7 @@
                 </ScrollViewer>
             </Border>
             <CheckBox Margin="0,16,0,0" Content="Check for updates when Loadout starts" IsChecked="{Binding Settings.CheckForUpdates}" />
-            <ProgressBar Margin="0,16,0,0" Maximum="100" Value="{Binding Progress}"
+            <ProgressBar Margin="0,16,0,0" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
                          Visibility="{Binding IsWorking, Converter={StaticResource VisibleWhenTrue}}" />
             <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding Status}">
                 <TextBlock.Style>

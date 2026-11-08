@@ -917,6 +917,7 @@
                                         VerticalAlignment="Center"
                                         Style="{StaticResource PrimaryButton}"
                                         Click="UpdateNow_OnClick"
+                                        AutomationProperties.Name="Update now"
                                         Visibility="{Binding HasOffer, Converter={StaticResource VisibleWhenTrue}}"
                                         ToolTip="Shows what's new, and updates Loadout when you confirm.">
                                     <AccessText Text="_Update now…" />
