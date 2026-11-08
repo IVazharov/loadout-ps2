@@ -43,6 +43,7 @@ public sealed class SettingsViewModel : ObservableObject
     private AddressNoteKind _noteKind;
     private string _cutNote = "";
     private ThemeChoice _theme;
+    private bool _checkForUpdates;
     private bool _finding;
     private bool _choosing;
     private CancellationTokenSource? _findRun;
@@ -59,6 +60,7 @@ public sealed class SettingsViewModel : ObservableObject
         _host = Ipv4Text.IsValid(stored.Ps2Host) ? stored.Ps2Host.Trim() : string.Empty;
         _addressNote = HelpNote;
         _theme = stored.Theme;
+        _checkForUpdates = stored.CheckForUpdates;
         FindBayCommand = new AsyncRelayCommand(FindBayAsync, ex => Report(ex.Message));
         CancelFindCommand = new RelayCommand(CancelFind);
         // The user's own input wins over a search, and ends what the last one said.
@@ -82,6 +84,26 @@ public sealed class SettingsViewModel : ObservableObject
     public SettingsSection InstallSection { get; } = new("Install");
 
     public SettingsSection Appearance { get; } = new("Appearance");
+
+    public SettingsSection Updates { get; } = new("Updates");
+
+    /// <summary>Whether Loadout asks GitHub for a newer version when it starts. The update dialog changes it too.</summary>
+    public bool CheckForUpdates
+    {
+        get => _checkForUpdates;
+        set
+        {
+            if (value == _checkForUpdates)
+            {
+                return;
+            }
+
+            _checkForUpdates = value;
+            OnPropertyChanged();
+            Save(Updates, settings => settings with { CheckForUpdates = value });
+            _log.Add(value ? "Loadout checks for updates when it starts." : "Loadout no longer checks for updates when it starts.");
+        }
+    }
 
     public ICommand FindBayCommand { get; }
 

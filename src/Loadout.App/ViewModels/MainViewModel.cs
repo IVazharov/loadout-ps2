@@ -51,7 +51,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             choose,
             bay => Settings.Use(bay),
             titles,
-            bundledBay);
+            bundledBay,
+            () => Settings.CheckForUpdates);
         Artwork = new ArtworkViewModel(artworkCache, artworkDownloader, () => Settings.Host, () => Installed.Games, log);
         Logs = new LogsViewModel(log);
         About = new AboutViewModel(releases, log);

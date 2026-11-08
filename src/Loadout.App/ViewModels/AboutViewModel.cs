@@ -112,6 +112,13 @@ public sealed class AboutViewModel : ObservableObject, IDisposable
 
     public void Dispose() => _check.Dispose();
 
+    /// <summary>After an update's restart: says which version this one replaced.</summary>
+    public void ShowUpdated(string oldVersion)
+    {
+        CheckResult = "Updated from " + oldVersion + ".";
+        _log.Add("Loadout updated from " + oldVersion + " to " + ProductInfo.Version + ".");
+    }
+
     /// <summary>Looks for a newer release on GitHub and says what it found.</summary>
     public async Task CheckAsync(CancellationToken cancellationToken)
     {

@@ -59,6 +59,20 @@ public sealed class SettingsTests : IDisposable
 
         Assert.Equal("10.0.0.55", loaded.Ps2Host);
         Assert.True(loaded.CheckInstalls);
+        Assert.True(loaded.CheckForUpdates);
+    }
+
+    [Fact]
+    public void TheUpdateCheckIsOnByDefaultAndKeptOnceTurnedOff()
+    {
+        var store = new AppSettingsStore(Database);
+        Assert.True(store.Load().CheckForUpdates);
+
+        store.Save(AppSettings.Defaults with { CheckForUpdates = false });
+
+        var loaded = new AppSettingsStore(Database).Load();
+        Assert.False(loaded.CheckForUpdates);
+        Assert.True(loaded.CheckInstalls);
     }
 
     [Theory]

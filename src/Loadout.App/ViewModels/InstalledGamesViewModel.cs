@@ -32,6 +32,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
     private readonly Action<FoundBay> _useBay;
     private readonly IDiscTitleCatalog _titles;
     private readonly Func<byte[]?> _bundledBay;
+    private readonly Func<bool> _sendOlderBay;
     private InstalledGameRow? _selected;
     private InstalledGameRow[] _selection = [];
     private bool _connecting;
@@ -62,12 +63,14 @@ public sealed class InstalledGamesViewModel : ObservableObject
         Func<Question, int?> choose,
         Action<FoundBay> useBay,
         IDiscTitleCatalog titles,
-        Func<byte[]?> bundledBay)
+        Func<byte[]?> bundledBay,
+        Func<bool> sendOlderBay)
     {
         _choose = choose ?? throw new ArgumentNullException(nameof(choose));
         _useBay = useBay ?? throw new ArgumentNullException(nameof(useBay));
         _titles = titles ?? throw new ArgumentNullException(nameof(titles));
         _bundledBay = bundledBay ?? throw new ArgumentNullException(nameof(bundledBay));
+        _sendOlderBay = sendOlderBay ?? throw new ArgumentNullException(nameof(sendOlderBay));
         _artwork = artwork ?? throw new ArgumentNullException(nameof(artwork));
         _hostFor = hostFor ?? throw new ArgumentNullException(nameof(hostFor));
         _onRead = onRead ?? throw new ArgumentNullException(nameof(onRead));
@@ -143,6 +146,9 @@ public sealed class InstalledGamesViewModel : ObservableObject
 
     /// <summary>"Connect", or "Connect again" once a list has been read.</summary>
     public string ConnectLabel => _connected ? "_Connect again" : "_Connect";
+
+    /// <summary>Whether the list on screen was read from Loadout Bay in this session; an update reconnects after its restart.</summary>
+    public bool IsConnected => _connected;
 
     /// <summary>False while there is no list to show: the page shows its empty state and no details panel.</summary>
     public bool HasGames => Games.Count > 0;
@@ -367,6 +373,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
         Status = PageStatus.Busy("Connecting to Loadout Bay", host);
         var otherVersion = false;
         var unreachable = false;
+        BayHello? answered = null;
         try
         {
             var reading = new Progress<BayHello>(hello =>
@@ -375,6 +382,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
             ShowRead(library, host);
             _onRead(library);
             otherVersion = library.Hello.Version != ProductInfo.Version;
+            answered = library.Hello;
             await ReadCoversAsync(host);
         }
         catch (LoadoutBayException ex)
@@ -386,6 +394,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
                     : "Couldn't read the game list",
                 Games.Count > 0 ? ex.Message + " The list is from before." : ex.Message);
             otherVersion = ex.Status == BayWire.StatusProtocolMismatch;
+            answered = ex.Theirs;
             unreachable = ex.Unreachable;
         }
         finally
@@ -400,9 +409,20 @@ public sealed class InstalledGamesViewModel : ObservableObject
             return;
         }
 
-        if (otherVersion && _bundledBay() is { } elf && _confirm(UpdateQuestion()))
+        if (otherVersion && _bundledBay() is { } elf)
         {
-            await UpdateBayAsync(host, elf);
+            // With the update check on, a Loadout Bay that answered and is older follows this Loadout without a question.
+            // A newer one, or one whose version is unknown, is never replaced unasked.
+            var unasked = answered is not null && Loadout.Updates.BayVersions.IsOlder(answered) && _sendOlderBay();
+            if (unasked)
+            {
+                _log.Add("Loadout Bay " + answered!.Version + " is older than this Loadout; sending " + ProductInfo.Version + " (Settings, Updates).");
+            }
+
+            if (unasked || _confirm(UpdateQuestion()))
+            {
+                await UpdateBayAsync(host, elf);
+            }
         }
     }
 

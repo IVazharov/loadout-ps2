@@ -18,7 +18,8 @@ public enum ThemeChoice
 public sealed record AppSettings(
     string Ps2Host,
     ThemeChoice Theme,
-    bool CheckInstalls = true)
+    bool CheckInstalls = true,
+    bool CheckForUpdates = true)
 {
     public static AppSettings Defaults { get; } = new(
         string.Empty,
@@ -60,6 +61,9 @@ public sealed class AppSettingsStore
         // The theme was a dark_mode flag before. A row saved then has no theme and keeps what it showed:
         // 1 is Dark, 0 is Light. Only a new install starts on System.
         SqliteFile.AddColumnIfMissing(connection, "app_settings", "theme", "TEXT NULL");
+
+        // Added with the update check: an older row gets it on.
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "check_updates", "INTEGER NOT NULL DEFAULT 1");
     }
 
     public AppSettings Load()
@@ -68,7 +72,7 @@ public sealed class AppSettingsStore
         using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT ps2_host, dark_mode, check_installs, theme
+            SELECT ps2_host, dark_mode, check_installs, theme, check_updates
             FROM app_settings
             WHERE id = 1;
             """;
@@ -81,7 +85,8 @@ public sealed class AppSettingsStore
         return new AppSettings(
             reader.GetString(0),
             ReadTheme(reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(1) != 0),
-            reader.GetInt32(2) != 0);
+            reader.GetInt32(2) != 0,
+            reader.GetInt32(4) != 0);
     }
 
     public bool HasRow()
@@ -103,13 +108,14 @@ public sealed class AppSettingsStore
                 ps2_host = $host,
                 dark_mode = $dark,
                 check_installs = $check,
-                theme = $theme
+                theme = $theme,
+                check_updates = $updates
             WHERE id = 1;
             """,
             """
             INSERT INTO app_settings (
-                id, ps2_host, chdman_path, cache_directory, dark_mode, check_installs, theme)
-            VALUES (1, $host, '', '', $dark, $check, $theme);
+                id, ps2_host, chdman_path, cache_directory, dark_mode, check_installs, theme, check_updates)
+            VALUES (1, $host, '', '', $dark, $check, $theme, $updates);
             """,
             parameters =>
             {
@@ -118,6 +124,7 @@ public sealed class AppSettingsStore
                 parameters.AddWithValue("$dark", settings.Theme == ThemeChoice.Light ? 0 : 1);
                 parameters.AddWithValue("$check", settings.CheckInstalls ? 1 : 0);
                 parameters.AddWithValue("$theme", settings.Theme.ToString());
+                parameters.AddWithValue("$updates", settings.CheckForUpdates ? 1 : 0);
             });
     }
 

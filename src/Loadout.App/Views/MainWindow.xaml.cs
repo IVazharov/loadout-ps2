@@ -14,6 +14,7 @@ using Loadout.Core;
 using Loadout.Images;
 using Loadout.Metadata;
 using Loadout.Persistence;
+using Loadout.Updates;
 
 namespace Loadout.App;
 
@@ -22,9 +23,17 @@ public partial class MainWindow : LoadoutWindow
     // One client for the app's lifetime: the title lookups reuse its connections.
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
+    // An update's download is a few MB; on a slow line that takes longer than the lookups' 15 s.
+    private static readonly HttpClient Downloads = new() { Timeout = TimeSpan.FromMinutes(10) };
+
     private const string BoundsKey = "window";
 
     private readonly UiStateStore _uiState;
+    private readonly OperationLog _log = new();
+    private readonly UpdateInstaller _updates;
+
+    // Why Update now can't run here, or null: a build folder isn't the release's single file.
+    private readonly string? _cannotUpdate;
 
     // Where the window was last time, when that place is on a monitor that is still plugged in.
     private readonly WindowBounds? _lastBounds;
@@ -43,7 +52,7 @@ public partial class MainWindow : LoadoutWindow
             new InstalledGameListStore(layout.DatabaseFile),
             artworkCache,
             new ArtworkDownloader(new Luden02ArtworkProvider(Http), artworkCache),
-            new OperationLog(),
+            _log,
             Confirm,
             question => QuestionDialog.Choose(this, question),
             new OplCfgTitleCatalog(Http, new DiscTitleCache(layout.DatabaseFile)),
@@ -66,6 +75,117 @@ public partial class MainWindow : LoadoutWindow
 
         AppTheme.Apply(stored.Theme);
         Title = ProductInfo.Name + " " + ProductInfo.Version;
+
+        _updates = new UpdateInstaller(
+            Downloads,
+            ProductInfo.Version,
+            AppContext.BaseDirectory,
+            Path.Combine(Path.GetDirectoryName(layout.DatabaseFile)!, "update"),
+            new SignedExecutableCheck());
+        // The release is one file; a build folder has the program's DLL beside the exe, and an update would leave that DLL old.
+        _cannotUpdate = File.Exists(Path.Combine(AppContext.BaseDirectory, "LoadoutPS2.dll"))
+            ? "This Loadout runs from a build folder, not from a release, so it can't replace itself. Get the new version from its release page."
+            : null;
+        ContentRendered += OnFirstRender;
+    }
+
+    // After the window is up: tidy up after an update, connect again if the old Loadout was connected,
+    // then the start check, which shows the update dialog when a newer version is out.
+    private async void OnFirstRender(object? sender, EventArgs e)
+    {
+        ContentRendered -= OnFirstRender;
+        if (DataContext is not MainViewModel model)
+        {
+            return;
+        }
+
+        var start = StartOptions.Current;
+        if (start.UpdatedFrom is { } from)
+        {
+            model.About.ShowUpdated(from);
+        }
+
+        CleanUpAfterUpdate();
+        if (start.Reconnect && model.Installed.ConnectCommand.CanExecute(null))
+        {
+            model.Installed.ConnectCommand.Execute(null);
+        }
+
+        if (model.Settings.CheckForUpdates)
+        {
+            await model.About.CheckAsync(CancellationToken.None);
+            if (model.About.Offer is { } offer)
+            {
+                ShowUpdate(model, offer);
+            }
+        }
+    }
+
+    private void CleanUpAfterUpdate()
+    {
+        try
+        {
+            if (!_updates.CleanUp())
+            {
+                _log.Add("Some files the last update replaced are still in use; Loadout removes them next time.");
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Add("The last update's leftover files could not be removed: " + ex.Message);
+        }
+    }
+
+    private void ShowUpdate(MainViewModel model, Loadout.Updates.UpdateOffer offer)
+    {
+        using var update = new UpdateViewModel(
+            offer,
+            model.Settings,
+            _cannotUpdate is null ? _updates : null,
+            _cannotUpdate,
+            () => model.Install.IsWorking || !model.Installed.CanConnect || model.Artwork.IsBusy,
+            _log);
+        UpdateDialog.Show(this, update, () => RestartAsNewVersion(model));
+    }
+
+    // About's Update now, after a check that found a newer version.
+    private void UpdateNow_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel { About.Offer: { } offer } model)
+        {
+            ShowUpdate(model, offer);
+        }
+    }
+
+    // The new files are in place: start the new Loadout, which waits for this one to close, and close.
+    private void RestartAsNewVersion(MainViewModel model)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(_updates.AppFolder, UpdateInstaller.ExecutableName))
+        {
+            UseShellExecute = false,
+            WorkingDirectory = _updates.AppFolder,
+        };
+        foreach (var argument in StartOptions.AfterUpdate(ProductInfo.Version, model.Installed.IsConnected))
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(start)?.Dispose();
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            ErrorLog.Write("Restart after update", ex);
+            QuestionDialog.Ask(this, new Question(
+                "Start Loadout again",
+                "Loadout is updated, but Windows didn't let it start the new version (" + ex.Message + "). Start Loadout again yourself.",
+                "_Close",
+                "_Close",
+                QuestionKind.Warn));
+        }
+
+        Application.Current.Shutdown();
     }
 
     // The Loadout Bay built with this Loadout, embedded when ps2/loadout-bay.elf was there at build time.

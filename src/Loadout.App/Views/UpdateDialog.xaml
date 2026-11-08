@@ -1,0 +1,114 @@
+<local:LoadoutWindow x:Class="Loadout.App.UpdateDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Loadout.App"
+        xmlns:updates="clr-namespace:Loadout.Updates;assembly=Loadout.Core"
+        xmlns:core="clr-namespace:Loadout.Core;assembly=Loadout.Core"
+        Title="{x:Static core:ProductInfo.Name}"
+        Width="600"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource AppSurfaceRaised}"
+        AutomationProperties.Name="{Binding Title}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+    </Window.Resources>
+    <DockPanel KeyboardNavigation.TabNavigation="Cycle">
+        <Border DockPanel.Dock="Bottom" Height="64" Padding="24,0" Background="{DynamicResource AppBackground}">
+            <DockPanel VerticalAlignment="Center" LastChildFill="False">
+                <Button DockPanel.Dock="Left"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource LinkButton}"
+                        Content="Release page"
+                        ToolTip="{Binding ReleasePage}"
+                        Click="ReleasePage_OnClick" />
+                <Button x:Name="DismissButton" DockPanel.Dock="Right" Margin="8,0,0,0" IsCancel="True" Click="Dismiss_OnClick">
+                    <AccessText Text="{Binding DismissLabel}" />
+                </Button>
+                <Button x:Name="UpdateButton"
+                        DockPanel.Dock="Right"
+                        Style="{StaticResource PrimaryButton}"
+                        IsDefault="True"
+                        IsEnabled="{Binding CanUpdate}"
+                        Click="Update_OnClick">
+                    <AccessText Text="_Update now" />
+                </Button>
+            </DockPanel>
+        </Border>
+        <StackPanel Margin="24">
+            <TextBlock Style="{StaticResource Text.DialogTitle}" TextWrapping="Wrap" Text="{Binding Title}" />
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource AppMuted}" Text="{Binding Subtitle}" />
+            <TextBlock Margin="0,16,0,6" Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="WHAT'S NEW"
+                       AutomationProperties.Name="What's new" />
+            <Border Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1">
+                <ScrollViewer x:Name="NotesScroller"
+                              MaxHeight="300"
+                              Focusable="True"
+                              IsTabStop="True"
+                              FocusVisualStyle="{StaticResource FocusRing}"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              AutomationProperties.Name="What's new">
+                    <ItemsControl Margin="12,8,12,12" Focusable="False" ItemsSource="{Binding Notes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type local:NotesSection}">
+                                <StackPanel Margin="0,4,0,0">
+                                    <TextBlock Style="{StaticResource Text.Headline}" Foreground="{DynamicResource AppText}" Text="{Binding Version}" />
+                                    <ItemsControl Focusable="False" ItemsSource="{Binding Lines}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type updates:NoteLine}">
+                                                <Grid x:Name="Line" Margin="0,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="16" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock x:Name="Mark" Style="{StaticResource Text.Detail}" Foreground="{DynamicResource AppMuted}" Text="•" />
+                                                    <TextBlock x:Name="Words" Grid.Column="1" Style="{StaticResource Text.Detail}" Foreground="{DynamicResource AppText}"
+                                                               TextWrapping="Wrap" Text="{Binding Text}" />
+                                                </Grid>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static updates:NoteLineKind.Heading}">
+                                                        <Setter TargetName="Mark" Property="Visibility" Value="Collapsed" />
+                                                        <Setter TargetName="Words" Property="Grid.Column" Value="0" />
+                                                        <Setter TargetName="Words" Property="Grid.ColumnSpan" Value="2" />
+                                                        <Setter TargetName="Words" Property="Style" Value="{StaticResource Text.Label}" />
+                                                        <Setter TargetName="Words" Property="Foreground" Value="{DynamicResource AppLabel}" />
+                                                        <Setter TargetName="Line" Property="Margin" Value="0,10,0,0" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static updates:NoteLineKind.Text}">
+                                                        <Setter TargetName="Mark" Property="Visibility" Value="Collapsed" />
+                                                        <Setter TargetName="Words" Property="Grid.Column" Value="0" />
+                                                        <Setter TargetName="Words" Property="Grid.ColumnSpan" Value="2" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+            <CheckBox Margin="0,16,0,0" Content="Check for updates when Loadout starts" IsChecked="{Binding Settings.CheckForUpdates}" />
+            <ProgressBar Margin="0,16,0,0" Maximum="100" Value="{Binding Progress}"
+                         Visibility="{Binding IsWorking, Converter={StaticResource VisibleWhenTrue}}" />
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding Status}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Detail}">
+                        <Setter Property="Foreground" Value="{DynamicResource AppMuted}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource AppError}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Status}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </StackPanel>
+    </DockPanel>
+</local:LoadoutWindow>

@@ -23,6 +23,9 @@ public sealed class LoadoutBayException : Exception
 
     /// <summary>True when nothing took the connection: refused, unreachable, or no answer in time.</summary>
     public bool Unreachable { get; init; }
+
+    /// <summary>The greeting of a Loadout Bay that speaks another protocol: its version and protocol.</summary>
+    public BayHello? Theirs { get; init; }
 }
 
 /// <summary>An install cancelled after it began. Loadout Bay removes what it had copied, which <see cref="PartialCopyRemoved"/> says worked.</summary>
@@ -113,7 +116,10 @@ public sealed class LoadoutBayClient : IDisposable
                     string.Create(
                         CultureInfo.InvariantCulture,
                         $"Loadout Bay {theirs.Version} speaks protocol {theirs.ProtocolVersion}, and this Loadout speaks protocol {BayWire.ProtocolVersion}. Use Loadout and Loadout Bay from the same release."),
-                    status);
+                    status)
+                {
+                    Theirs = theirs,
+                };
             }
 
             ThrowIfFailed(status);

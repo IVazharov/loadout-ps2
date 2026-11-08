@@ -13,6 +13,8 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        // After an update: wait for the old Loadout to close before opening the database it had open.
+        StartOptions.Load(e.Args);
         if (!SqliteLoads())
         {
             // Not StartupUri = null: the setter throws, and the main window is not opened once shutdown has begun.

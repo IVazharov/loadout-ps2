@@ -786,6 +786,22 @@
                                 </Border>
                             </Grid>
                             <TextBlock Style="{StaticResource SettingsNote}" Text="{Binding ThemeHelp}" />
+
+                            <ContentControl Content="{Binding Updates}" ContentTemplate="{StaticResource SettingsHeading}" Focusable="False" />
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="New versions" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <CheckBox Content="Check for updates when Loadout starts" IsChecked="{Binding CheckForUpdates}" />
+                                    <c:InfoTip Margin="8,0,0,0"
+                                               AutomationProperties.Name="More about checking for updates"
+                                               ToolTip="Loadout reads its list of releases from GitHub when it starts. When a newer version is out, it shows what changed and asks; nothing is downloaded until you press Update now. About has Check for updates for any time." />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Style="{StaticResource SettingsNote}" Text="Asks GitHub, and offers a newer version when one is out." />
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
@@ -899,11 +915,12 @@
                                 </TextBlock>
                                 <Button Margin="12,0,0,0"
                                         VerticalAlignment="Center"
-                                        Style="{StaticResource LinkButton}"
-                                        Content="Open its release page"
-                                        Tag="{Binding OfferPage}"
-                                        Click="OpenLink_OnClick"
-                                        Visibility="{Binding HasOffer, Converter={StaticResource VisibleWhenTrue}}" />
+                                        Style="{StaticResource PrimaryButton}"
+                                        Click="UpdateNow_OnClick"
+                                        Visibility="{Binding HasOffer, Converter={StaticResource VisibleWhenTrue}}"
+                                        ToolTip="Shows what's new, and updates Loadout when you confirm.">
+                                    <AccessText Text="_Update now…" />
+                                </Button>
                             </StackPanel>
                         </StackPanel>
 
