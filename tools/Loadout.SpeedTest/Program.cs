@@ -26,6 +26,35 @@ const string Usage =
     Reads a game image's 2048-byte sectors the way an install sends them, and prints their SHA-256 and
     how fast they were read. A chd is decoded as it is read, with nothing written to the disk.
 
+           Loadout.SpeedTest disc-info <drive>
+
+    Shows what is in a PC disc drive (such as E:): the disc type, size and layers, and the game's disc ID.
+
+           Loadout.SpeedTest read-image <drive> [--out <iso>] [--zero-fill] [--speed <KB/s>]
+
+    Reads a whole disc in a PC drive as an install would, prints the speed every 5%, each slow or failed read,
+    and the MD5 and SHA-1 that Redump lists. --out saves it as an iso; --zero-fill reads an unreadable sector
+    as zeros and goes on; --speed caps the drive (DVD 1x = 1385 KB/s). An install accepts a drive too.
+
+           Loadout.SpeedTest disc-copy <drive> <image> [--minutes <n>] [--retry-all] [--sweep <n>]
+
+    Copies a disc in a PC drive to an image in passes that get the most out of a scratched disc: fast, then sweeps
+    over what is missing in pieces that shrink at a failure and grow after good reads, resting the drive after each
+    failed read. Progress is
+    kept in <image>.map, so running it again goes on from there. A complete copy is hashed (MD5, SHA-1).
+    --retry-all sends everything not read yet through all the passes again, as after cleaning the disc.
+    --sweep starts at that adaptive sweep (even ones go backwards), as after a stop partway through one.
+
+           Loadout.SpeedTest disc-probe <drive> [--from <sector>] [--to <sector>] [--chunk <n>] [--gap <ms>] [--stride <n>] [--rest <s>]
+
+    An experiment: reads a range in order or strided, resting the drive after a failed read.
+
+           Loadout.SpeedTest disc-map <drive> [--from <sector>] [--to <sector>] [--speed <KB/s>] [--stream-speed <KB/s>] [--chunk <sectors>] [--recover none|reopen|seek|wait:<s>|restart]
+
+    Maps the sectors of a disc in a PC drive that cannot be read, trying each bad patch a few times only.
+    --stream-speed caps a DVD drive with SET STREAMING. --recover tries the failed read once more after opening the
+    drive afresh, after reading sector 16, after a pause, or after stopping and starting the disc.
+
            Loadout.SpeedTest <ps2-address> bay
 
     Greets Loadout Bay on its control port and prints its version, the hard disk's size and free space,
@@ -155,6 +184,40 @@ if (args[0] == "vmc-image")
     return 0;
 }
 
+if (args[0] == "disc-info")
+{
+    return args.Length == 2 && DiscDrive.IsDriveName(args[1]) ? DiscCommands.Info(args[1]) : UsageError();
+}
+
+if (args[0] == "disc-fastfail" && args.Length >= 3 && DiscDrive.IsDriveName(args[1]))
+{
+    var result = DiscCommands.FastFail(args[1], args[2..]);
+    return result == 2 ? UsageError() : result;
+}
+
+if (args[0] == "disc-copy" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))
+{
+    var result = DiscCommands.Copy(args[1], args[2..]);
+    return result == 2 ? UsageError() : result;
+}
+
+if (args[0] == "disc-probe" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))
+{
+    var result = DiscCommands.Probe(args[1], args[2..]);
+    return result == 2 ? UsageError() : result;
+}
+
+if (args[0] == "disc-map" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))
+{
+    var result = DiscCommands.Map(args[1], args[2..]);
+    return result == 2 ? UsageError() : result;
+}
+
+if (args[0] == "read-image" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))
+{
+    var result = DiscCommands.Read(args[1], args[2..]);
+    return result == 2 ? UsageError() : result;
+}
 if (args[0] == "read-image")
 {
     if (args.Length != 2)
@@ -325,7 +388,7 @@ if (args[1] == "install")
         }
     }
 
-    var game = await GameImageSource.ScanAsync(args[2], title);
+    var game = DiscDrive.IsDriveName(args[2]) ? DiscCommands.Source(args[2], title) : await GameImageSource.ScanAsync(args[2], title);
     if (game is null)
     {
         return 1;

@@ -6,13 +6,10 @@ using Loadout.Persistence;
 
 namespace Loadout.SpeedTest;
 
-/// <summary>A game image read the way the Install page reads it, ready to send to Loadout Bay.</summary>
-public sealed record GameImageSource(BayInstallRequest Request, string DataFile)
+/// <summary>A game image read the way the Install page reads it, ready to send to Loadout Bay. Open gives its 2048-byte sectors from the first.</summary>
+public sealed record GameImageSource(BayInstallRequest Request, Func<Stream> Open)
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
-
-    /// <summary>The game's 2048-byte sectors, from the first.</summary>
-    public Stream Open() => IsoUserDataStream.Open(DataFile);
 
     /// <summary>Scans one image. Prints why and returns null when it cannot be installed.</summary>
     public static async Task<GameImageSource?> ScanAsync(string imagePath, string? title)
@@ -45,6 +42,6 @@ public sealed record GameImageSource(BayInstallRequest Request, string DataFile)
                 item.Layer0Sectors,
                 item.Layer1Sectors,
                 item.HdlDiscType),
-            item.DataFile);
+            () => IsoUserDataStream.Open(item.DataFile));
     }
 }

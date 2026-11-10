@@ -75,3 +75,15 @@ A new run ID starts a new count. The end packet has sequence number 0xFFFFFFFF a
 A run with no packet for 3 seconds ends without a reply.
 
 The tool has other commands for working with Loadout Bay. Run it without arguments for the list.
+
+## Original discs in a PC drive
+
+A proof of concept for installing a game from its original disc. The disc commands open the drive (such as `E:`) without admin rights and read its 2048-byte sectors, the same bytes as the Redump iso.
+
+- `disc-info E:` shows the disc type, size and layers, and the game's disc ID.
+- `read-image E: [--out <iso>]` reads the whole disc, prints the speed and the MD5 and SHA-1 that Redump lists, and can save it as an iso.
+- `<ps2-address> install E: [--check]` streams the disc straight to Loadout Bay.
+- `disc-copy E: <iso> [--minutes <n>] [--retry-all] [--sweep <n>]` copies a damaged disc to an iso. A fast pass reads it in order and jumps past weak spots. Then sweeps go over what is missing in pieces of 128, 16 or 1 sectors: smaller after a failure, bigger after good reads, every second sweep from the end backwards, and the rest of a dead 16-sector error-correction block is left for the next sweep. After each failed read the drive is rested until it reads again, because some drives refuse every read for half a minute after one fails. Progress is kept in `<iso>.map`, so the same command goes on after a stop, after cleaning the disc, or in another drive. `--retry-all` starts the sweeps over, as after cleaning.
+- `disc-map`, `disc-probe` and `disc-fastfail` are the experiments that shaped `disc-copy`.
+
+Tested with one slim USB drive: a clean DVD read at 5.4 MB/s and matched Redump; a badly scratched one took a 20-minute fast pass to 97%, then sweeps and two cleanings to a full copy that matched Redump.
