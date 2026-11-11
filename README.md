@@ -14,7 +14,7 @@ Both parts share one version number.
 
 ### Back up your discs
 
-Put an original PS2 disc, DVD or CD, in your PC's drive. Loadout copies it, checks the copy against [Redump](http://redump.org)'s list of verified discs so you know it's exact, and names it as Redump does. A scratched disc is read in passes that go back to its weak spots. A map of the disc shows where the trouble is, Loadout tells you when cleaning would help, and the copy goes on where it was. Stop and resume any time. Tick Also install on PS2 and the game goes to the PS2 as it's copied.
+Put an original PS2 disc, DVD or CD, in your PC's drive. Loadout copies it, checks the copy against [Redump](http://redump.org)'s list of verified discs so you know it's exact, and names it as Redump does. A scratched disc is read in passes that go back to its weak spots. A map of the disc shows where the trouble is, Loadout tells you when cleaning would help, and the copy goes on where it was. Stop and resume any time. Tick **Also install on PS2** and the game goes to the PS2 as it's copied.
 
 ![Back up discs copying a scratched disc: the disc map as a bar and as rings on a picture of the disc, with a cloth where it was cleaned](docs/images/backup.png)
 
@@ -47,11 +47,11 @@ Loadout does not set up the PS2 for you. You need all of this first.
 
 On the PC:
 
-- 64-bit Windows 11, version 24H2 or later, or 64-bit Windows 10. On Windows 10 Enterprise LTSC 2021 (version 21H2), Loadout passes its tests, connects to Loadout Bay, and installs games, though its installs from there have only gone to Loadout Bay in the PCSX2 emulator. No other Windows 10 version has been tried. Apart from its LTSC editions, Microsoft does not support .NET 10 on Windows 10. Windows on Arm has not been tested.
+- 64-bit Windows 11, version 24H2 or later, or 64-bit Windows 10. On Windows 10 Enterprise LTSC 2021 (version 21H2), Loadout passes its tests, connects to Loadout Bay, and installs games, though its installs from there have only gone to Loadout Bay in the PCSX2 emulator. No other Windows 10 version has been tried. Apart from its LTSC editions, Microsoft does not support .NET 10 on Windows 10. Windows on Arm has not been tested. Backing up discs has only been tried on Windows 11.
 - The x64 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0), which Loadout does not include.
 - Nothing to install for SQLite: Loadout uses the copy that comes with Windows (`winsqlite3.dll`). It avoids newer SQLite features and passes its tests on versions as old as 3.12.2. To see your version, run `(Get-Item C:\Windows\System32\winsqlite3.dll).VersionInfo.ProductVersion` in PowerShell. If Windows has no such file, Loadout says so when it starts.
 - A network connection to the same network as the PS2.
-- To back up discs: a DVD drive, built in or USB. Backing up needs nothing else, no PS2 at all.
+- To back up discs: a DVD drive, built in or USB. Backing up needs no PS2 at all.
 
 On the PS2:
 
@@ -61,7 +61,7 @@ On the PS2:
 - **[Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader)**, which plays the games. Loadout only installs them.
 - **A USB drive formatted as FAT32.** Loadout Bay also starts from a memory card, but updates sent from Loadout can only be saved to a USB drive or the hard disk.
 
-Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has been tested on one console, so back up anything you can't replace. Please report problems on the [issues page](https://github.com/IVazharov/loadout-ps2/issues).
+Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has been tested on one console, so back up anything you can't replace. Backing up discs has been tested with one drive, a slim USB DVD writer. Please report problems on the [issues page](https://github.com/IVazharov/loadout-ps2/issues).
 
 ## Get started
 
@@ -74,6 +74,8 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 7. Start OPL on the PS2. It lists the games from its hard disk section.
 
 To start Loadout Bay without the USB drive from then on, see [From the hard disk](ps2/README.md#from-the-hard-disk).
+
+To back up a disc, step 4 is all you need. Put the disc in the PC's drive and open **Backup** (Ctrl+3). **Back up this disc** asks once where to keep the copies, suggesting `Documents\PS2 Backups`, and starts. A scratched disc can take minutes or hours: **Stop** keeps what has been read, and **Resume this disc** goes on later, after cleaning the disc or in another drive too. For a pile of discs, tick **Keep going**: each finished disc comes out, and the next one you put in starts by itself. A copy that doesn't match Redump may be another printing of the game: **Back up again** reads it once more, and two equal copies point to that. CDs with audio tracks are not supported yet.
 
 If OPL has already made its 128 MB partition and the memory cards need more room, OPL can move to a bigger one, saves included. Create it with wLaunchELF's HDD Manager under a name that starts with `+`, such as `+OPL2`, and copy everything in `+OPL` into it with wLaunchELF's file browser, the memory cards in `VMC` and Loadout Bay in `APPS` too. Then change the line in `hdd0:/__common/OPL/conf_hdd.cfg` to `hdd_partition=+OPL2`. OPL and Loadout Bay both use the partition that file names. Keep the old `+OPL`, as some setups start OPL itself from it.
 
@@ -110,4 +112,4 @@ Maintained by Ivan Vazharov.
 
 ## Notice
 
-Loadout works with disc images you made from discs you own. It does not include or download games, BIOS files, or Sony code, and the project gives no help finding them. PlayStation and PS2 are trademarks of Sony Interactive Entertainment; this project is independent, and not affiliated with or endorsed by Sony.
+Loadout backs up discs you own, and works with disc images you made from them. It does not include or download games, BIOS files, or Sony code, and the project gives no help finding them. PlayStation and PS2 are trademarks of Sony Interactive Entertainment; this project is independent, and not affiliated with or endorsed by Sony.

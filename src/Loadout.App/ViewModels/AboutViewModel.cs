@@ -24,6 +24,9 @@ public sealed class AboutViewModel : ObservableObject, IDisposable
     public const string TitleDatabaseUrl = "https://github.com/Thecat1080/PS2-OPL-CFG-Database";
     public const string ArtworkDatabaseUrl = "https://github.com/Luden02/psx-ps2-opl-art-database";
 
+    /// <summary>Redump, whose list of verified PS2 discs Back up discs checks each copy against. It has no https.</summary>
+    public const string RedumpUrl = "http://redump.org/discs/system/ps2/";
+
     private readonly GitHubReleaseFeed _releases;
     private readonly OperationLog _log;
     private readonly AsyncRelayCommand _check;

@@ -1249,6 +1249,14 @@
                                         ToolTip="{x:Static local:AboutViewModel.ArtworkDatabaseUrl}" />
                                 <TextBlock Style="{StaticResource AboutLine}" Text=". The images belong to their owners." />
                             </StackPanel>
+                            <StackPanel Margin="0,6,0,0" Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource AboutLine}" Text="Disc backups are checked against " />
+                                <Button Style="{StaticResource LinkButton}" VerticalAlignment="Center"
+                                        Content="Redump's list of verified PS2 discs"
+                                        Tag="{x:Static local:AboutViewModel.RedumpUrl}" Click="OpenLink_OnClick"
+                                        ToolTip="{x:Static local:AboutViewModel.RedumpUrl}" />
+                                <TextBlock Style="{StaticResource AboutLine}" Text="." />
+                            </StackPanel>
                         </StackPanel>
 
                         <Border Style="{StaticResource AboutHeading}">

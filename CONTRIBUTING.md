@@ -37,6 +37,8 @@ Tests run against fakes that listen on loopback. Do not point a test at a real a
 
 A test name says what happens, in PascalCase, for example `ARefusedInstallSendsNoData`.
 
+`ReadmeTests` keep the README true to the app: a new place Loadout downloads from, a label the README names that the app no longer has, or a file it links to that has moved fails them until the README follows.
+
 Back up discs can be tried without a scratched disc: start Loadout with `--simulate-disc <image.iso>` and it offers a simulated drive S: holding that image, with two dirty stretches that need two cleanings (`--simulate-dirt 568320-568720,1482880-1483280` places them). It reads at about 40 MB/s, fails and rests as a real drive does but in seconds, and its tray closes by itself 8 s after Pause to clean the disc opens it. With an image that matches Redump, the copy ends matching it.
 
 ## Writes to the PS2's hard disk
