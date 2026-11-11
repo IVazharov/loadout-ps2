@@ -18,8 +18,23 @@ public sealed record DriveDisc(DiscInDrive Disc, string Title)
     public string Label => $"{Title} ({Disc.Identity?.DiscId?.Canonical}) in {Disc.Drive}";
 }
 
-/// <summary>One line of the disc map's legend.</summary>
-public sealed record DiscMapLegendItem(DiscMapShade Shade, System.Windows.Media.Brush Brush, string Label, string Amount);
+/// <summary>One item of the disc map's legend. Its amount changes in place, so the legend doesn't move as it counts.</summary>
+public sealed class DiscMapLegendItem(DiscMapShade shade, System.Windows.Media.Brush brush, string label) : ObservableObject
+{
+    private string _amount = string.Empty;
+
+    public DiscMapShade Shade { get; } = shade;
+
+    public System.Windows.Media.Brush Brush { get; } = brush;
+
+    public string Label { get; } = label;
+
+    public string Amount
+    {
+        get => _amount;
+        set => SetField(ref _amount, value);
+    }
+}
 
 /// <summary>One backed-up disc in the page's list.</summary>
 public sealed record BackupRow(DiscBackup Backup, bool OnPs2)
@@ -143,7 +158,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         {
             if (SetField(ref _selected, value))
             {
-                if (value is null && !_working)
+                if (!_working)
                 {
                     Map = DiscMapView.Empty;
                     Legend.Clear();
@@ -236,6 +251,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     /// <summary>The disc map's hover text for a stretch of sectors.</summary>
     public Func<long, long, string> Describe { get; }
+
+    /// <summary>A legend amount in a steady form: whole MB under 1 GB, two decimals of GB above.</summary>
+    private static string LegendSize(long bytes) => bytes >= 1_000_000_000
+        ? string.Create(CultureInfo.CurrentCulture, $"{bytes / 1_000_000_000.0:0.00} GB")
+        : string.Create(CultureInfo.CurrentCulture, $"{bytes / 1_000_000.0:0} MB");
 
     public static string Size(long bytes) => bytes >= 1_000_000_000
         ? string.Create(CultureInfo.CurrentCulture, $"{bytes / 1_000_000_000.0:0.00} GB")
@@ -469,7 +489,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var files = resume?.Files ?? DiscBackupFiles.Unused(folder, DiscBackupFiles.NameFor(chosen.Title, identity.DiscId));
+        var files = resume?.Files ?? DiscBackupFiles.Unused(folder, DiscBackupFiles.NameFor(chosen.Title, identity.DiscId), isCd: chosen.Disc.Media == DiscMedia.Cd);
         IsWorking = true;
         var run = new CancellationTokenSource();
         _run = run;
@@ -581,7 +601,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         Status = PageStatus.Busy("Checking the copy", "Reading it back for its hashes, and getting Redump's list…", 0);
         StatusLine = string.Empty;
         var list = await _redump.GetAsync(refresh: false, CancellationToken.None).ConfigureAwait(true);
-        var bytes = (double)chosen.Disc.Bytes;
+        var bytes = (double)chosen.Disc.Sectors * (files.IsCd ? 2352 : DiscSectors.Size);
         var hashing = new Progress<long>(read => Status = PageStatus.Busy("Checking the copy", "Reading it back for its hashes…", read / bytes * 100));
         var backup = await DiscBackupLibrary.FinishAsync(files, list.Dat, hashing, CancellationToken.None).ConfigureAwait(true);
         IsWorking = false;
@@ -667,7 +687,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                 ? string.Create(CultureInfo.CurrentCulture, $"The drive needs a short rest after a failed read ({left:0} s)…")
                 : "The drive needs a short rest after a failed read; trying it again…",
             DiscCopyPhase.FirstPass => status.BytesPerSecond > 0
-                ? $"Reading normally · {speed} · about {Left(status.UntriedSectors * DiscSectors.Size / status.BytesPerSecond)} left"
+                ? $"Reading normally · {speed} · about {Left(status.UntriedSectors * (_selected?.Disc.Media == DiscMedia.Cd ? 2352 : DiscSectors.Size) / status.BytesPerSecond)} left"
                 : "Reading normally",
             DiscCopyPhase.Sweep when status.PieceSectors < 128 => $"Weak area at {at}: reading it in small pieces",
             DiscCopyPhase.Sweep when status.Backwards => $"Pass {status.Sweep + 1}: going back over {Size(status.MissingSectors * DiscSectors.Size)} from the end",
@@ -689,12 +709,20 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasMap));
         var totals = DiscMapShades.Totals(ranges);
         var notRead = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("AppTrack");
-        Legend.Clear();
+
+        // A shade joins the legend when it first shows and stays, in the shades' order; amounts change in place.
         foreach (var shade in Enum.GetValues<DiscMapShade>())
         {
-            if (totals[shade] > 0 || shade is DiscMapShade.ReadNormally or DiscMapShade.NotRead)
+            var item = Legend.FirstOrDefault(i => i.Shade == shade);
+            if (item is null && (totals[shade] > 0 || shade is DiscMapShade.ReadNormally or DiscMapShade.NotRead))
             {
-                Legend.Add(new DiscMapLegendItem(shade, DiscMapBrushes.For(shade, notRead), DiscMapBrushes.Label(shade), Size(totals[shade] * DiscSectors.Size)));
+                item = new DiscMapLegendItem(shade, DiscMapBrushes.For(shade, notRead), DiscMapBrushes.Label(shade));
+                Legend.Insert(Legend.Count(i => i.Shade < shade), item);
+            }
+
+            if (item is not null)
+            {
+                item.Amount = LegendSize(totals[shade] * DiscSectors.Size);
             }
         }
     }
@@ -735,6 +763,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         var ranges = _map.Ranges;
         var sectors = _map.Sectors;
         var path = _filesFrom;
+        var cd = path.EndsWith(DiscBackupFiles.CdImageExtension, StringComparison.OrdinalIgnoreCase);
+        var raw = new byte[2352];
         try
         {
             using var image = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -746,8 +776,17 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                         return false;
                     }
 
-                    image.Position = sector * DiscSectors.Size;
-                    image.ReadExactly(destination);
+                    if (!cd)
+                    {
+                        image.Position = sector * DiscSectors.Size;
+                        image.ReadExactly(destination);
+                        return true;
+                    }
+
+                    // A CD copy is raw: the data starts after the sync and header (mode 1) or the subheader too (mode 2).
+                    image.Position = sector * 2352;
+                    image.ReadExactly(raw);
+                    raw.AsSpan(raw[15] == 1 ? 16 : 24, DiscSectors.Size).CopyTo(destination);
                     return true;
                 },
                 sectors);

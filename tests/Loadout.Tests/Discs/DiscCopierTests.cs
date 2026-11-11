@@ -313,13 +313,14 @@ public class DiscCopierTests
 
         public void AssertImageHasEveryReadSector()
         {
-            Assert.Equal(Map.Sectors * DiscSectors.Size, _image.Length);
-            var bytes = new byte[DiscSectors.Size];
+            var size = Drive.CopySectorSize;
+            Assert.Equal(Map.Sectors * size, _image.Length);
+            var bytes = new byte[size];
             foreach (var range in Map.Ranges.Where(r => r.State.IsRead()))
             {
                 for (var s = range.Start; s < range.End; s++)
                 {
-                    _image.Position = s * DiscSectors.Size;
+                    _image.Position = s * size;
                     _image.ReadExactly(bytes);
                     Assert.True(bytes.AsSpan().SequenceEqual(Drive.Expected(s, 1)), $"sector {s} differs");
                 }

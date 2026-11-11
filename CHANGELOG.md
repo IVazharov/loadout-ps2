@@ -7,6 +7,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 ### Added
 
 - Back up discs (Ctrl+3) copies an original PS2 disc in a disc drive on this PC to an image here, checks it against Redump's list of verified discs, and names a copy that matches as Redump does. A scratched disc is read in passes that go back to its weak areas in smaller pieces and let the drive rest after each failed read. The copy never gives up by itself: it can be stopped at any time and resumed later, after cleaning the disc or in another drive. A disc map shows how each part of the disc was read, as a bar from the centre to the edge and as rings on a picture of the disc. Each copy keeps its report, its hashes and its map beside it.
+- A CD is backed up as Redump keeps it: its raw sectors in a .bin, with a .cue, so the copy can be checked against Redump and installed from the Install page like any bin and cue.
 - Keep going, on Back up discs, is for a collection: a backed-up disc comes out of the drive, and the next PS2 disc put in is backed up by itself.
 - Settings has a Backups section with the folder the copies go to. The first backup asks for it, suggesting Documents\PS2 Backups.
 - Install has Back up a disc…, which opens Back up discs.

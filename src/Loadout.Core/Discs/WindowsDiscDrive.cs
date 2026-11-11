@@ -21,8 +21,19 @@ public sealed class WindowsDiscDrive : IDiscReader
     private const uint IoctlCdromGetConfiguration = 0x00024058;
     private const uint IoctlDvdReadStructure = 0x00335140;
     private const uint IoctlStorageEjectMedia = 0x002D4808;
+    private const uint GenericWrite = 0x40000000;
+    private const uint IoctlScsiPassThrough = 0x0004D004;
+
+    // SCSI_PASS_THROUGH on x64 is 56 bytes; 32 bytes of sense follow, then the data.
+    private const int SenseOffset = 56;
+    private const int DataOffset = 88;
+
+    // A buffered pass-through moves at most 64 KB: 27 raw CD sectors per READ CD.
+    private const int RawSectorsPerCommand = 27;
 
     private readonly SafeFileHandle _handle;
+    private SafeFileHandle? _passThrough;
+    private byte[]? _passThroughBuffer;
 
     private WindowsDiscDrive(string name, SafeFileHandle handle)
     {
@@ -39,6 +50,11 @@ public sealed class WindowsDiscDrive : IDiscReader
     public int Layers { get; private init; }
 
     public long Layer0Sectors { get; private init; }
+
+    public int CopySectorSize => Media == DiscMedia.Cd ? RawCdSectorSize : DiscSectors.Size;
+
+    public bool TryReadForCopy(long sector, Span<byte> destination, out string? failure) =>
+        Media == DiscMedia.Cd ? TryReadRawCd(sector, destination, out failure) : TryRead(sector, destination, out failure);
 
     /// <summary>The drive's current MMC profile (0x08 CD-ROM, 0x10 DVD-ROM, ...), or null when it did not say.</summary>
     public int? Profile { get; private init; }
@@ -126,7 +142,78 @@ public sealed class WindowsDiscDrive : IDiscReader
         }
     }
 
-    public void Dispose() => _handle.Dispose();
+    /// <summary>A CD sector as it is on the disc: sync, header, subheader, data and error correction.</summary>
+    public const int RawCdSectorSize = 2352;
+
+    public void Dispose()
+    {
+        _passThrough?.Dispose();
+        _handle.Dispose();
+    }
+
+    /// <summary>
+    /// Reads whole CD sectors raw, 2352 bytes each, as Redump keeps a CD in its .bin, with READ CD through SCSI
+    /// pass-through (which needs the drive opened for writing too; Windows allows that without admin rights). No retry of
+    /// its own. Returns false with the drive's answer when any of them could not be read.
+    /// </summary>
+    public bool TryReadRawCd(long sector, Span<byte> destination, out string? failure)
+    {
+        if (_passThrough is null)
+        {
+            var handle = NativeMethods.CreateFile($@"\\.\{Name}", GenericRead | GenericWrite, FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
+            if (handle.IsInvalid)
+            {
+                var error = Marshal.GetLastPInvokeError();
+                handle.Dispose();
+                failure = $"the drive could not be opened for raw reads: {Marshal.GetPInvokeErrorMessage(error)} (error {error})";
+                return false;
+            }
+
+            _passThrough = handle;
+            _passThroughBuffer = new byte[DataOffset + (RawSectorsPerCommand * RawCdSectorSize)];
+        }
+
+        var buffer = _passThroughBuffer!;
+        var total = destination.Length / RawCdSectorSize;
+        for (var done = 0; done < total; done += RawSectorsPerCommand)
+        {
+            var count = Math.Min(RawSectorsPerCommand, total - done);
+            var bytes = count * RawCdSectorSize;
+            Array.Clear(buffer, 0, DataOffset);
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer, SenseOffset);
+            buffer[6] = 12; // CDB length
+            buffer[7] = 32; // sense length
+            buffer[8] = 1; // SCSI_IOCTL_DATA_IN
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(12), (uint)bytes);
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(16), 60); // timeout, seconds
+            BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(24), DataOffset);
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(32), SenseOffset);
+            var cdb = buffer.AsSpan(36, 12);
+            cdb[0] = 0xBE; // READ CD, any sector type
+            BinaryPrimitives.WriteUInt32BigEndian(cdb[2..], (uint)(sector + done));
+            cdb[6] = (byte)(count >> 16);
+            cdb[7] = (byte)(count >> 8);
+            cdb[8] = (byte)count;
+            cdb[9] = 0xF8; // sync, all headers, user data, EDC/ECC: 2352 bytes
+            if (!NativeMethods.DeviceIoControl(_passThrough, IoctlScsiPassThrough, buffer, DataOffset, buffer, DataOffset + bytes, out _, IntPtr.Zero))
+            {
+                var error = Marshal.GetLastPInvokeError();
+                failure = $"{Marshal.GetPInvokeErrorMessage(error)} (error {error})";
+                return false;
+            }
+
+            if (buffer[2] != 0)
+            {
+                failure = $"the drive answered SCSI status 0x{buffer[2]:X2}, sense {buffer[SenseOffset + 2] & 0x0F:X}/{buffer[SenseOffset + 12]:X2}/{buffer[SenseOffset + 13]:X2}";
+                return false;
+            }
+
+            buffer.AsSpan(DataOffset, bytes).CopyTo(destination[(done * RawCdSectorSize)..]);
+        }
+
+        failure = null;
+        return true;
+    }
 
     /// <summary>Opens the drive's tray. Returns false when the drive would not (no tray, or the disc is in use).</summary>
     public static bool TryEject(string driveName)

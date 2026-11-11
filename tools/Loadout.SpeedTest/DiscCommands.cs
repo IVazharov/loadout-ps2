@@ -512,11 +512,12 @@ public static class DiscCommands
                     Console.WriteLine($"  {range.State}: sectors {range.Start}-{range.End - 1} ({Mb(range.Count)}), {DiscGeometry.RadiusMm(range.Start, drive.Media, drive.Layer0Sectors) / 10:0.0} cm from the centre");
                 }
 
-                var sector = new byte[DiscSectors.Size];
+                var isCd = drive.Media == DiscMedia.Cd;
                 var files = IsoFileTree.Read(
                     (s, destination) =>
                     {
-                        if (!map.StateAt(s).IsRead())
+                        // A CD copy is raw; its file names are left out here.
+                        if (isCd || !map.StateAt(s).IsRead())
                         {
                             return false;
                         }
@@ -575,10 +576,54 @@ public static class DiscCommands
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Hashed in {clock.Elapsed.TotalSeconds:0.0} s{(list.Downloaded ? "; Redump's list was downloaded" : string.Empty)}."));
         if (check?.Verdict == RedumpVerdict.Matches)
         {
-            Console.WriteLine($"Named as Redump names it: {DiscBackupFiles.NameFor(check.Game!)}{DiscBackupFiles.ImageExtension}");
+            var extension = imagePath.EndsWith(DiscBackupFiles.CdImageExtension, StringComparison.OrdinalIgnoreCase) ? DiscBackupFiles.CdImageExtension : DiscBackupFiles.ImageExtension;
+            Console.WriteLine($"Named as Redump names it: {DiscBackupFiles.NameFor(check.Game!)}{extension}");
         }
 
         return check?.Verdict == RedumpVerdict.Matches ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Reads a CD whole as raw 2352-byte sectors (READ CD through pass-through), as Redump keeps a CD in its .bin, then
+    /// checks the file against Redump's list. A trial of the CD backup: no passes, it stops at the first failed read.
+    /// </summary>
+    public static async Task<int> CdRawAsync(string driveName, string[] options)
+    {
+        if (options.Length != 1 || !OperatingSystem.IsWindows())
+        {
+            return 2;
+        }
+
+        var path = Path.GetFullPath(options[0]);
+        using var drive = WindowsDiscDrive.Open(driveName);
+        Console.WriteLine($"{drive.Name}: {drive.Media}, {drive.Sectors} sectors; reading them raw to {path}");
+        const int Piece = 108;
+        var buffer = new byte[Piece * WindowsDiscDrive.RawCdSectorSize];
+        var clock = Stopwatch.StartNew();
+        var nextReport = 0L;
+        await using (var file = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 20))
+        {
+            for (var sector = 0L; sector < drive.Sectors; sector += Piece)
+            {
+                var count = (int)Math.Min(Piece, drive.Sectors - sector);
+                var data = buffer.AsMemory(0, count * WindowsDiscDrive.RawCdSectorSize);
+                if (!drive.TryReadRawCd(sector, data.Span, out var failure))
+                {
+                    Console.Error.WriteLine($"Sector {sector} could not be read raw: {failure}");
+                    return 1;
+                }
+
+                await file.WriteAsync(data);
+                if (sector >= nextReport)
+                {
+                    Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  {100.0 * sector / drive.Sectors:0}% at {clock.Elapsed.TotalSeconds:0} s"));
+                    nextReport += drive.Sectors / 10;
+                }
+            }
+        }
+
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Read in {clock.Elapsed.TotalSeconds:0} s, {drive.Sectors * WindowsDiscDrive.RawCdSectorSize / 1_000_000.0 / clock.Elapsed.TotalSeconds:0.0} MB/s."));
+        return await RedumpCheckAsync([path]);
     }
 
     private static string Mb(long sectors) => string.Create(CultureInfo.InvariantCulture, $"{sectors * DiscSectors.Size / 1_000_000.0:0.0} MB");

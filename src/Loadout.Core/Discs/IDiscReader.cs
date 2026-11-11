@@ -30,6 +30,14 @@ public interface IDiscReader : IDisposable
     /// not be read; the destination then holds nothing useful.
     /// </summary>
     bool TryRead(long sector, Span<byte> destination, out string? failure);
+
+    /// <summary>
+    /// The bytes a backup keeps of each sector: 2048 for a DVD (its .iso), 2352 for a CD, raw, as Redump keeps it in a .bin.
+    /// </summary>
+    int CopySectorSize { get; }
+
+    /// <summary>Reads whole sectors once as the backup keeps them (<see cref="CopySectorSize"/> bytes each), with no retry.</summary>
+    bool TryReadForCopy(long sector, Span<byte> destination, out string? failure);
 }
 
 public static class DiscSectors

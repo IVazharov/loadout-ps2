@@ -596,9 +596,13 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,4,16,0" Orientation="Horizontal">
+                                        <!-- A fixed width and even digits, so an item doesn't move as the amounts count. -->
+                                        <StackPanel Width="250" Margin="0,4,8,0" Orientation="Horizontal">
                                             <Rectangle Width="10" Height="10" VerticalAlignment="Center" Fill="{Binding Brush}" />
-                                            <TextBlock Margin="6,0,0,0" Style="{StaticResource Text.Detail}" Foreground="{DynamicResource AppMuted}">
+                                            <TextBlock Margin="6,0,0,0"
+                                                       Style="{StaticResource Text.Detail}"
+                                                       Foreground="{DynamicResource AppMuted}"
+                                                       Typography.NumeralAlignment="Tabular">
                                                 <Run Text="{Binding Label, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Amount, Mode=OneWay}" />
                                             </TextBlock>
                                         </StackPanel>

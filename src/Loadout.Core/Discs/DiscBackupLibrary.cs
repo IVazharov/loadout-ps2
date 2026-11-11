@@ -27,7 +27,8 @@ public sealed record DiscBackup(
     DiscBackupResult Result,
     DateTime ModifiedUtc)
 {
-    public long Bytes => Sectors * DiscSectors.Size;
+    /// <summary>The copy's size: 2048 bytes a sector for a DVD, 2352 for a CD kept raw.</summary>
+    public long Bytes => Sectors * (Files.IsCd ? 2352 : DiscSectors.Size);
 }
 
 /// <summary>
@@ -60,6 +61,12 @@ public static class DiscBackupLibrary
     /// <summary>The backup whose files have this name, or null when its map is missing or can't be read.</summary>
     public static DiscBackup? Read(DiscBackupFiles files)
     {
+        // A CD copy is a .bin with a .cue; the name alone doesn't say which.
+        if (!files.IsCd && !File.Exists(files.Image) && File.Exists((files with { IsCd = true }).Image))
+        {
+            files = files with { IsCd = true };
+        }
+
         DiscCopyMap map;
         try
         {
@@ -101,6 +108,11 @@ public static class DiscBackupLibrary
             hashes = await DiscImageHashes.ComputeAsync(image, progress, cancellationToken).ConfigureAwait(false);
         }
 
+        if (files.IsCd)
+        {
+            files.WriteCue(CdMode(files.Image));
+        }
+
         return Record(files, hashes, redump);
     }
 
@@ -127,6 +139,14 @@ public static class DiscBackupLibrary
         File.WriteAllText(temporary, hashes.Format(Path.GetFileName(files.Image), check, redump?.Version));
         File.Move(temporary, files.Hashes, overwrite: true);
         return Read(files) ?? throw new IOException($"The map of {files.Name} could not be read back.");
+    }
+
+    /// <summary>The mode of a raw CD copy's data sectors, from the header of its volume descriptor: 1 or 2 (PS2 CDs).</summary>
+    private static int CdMode(string bin)
+    {
+        using var file = File.OpenRead(bin);
+        file.Position = (DiscSectors.VolumeDescriptor * 2352) + 15;
+        return file.ReadByte() == 1 ? 1 : 2;
     }
 
     private static DiscBackupResult ResultFrom(string hashesPath)

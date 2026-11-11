@@ -30,6 +30,7 @@ public sealed class DiscCopier
     private readonly DiscCopierSettings _settings;
     private readonly IDiscCopyClock _clock;
     private readonly byte[] _buffer;
+    private readonly int _sectorSize;
     private readonly byte[] _probe = new byte[DiscSectors.Size];
     private TimeSpan _lastSave;
     private TimeSpan _lastStatus;
@@ -57,7 +58,8 @@ public sealed class DiscCopier
         _saveMap = saveMap;
         _settings = settings ?? new DiscCopierSettings();
         _clock = clock ?? new SystemDiscCopyClock();
-        _buffer = GC.AllocateUninitializedArray<byte>(Math.Max(_settings.FirstPassPiece, _settings.PieceSizes[0]) * DiscSectors.Size, pinned: true);
+        _sectorSize = drive.CopySectorSize;
+        _buffer = GC.AllocateUninitializedArray<byte>(Math.Max(_settings.FirstPassPiece, _settings.PieceSizes[0]) * _sectorSize, pinned: true);
         _firstRest = _settings.FirstRest;
         _restFloor = _settings.ShortestRest;
     }
@@ -78,7 +80,7 @@ public sealed class DiscCopier
 
     private async Task<DiscCopyOutcome> RunCoreAsync(CancellationToken cancellationToken)
     {
-        var size = _map.Sectors * DiscSectors.Size;
+        var size = _map.Sectors * _sectorSize;
         if (_image.Length < size)
         {
             _image.SetLength(size);
@@ -316,13 +318,13 @@ public sealed class DiscCopier
     /// <summary>Reads sectors once and writes them to the image. On a failure, marks them failed and returns false.</summary>
     private bool Read(long sector, int count, DiscSectorState readAs)
     {
-        var data = _buffer.AsSpan(0, count * DiscSectors.Size);
+        var data = _buffer.AsSpan(0, count * _sectorSize);
         var started = _clock.Elapsed;
-        var read = _drive.TryRead(sector, data, out var error);
+        var read = _drive.TryReadForCopy(sector, data, out var error);
         var took = _clock.Elapsed - started;
         if (read)
         {
-            _image.Position = sector * DiscSectors.Size;
+            _image.Position = sector * _sectorSize;
             _image.Write(data);
             _map.Mark(sector, count, readAs);
             if (took > TimeSpan.Zero)

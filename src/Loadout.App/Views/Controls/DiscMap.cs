@@ -195,15 +195,20 @@ public sealed class DiscMapBar : DiscMapElement
                 }
             }
 
-            // Size marks every half GB.
+            // Size marks every half GB, or every 100 MB on a CD.
             var markPen = new Pen(Foreground, 1);
             markPen.Freeze();
             var bytes = view.Sectors * DiscSectors.Size;
-            for (var gb = 0.0; gb * 1_000_000_000 <= bytes; gb += 0.5)
+            var step = bytes < 1_500_000_000 ? 100_000_000L : 500_000_000L;
+            for (var at = 0L; at <= bytes; at += step)
             {
-                var x = Math.Round(gb * 1_000_000_000 / bytes * (width - 1)) + 0.5;
+                var x = Math.Round((double)at / bytes * (width - 1)) + 0.5;
                 drawingContext.DrawLine(markPen, new Point(x, BarTop + BarHeight), new Point(x, BarTop + BarHeight + 4));
-                var label = Text(gb.ToString("0.#", CultureInfo.CurrentCulture) + " GB", 11);
+                var label = Text(
+                    step < 500_000_000
+                        ? (at / 1_000_000).ToString(CultureInfo.CurrentCulture) + " MB"
+                        : (at / 1_000_000_000.0).ToString("0.#", CultureInfo.CurrentCulture) + " GB",
+                    11);
                 var left = Math.Clamp(x - (label.Width / 2), 0, width - label.Width);
                 drawingContext.DrawText(label, new Point(left, BarTop + BarHeight + 5));
             }

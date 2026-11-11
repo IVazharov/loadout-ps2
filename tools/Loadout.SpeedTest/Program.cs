@@ -45,6 +45,11 @@ const string Usage =
     complete copy is hashed (MD5, SHA-1); an incomplete one lists what is missing, where on the disc and in which
     files. --cleaned after cleaning the disc, --another-drive in another drive: the passes start over in big pieces.
 
+           Loadout.SpeedTest cd-raw <drive> <bin>
+
+    Reads a CD in a PC drive whole as raw 2352-byte sectors, as Redump keeps a CD in its .bin, and checks the file
+    against Redump's PS2 list. A trial for CD backups: no passes, it stops at the first failed read.
+
            Loadout.SpeedTest redump-check <image> [--refresh]
 
     Hashes a disc image (size, CRC-32, MD5, SHA-1) and checks it against Redump's PS2 list, which it downloads
@@ -203,6 +208,12 @@ if (args[0] == "disc-fastfail" && args.Length >= 3 && DiscDrive.IsDriveName(args
 if (args[0] == "disc-copy" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))
 {
     var result = DiscCommands.Copy(args[1], args[2..]);
+    return result == 2 ? UsageError() : result;
+}
+
+if (args[0] == "cd-raw" && args.Length == 3 && DiscDrive.IsDriveName(args[1]))
+{
+    var result = await DiscCommands.CdRawAsync(args[1], args[2..]);
     return result == 2 ? UsageError() : result;
 }
 

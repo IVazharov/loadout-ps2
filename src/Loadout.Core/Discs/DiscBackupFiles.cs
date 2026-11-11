@@ -4,14 +4,20 @@ using Loadout.Core;
 namespace Loadout.Discs;
 
 /// <summary>
-/// The files of one backed-up disc, all named after it in one folder: the copy (.iso), its report (.report.txt), its
-/// hashes (.hashes.txt), its map for going on (.map) and the map as a picture (.map.png).
+/// The files of one backed-up disc, all named after it in one folder: the copy (.iso for a DVD; .bin and .cue for a CD, as
+/// Redump keeps them), its report (.report.txt), its hashes (.hashes.txt), its map for going on (.map) and the map as a
+/// picture (.map.png).
 /// </summary>
-public sealed record DiscBackupFiles(string Folder, string Name)
+public sealed record DiscBackupFiles(string Folder, string Name, bool IsCd = false)
 {
     public const string ImageExtension = ".iso";
 
-    public string Image => Path.Combine(Folder, Name + ImageExtension);
+    public const string CdImageExtension = ".bin";
+
+    public string Image => Path.Combine(Folder, Name + (IsCd ? CdImageExtension : ImageExtension));
+
+    /// <summary>A CD's cue sheet, which names its .bin.</summary>
+    public string Cue => Path.Combine(Folder, Name + ".cue");
 
     public string Report => Path.Combine(Folder, Name + ".report.txt");
 
@@ -21,7 +27,13 @@ public sealed record DiscBackupFiles(string Folder, string Name)
 
     public string MapPicture => Path.Combine(Folder, Name + ".map.png");
 
-    public IReadOnlyList<string> All => [Image, Report, Hashes, Map, MapPicture];
+    public IReadOnlyList<string> All => IsCd ? [Image, Cue, Report, Hashes, Map, MapPicture] : [Image, Report, Hashes, Map, MapPicture];
+
+    /// <summary>A one-track CD's cue sheet as Redump writes it, so it matches Redump's .cue byte for byte.</summary>
+    public string CueText(int mode) => $"FILE \"{Name}{CdImageExtension}\" BINARY\r\n  TRACK 01 MODE{mode}/2352\r\n    INDEX 01 00:00:00\r\n";
+
+    /// <summary>Writes the cue sheet of a CD copy whose data sectors are in this mode (1 or 2; PS2 CDs are mode 2).</summary>
+    public void WriteCue(int mode) => File.WriteAllText(Cue, CueText(mode));
 
     /// <summary>The name of a copy that matches Redump: Redump's own, such as "Need for Speed - ProStreet (Europe, Australia)".</summary>
     public static string NameFor(RedumpGame game) => SafeName(game.Name);
@@ -34,16 +46,20 @@ public sealed record DiscBackupFiles(string Folder, string Name)
     }
 
     /// <summary>Files named <paramref name="name"/> in the folder, or "name (2)" and so on when that name is taken by any of them.</summary>
-    public static DiscBackupFiles Unused(string folder, string name)
+    public static DiscBackupFiles Unused(string folder, string name, bool isCd = false)
     {
-        var files = new DiscBackupFiles(folder, name);
-        for (var n = 2; files.All.Any(File.Exists); n++)
+        var files = new DiscBackupFiles(folder, name, isCd);
+        for (var n = 2; Taken(files); n++)
         {
-            files = new DiscBackupFiles(folder, $"{name} ({n})");
+            files = new DiscBackupFiles(folder, $"{name} ({n})", isCd);
         }
 
         return files;
     }
+
+    // A name is taken by the files of a DVD copy or a CD copy.
+    private static bool Taken(DiscBackupFiles files) =>
+        (files with { IsCd = false }).All.Concat((files with { IsCd = true }).All).Any(File.Exists);
 
     /// <summary>
     /// Gives every file that exists a new name, such as Redump's once a copy matches. The name is made unique first.
@@ -56,13 +72,19 @@ public sealed record DiscBackupFiles(string Folder, string Name)
             return this;
         }
 
-        var target = Unused(Folder, name);
+        var target = Unused(Folder, name, IsCd);
         foreach (var (from, to) in All.Zip(target.All))
         {
             if (File.Exists(from))
             {
                 File.Move(from, to);
             }
+        }
+
+        // The cue names its .bin: write it again for the new name.
+        if (IsCd && File.Exists(target.Cue))
+        {
+            target.WriteCue(File.ReadAllText(target.Cue).Contains("MODE1/", StringComparison.Ordinal) ? 1 : 2);
         }
 
         return target;

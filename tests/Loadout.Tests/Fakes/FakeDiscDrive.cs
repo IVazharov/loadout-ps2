@@ -36,6 +36,9 @@ internal sealed class FakeDiscDrive(long sectors, FakeDiscClock clock, byte[]? c
 
     public long Layer0Sectors => 0;
 
+    /// <summary>2048, or 2352 for a CD read raw.</summary>
+    public int CopySectorSize { get; init; } = DiscSectors.Size;
+
     public HashSet<long> Dead { get; } = [];
 
     /// <summary>Sector: how many more reads of it fail before it reads.</summary>
@@ -60,10 +63,11 @@ internal sealed class FakeDiscDrive(long sectors, FakeDiscClock clock, byte[]? c
 
     public static byte ByteOf(long sector, int index) => (byte)((sector * 131) + (index * 7) + (sector >> 9));
 
+    /// <summary>What a copy should hold for these sectors.</summary>
     public byte[] Expected(long sector, int count)
     {
-        var data = new byte[count * DiscSectors.Size];
-        Fill(sector, data);
+        var data = new byte[count * CopySectorSize];
+        Fill(sector, data, CopySectorSize);
         return data;
     }
 
@@ -71,10 +75,14 @@ internal sealed class FakeDiscDrive(long sectors, FakeDiscClock clock, byte[]? c
 
     public void RefuseFor(TimeSpan time) => _refuseUntil = clock.Elapsed + time;
 
-    public bool TryRead(long sector, Span<byte> destination, out string? failure)
+    public bool TryRead(long sector, Span<byte> destination, out string? failure) => Logged(sector, destination, DiscSectors.Size, out failure);
+
+    public bool TryReadForCopy(long sector, Span<byte> destination, out string? failure) => Logged(sector, destination, CopySectorSize, out failure);
+
+    private bool Logged(long sector, Span<byte> destination, int size, out string? failure)
     {
-        var count = destination.Length / DiscSectors.Size;
-        var ok = Read(sector, count, destination, out failure);
+        var count = destination.Length / size;
+        var ok = Read(sector, count, destination, size, out failure);
         Log.Add((sector, count, ok));
         AfterRead?.Invoke(Log.Count);
         return ok;
@@ -84,7 +92,7 @@ internal sealed class FakeDiscDrive(long sectors, FakeDiscClock clock, byte[]? c
     {
     }
 
-    private bool Read(long sector, int count, Span<byte> destination, out string? error)
+    private bool Read(long sector, int count, Span<byte> destination, int size, out string? error)
     {
         if (clock.Elapsed < _refuseUntil)
         {
@@ -116,19 +124,19 @@ internal sealed class FakeDiscDrive(long sectors, FakeDiscClock clock, byte[]? c
             return false;
         }
 
-        Fill(sector, destination);
+        Fill(sector, destination, size);
         clock.Advance(TimeSpan.FromSeconds(destination.Length / BytesPerSecond));
         error = null;
         return true;
     }
 
-    private void Fill(long sector, Span<byte> destination)
+    private void Fill(long sector, Span<byte> destination, int size)
     {
-        for (var at = 0; at < destination.Length; at += DiscSectors.Size)
+        for (var at = 0; at < destination.Length; at += size)
         {
-            var s = sector + (at / DiscSectors.Size);
-            var target = destination.Slice(at, DiscSectors.Size);
-            if (content is not null && (s + 1) * DiscSectors.Size <= content.Length)
+            var s = sector + (at / size);
+            var target = destination.Slice(at, size);
+            if (size == DiscSectors.Size && content is not null && (s + 1) * DiscSectors.Size <= content.Length)
             {
                 content.AsSpan((int)(s * DiscSectors.Size), DiscSectors.Size).CopyTo(target);
                 continue;
