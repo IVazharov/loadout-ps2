@@ -16,6 +16,8 @@ Both parts share one version number.
 
 Put an original PS2 disc, DVD or CD, in your PC's drive. Loadout copies it, checks the copy against [Redump](http://redump.org)'s list of verified discs so you know it's exact, and names it as Redump does. A scratched disc is read in passes that go back to its weak spots. A map of the disc shows where the trouble is, Loadout tells you when cleaning would help, and the copy goes on where it was. Stop and resume any time. Tick Also install on PS2 and the game goes to the PS2 as it's copied.
 
+![Back up discs copying a scratched disc: the disc map as a bar and as rings on a picture of the disc, with a cloth where it was cleaned](docs/images/backup.png)
+
 ### Send games from your PC
 
 Queue iso, bin and cue, or chd files. Loadout sends them over your network, with their artwork, and checks each game after installing it. A chd is read as it's sent, with no converted copy on your disk.
