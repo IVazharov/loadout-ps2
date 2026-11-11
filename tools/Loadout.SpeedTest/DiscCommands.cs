@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Loadout.Bay;
+using Loadout.Discs;
 using Loadout.Images;
 
 namespace Loadout.SpeedTest;
@@ -396,20 +397,21 @@ public static class DiscCommands
     }
 
     /// <summary>
-    /// Copies a disc to an image in passes (<see cref="DiscCopier"/>), going on from the map beside the image when there
-    /// is one, then hashes a complete copy the way Redump lists discs.
+    /// Backs up a disc to an image with Loadout's disc copier (<see cref="DiscCopier"/>), going on from the map beside the
+    /// image when there is one, then hashes a complete copy the way Redump lists discs. Ctrl+C stops it; running it again
+    /// goes on from where it was. --cleaned after cleaning the disc, --another-drive when the disc is in another drive:
+    /// both start the passes over what is missing in big pieces.
     /// </summary>
     public static int Copy(string driveName, string[] options)
     {
-        if (options.Length == 0)
+        if (options.Length == 0 || !OperatingSystem.IsWindows())
         {
             return 2;
         }
 
         var imagePath = Path.GetFullPath(options[0]);
         TimeSpan? limit = null;
-        var retryAll = false;
-        var firstSweep = 1;
+        bool? cleaned = null;
         for (var i = 1; i < options.Length; i++)
         {
             switch (options[i])
@@ -417,93 +419,127 @@ public static class DiscCommands
                 case "--minutes" when i + 1 < options.Length:
                     limit = TimeSpan.FromMinutes(double.Parse(options[++i], CultureInfo.InvariantCulture));
                     break;
-                case "--sweep" when i + 1 < options.Length:
-                    firstSweep = int.Parse(options[++i], CultureInfo.InvariantCulture);
+                case "--cleaned":
+                    cleaned = true;
                     break;
-                case "--retry-all":
-                    retryAll = true;
+                case "--another-drive":
+                    cleaned = false;
                     break;
                 default:
                     return 2;
             }
         }
+
         var mapPath = imagePath + ".map";
         var clock = Stopwatch.StartNew();
         void Note(string line) => Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"[{clock.Elapsed:hh\\:mm\\:ss}] {line}"));
 
-        using var drive = DiscDrive.Open(driveName);
-        var sectors = drive.Length / DiscDrive.SectorSize;
+        using var drive = WindowsDiscDrive.Open(driveName);
+        Note($"{drive.Name}: {drive.Media}, {drive.Sectors} sectors ({Mb(drive.Sectors)}), {drive.Layers} layer(s).");
+
         // A drive can still be refusing reads after a failed one (a minute or less); give it time before calling the disc unreadable.
-        var descriptor = new byte[DiscDrive.SectorSize];
-        var error = drive.TryRead(16, descriptor);
-        for (var attempt = 1; error is not null && attempt <= 4; attempt++)
+        var identity = DiscIdentity.Read(drive);
+        for (var attempt = 1; identity is null && attempt <= 4; attempt++)
         {
-            Note($"The disc's first file-system sector did not read ({error}); waiting 30 s for the drive.");
+            Note("The disc's volume descriptor did not read; waiting 30 s for the drive.");
             Thread.Sleep(TimeSpan.FromSeconds(30));
-            error = drive.TryRead(16, descriptor);
+            identity = DiscIdentity.Read(drive);
         }
 
-        if (error is not null)
+        if (identity is null)
         {
-            Console.Error.WriteLine($"The disc's first file-system sector could not be read: {error}");
+            Console.Error.WriteLine("The disc's volume descriptor could not be read.");
             return 1;
         }
 
-        ImageFacts facts;
-        using (var probe = new DiscDriveStream(drive, drive.Length))
+        DiscCopyMap map;
+        if (File.Exists(mapPath))
         {
-            facts = Iso9660Image.Read(probe, drive.Name, SectorLayout.Headerless2048, drive.IsCd);
-        }
+            map = DiscCopyMap.Load(mapPath);
+            if (!DiscIdentity.TryParse(map.Identity, out var was) || !was.IsSameDisc(identity))
+            {
+                Console.Error.WriteLine($"{mapPath} is for another disc ({map.Identity}); this one is {identity.Format()}.");
+                return 1;
+            }
 
-        var identity = $"{facts.DiscId?.Canonical ?? "-"} {sectors} {Convert.ToHexStringLower(SHA256.HashData(descriptor))[..16]}";
-        var map = DiscCopyMap.Load(mapPath);
-        if (map is null)
-        {
-            map = DiscCopyMap.New(sectors, identity);
-            Note($"New copy of {identity} to {imagePath}");
-        }
-        else if (map.Identity != identity)
-        {
-            Console.Error.WriteLine($"{mapPath} is for another disc ({map.Identity}); this one is {identity}.");
-            return 1;
+            Note($"Going on with the copy of {identity.Format()}: {Mb(map.ReadSectors)} of {Mb(map.Sectors)} done, pass {map.Sweep + 1}.");
+            if (cleaned is { } wasCleaned)
+            {
+                map.StartOver(wasCleaned);
+                Note(wasCleaned ? $"After cleaning {map.Cleanings}: the passes start over in big pieces." : "In another drive: the passes start over in big pieces.");
+            }
         }
         else
         {
-            Note($"Going on with the copy of {identity}: {DiscCopier.Mb(map.Count(SectorState.Good))} of {DiscCopier.Mb(sectors)} done.");
-            if (retryAll)
-            {
-                map.RetryAll();
-                Note("Everything not read yet goes through all the passes again.");
-            }
+            map = DiscCopyMap.New(drive.Sectors, identity.Format());
+            Note($"New copy of {identity.Format()} to {imagePath}");
         }
 
-        bool finished;
+        using var stop = limit is { } time ? new CancellationTokenSource(time) : new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            stop.Cancel();
+        };
+
         DiscCopier copier;
+        DiscCopyOutcome outcome;
         using (var image = new FileStream(imagePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1 << 20))
         {
-            if (image.Length != drive.Length)
+            var lastStatus = TimeSpan.Zero;
+            copier = new DiscCopier(drive, image, map, m => m.Save(mapPath))
             {
-                image.SetLength(drive.Length);
-            }
-
-            copier = new DiscCopier(drive, image, map, mapPath, Note) { FirstSweep = firstSweep };
-            finished = copier.Run(limit);
-        }
-
-        var missing = sectors - map.Count(SectorState.Good);
-        Note($"{(finished ? "All passes done" : "Stopped at the time limit")}: {DiscCopier.Mb(map.Count(SectorState.Good))} good, {DiscCopier.Mb(missing)} not read; {copier.Failures} failed reads, rested {copier.Resting.TotalMinutes:0.0} min.");
-        if (missing > 0)
-        {
-            foreach (var state in new[] { SectorState.Untried, SectorState.Skipped, SectorState.Failed, SectorState.Bad })
-            {
-                foreach (var (start, count) in map.Ranges(state).Take(20))
+                Note = note => Note(note.Message),
+                Progress = new Reporter(status =>
                 {
-                    Console.WriteLine($"  {state}: sectors {start}-{start + count - 1} ({DiscCopier.Mb(count)})");
-                }
-            }
+                    if (clock.Elapsed - lastStatus < TimeSpan.FromSeconds(30) && status.Phase is DiscCopyPhase.FirstPass or DiscCopyPhase.Sweep)
+                    {
+                        return;
+                    }
 
-            Console.WriteLine("Run the same command again to go on from here.");
-            return 1;
+                    lastStatus = clock.Elapsed;
+                    Note(string.Create(CultureInfo.InvariantCulture, $"  {status.Phase}, pass {status.Sweep + 1}{(status.Backwards ? " backwards" : string.Empty)}, at sector {status.Sector} in pieces of {status.PieceSectors}: {Mb(status.ReadSectors)} read, {Mb(status.MissingSectors)} missing, {Mb(status.UntriedSectors)} untried, {status.BytesPerSecond / 1_000_000:0.0} MB/s, {status.Failures} failed reads{(status.Stalled ? ", STALLED" : string.Empty)}"));
+                }),
+            };
+            outcome = copier.RunAsync(stop.Token).GetAwaiter().GetResult();
+
+            Note($"{outcome}: {Mb(map.ReadSectors)} read, {Mb(map.Sectors - map.ReadSectors)} not; {copier.Failures} failed reads, rested {copier.Rested.TotalMinutes:0.0} min.");
+            if (outcome != DiscCopyOutcome.Complete)
+            {
+                var missing = map.Ranges.Where(r => !r.State.IsRead()).ToList();
+                foreach (var range in missing.Take(20))
+                {
+                    Console.WriteLine($"  {range.State}: sectors {range.Start}-{range.End - 1} ({Mb(range.Count)}), {DiscGeometry.RadiusMm(range.Start, drive.Media, drive.Layer0Sectors) / 10:0.0} cm from the centre");
+                }
+
+                var sector = new byte[DiscSectors.Size];
+                var files = IsoFileTree.Read(
+                    (s, destination) =>
+                    {
+                        if (!map.StateAt(s).IsRead())
+                        {
+                            return false;
+                        }
+
+                        image.Position = s * DiscSectors.Size;
+                        image.ReadExactly(destination);
+                        return true;
+                    },
+                    map.Sectors);
+                var (shares, outside) = IsoFileTree.FilesIn(files, missing.Select(r => (r.Start, r.Count)));
+                foreach (var share in shares.Take(10))
+                {
+                    Console.WriteLine($"  {Mb(share.Sectors)} of {share.File.Path} ({Mb(share.File.Sectors)})");
+                }
+
+                if (outside > 0)
+                {
+                    Console.WriteLine($"  {Mb(outside)} in no file{(files.Complete ? string.Empty : " or in folders not read yet")}");
+                }
+
+                Console.WriteLine("Run the same command again to go on from here.");
+                return 1;
+            }
         }
 
         clock.Restart();
@@ -522,6 +558,14 @@ public static class DiscCommands
 
         Console.WriteLine($"Complete. MD5 {Convert.ToHexStringLower(md5.GetHashAndReset())}  SHA-1 {Convert.ToHexStringLower(sha1.GetHashAndReset())} (hashed in {clock.Elapsed.TotalSeconds:0} s)");
         return 0;
+    }
+
+    private static string Mb(long sectors) => string.Create(CultureInfo.InvariantCulture, $"{sectors * DiscSectors.Size / 1_000_000.0:0.0} MB");
+
+    /// <summary>Hands each status on as it comes, on the copier's thread.</summary>
+    private sealed class Reporter(Action<DiscCopyStatus> report) : IProgress<DiscCopyStatus>
+    {
+        public void Report(DiscCopyStatus value) => report(value);
     }
 
     /// <summary>

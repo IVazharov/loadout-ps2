@@ -36,14 +36,14 @@ const string Usage =
     and the MD5 and SHA-1 that Redump lists. --out saves it as an iso; --zero-fill reads an unreadable sector
     as zeros and goes on; --speed caps the drive (DVD 1x = 1385 KB/s). An install accepts a drive too.
 
-           Loadout.SpeedTest disc-copy <drive> <image> [--minutes <n>] [--retry-all] [--sweep <n>]
+           Loadout.SpeedTest disc-copy <drive> <image> [--minutes <n>] [--cleaned | --another-drive]
 
-    Copies a disc in a PC drive to an image in passes that get the most out of a scratched disc: fast, then sweeps
-    over what is missing in pieces that shrink at a failure and grow after good reads, resting the drive after each
-    failed read. Progress is
-    kept in <image>.map, so running it again goes on from there. A complete copy is hashed (MD5, SHA-1).
-    --retry-all sends everything not read yet through all the passes again, as after cleaning the disc.
-    --sweep starts at that adaptive sweep (even ones go backwards), as after a stop partway through one.
+    Backs up a disc in a PC drive to an image with Loadout's disc copier, which gets the most out of a scratched
+    disc: a first pass in order that jumps past weak spots, then passes over what is missing in pieces that shrink
+    at a failure and grow after good reads, resting the drive after each failed read, until the copy is complete or
+    stopped (Ctrl+C, or --minutes). Progress is kept in <image>.map, so running it again goes on from there. A
+    complete copy is hashed (MD5, SHA-1); an incomplete one lists what is missing, where on the disc and in which
+    files. --cleaned after cleaning the disc, --another-drive in another drive: the passes start over in big pieces.
 
            Loadout.SpeedTest disc-probe <drive> [--from <sector>] [--to <sector>] [--chunk <n>] [--gap <ms>] [--stride <n>] [--rest <s>]
 
