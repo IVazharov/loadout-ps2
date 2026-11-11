@@ -11,6 +11,10 @@
         Width="1180"
         MinHeight="640"
         MinWidth="960">
+    <!-- Back up discs on the taskbar button: progress while copying, yellow when it needs the user, red when it stopped. -->
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo ProgressState="{Binding Backup.TaskbarState}" ProgressValue="{Binding Backup.TaskbarProgress}" />
+    </Window.TaskbarItemInfo>
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
         <c:CollapsedWhenTrueConverter x:Key="CollapsedWhenTrue" />
@@ -558,7 +562,17 @@
                                AutomationProperties.Name="More about also install on PS2"
                                ToolTip="Installs each disc on the PS2 as it is copied, with the Install page's options: artwork, memory cards and the install check. If the copy meets a weak area, that install is cancelled, Loadout Bay removes what it had, and the finished copy is installed instead." />
                 </DockPanel>
-                <c:StatusPanel DockPanel.Dock="Top" Margin="0,12,0,0" Status="{Binding Status}" />
+                <Grid DockPanel.Dock="Top" Margin="0,12,0,0">
+                    <c:StatusPanel Status="{Binding Status}" />
+                    <!-- After a copy ends: its report, every pass, failed read, rest and cleaning. -->
+                    <TextBlock Margin="0,0,24,0"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Center"
+                               Style="{StaticResource Text.Body}"
+                               Visibility="{Binding HasDetails, Converter={StaticResource VisibleWhenTrue}}">
+                        <Hyperlink Foreground="{DynamicResource AppText}" Command="{Binding DetailsCommand}" ToolTip="Opens the copy's report: every pass, failed read, rest and cleaning.">Details</Hyperlink>
+                    </TextBlock>
+                </Grid>
                 <Border DockPanel.Dock="Top"
                         Margin="0,12,0,0"
                         Padding="16"
@@ -645,6 +659,11 @@
                             Content="Show _report"
                             ToolTip="Opens the selected copy's report: every pass, failed read and rest of its backup."
                             Command="{Binding ShowReportCommand}" />
+                    <Button Margin="8,0,0,0"
+                            Content="Sa_ve report…"
+                            ToolTip="Saves a copy of the selected backup's report where you choose, for example to attach it to a problem report."
+                            IsEnabled="{Binding CanSaveReport}"
+                            Command="{Binding SaveReportCommand}" />
                     <Button Margin="8,0,0,0"
                             Content="I_nstall on PS2"
                             ToolTip="Installs the selected copy on the PS2 now, with the Install page's options: artwork, memory cards and the install check."

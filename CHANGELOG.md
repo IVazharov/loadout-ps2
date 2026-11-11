@@ -12,6 +12,8 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - Back up discs shows the drive's own read speed for the disc in it, such as 10x–24x for a CD, and where it reads now while copying.
 - Also install on PS2, on Back up discs, installs each disc on the PS2 as it is copied, with the Install page's options. If the copy meets a weak area, that install is cancelled and the finished copy is installed instead. A second marker under the disc map shows how far the PS2 has got.
 - Install on PS2, on Back up discs, installs the copy picked in the list.
+- While Loadout is behind other windows, Back up discs tells you in a Windows notification when a disc is backed up, when it needs cleaning to go on, and when a copy stops on an error; the taskbar button shows the copy's progress, turns yellow when it needs you and red when it stopped, and flashes until you come back.
+- After a copy, Details opens its report: every pass, failed read, rest and cleaning. Save report… keeps a copy of a backup's report where you choose, and the Logs page has one line per disc, such as "99.3% on the first pass, 2 weak areas, 2 cleanings, matches Redump".
 - Keep going, on Back up discs, is for a collection: a backed-up disc comes out of the drive, and the next PS2 disc put in is backed up by itself.
 - Settings has a Backups section with the folder the copies go to. The first backup asks for it, suggesting Documents\PS2 Backups.
 - Install has Back up a disc…, which opens Back up discs.

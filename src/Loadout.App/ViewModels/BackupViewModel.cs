@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows.Input;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using Loadout.App.Controls;
 using Loadout.Bay;
@@ -37,6 +38,22 @@ public sealed class DiscMapLegendItem(DiscMapShade shade, System.Windows.Media.B
         set => SetField(ref _amount, value);
     }
 }
+
+/// <summary>What a notice from Back up discs is about.</summary>
+public enum BackupNoticeKind
+{
+    /// <summary>A disc is backed up, with its result.</summary>
+    BackedUp,
+
+    /// <summary>Little has been read for a while: cleaning the disc is likely to help.</summary>
+    NeedsCleaning,
+
+    /// <summary>The copy stopped by itself, on an error.</summary>
+    Stopped,
+}
+
+/// <summary>News from Back up discs for the user who may be in another window: a Windows notification, or a sound.</summary>
+public sealed record BackupNotice(BackupNoticeKind Kind, string Title, string Text);
 
 /// <summary>One backed-up disc in the page's list.</summary>
 public sealed record BackupRow(DiscBackup Backup, bool OnPs2)
@@ -117,6 +134,10 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private DateTime _filesTried;
     private bool _alsoInstall;
     private string _installLine = string.Empty;
+    private TaskbarItemProgressState _taskbarState;
+    private double _taskbarProgress;
+    private string? _detailsReport;
+    private bool _stallTold;
     private Ps2Install? _following;
 
     public BackupViewModel(
@@ -144,6 +165,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         OpenFolderCommand = new RelayCommand(OpenFolder);
         ShowReportCommand = new RelayCommand(ShowReport);
         InstallBackupCommand = new RelayCommand(InstallSelected);
+        DetailsCommand = new RelayCommand(ShowDetails);
+        SaveReportCommand = new RelayCommand(SaveReport);
         CancelInstallCommand = new RelayCommand(CancelInstalls);
         Describe = DescribeSectors;
         _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = PollEvery };
@@ -184,6 +207,38 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     public ICommand OpenFolderCommand { get; }
 
     public ICommand ShowReportCommand { get; }
+
+    /// <summary>A disc backed up, one that needs cleaning, a copy stopped on an error: for a notification when Loadout isn't in front.</summary>
+    public event EventHandler<BackupNotice>? Notice;
+
+    /// <summary>
+    /// The taskbar button: green progress while a copy reads, yellow when it needs the user (little read, or waiting for the
+    /// cleaned disc), red when it stopped on an error, nothing otherwise.
+    /// </summary>
+    public TaskbarItemProgressState TaskbarState
+    {
+        get => _taskbarState;
+        private set => SetField(ref _taskbarState, value);
+    }
+
+    /// <summary>How much of the disc is in the copy, 0 to 1, for the taskbar button.</summary>
+    public double TaskbarProgress
+    {
+        get => _taskbarProgress;
+        private set => SetField(ref _taskbarProgress, value);
+    }
+
+    /// <summary>Opens the report of the copy that just ended, from the Details link in the status.</summary>
+    public ICommand DetailsCommand { get; }
+
+    /// <summary>A copy has just ended (finished, stopped, or on an error) and its report can be opened.</summary>
+    public bool HasDetails => _detailsReport is not null;
+
+    /// <summary>Saves a copy of the picked backup's report where the user chooses, for a problem report.</summary>
+    public ICommand SaveReportCommand { get; }
+
+    /// <summary>A backup is picked in the list, so its report can be saved.</summary>
+    public bool CanSaveReport => _selectedBackup is not null;
 
     /// <summary>Installs the backup picked in the list on the PS2 now, with the Install page's options.</summary>
     public ICommand InstallBackupCommand { get; }
@@ -276,6 +331,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             if (SetField(ref _selectedBackup, value))
             {
                 OnPropertyChanged(nameof(CanInstallBackup));
+                OnPropertyChanged(nameof(CanSaveReport));
             }
         }
     }
@@ -422,6 +478,17 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         IsWorking = false;
         Status = PageStatus.Error("The backup stopped", ex.Message);
         _log.Add("Back up discs: " + ex.Message);
+        TaskbarState = TaskbarItemProgressState.Error;
+        Notify(BackupNoticeKind.Stopped, "The backup stopped", ex.Message);
+    }
+
+    private void Notify(BackupNoticeKind kind, string title, string text) => Notice?.Invoke(this, new BackupNotice(kind, title, text));
+
+    // The report of the copy that just ended, for the Details link; null hides the link.
+    private void SetDetails(string? report)
+    {
+        _detailsReport = report;
+        OnPropertyChanged(nameof(HasDetails));
     }
 
     // Looks at each drive cheaply, and reads a disc only when what Windows sees in the drive changed.
@@ -546,6 +613,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
+        TaskbarState = TaskbarItemProgressState.None;
         var speeds = disc.Disc.Speeds?.Range(CultureInfo.CurrentCulture);
         var what = $"{disc.Title} ({disc.Disc.Identity?.DiscId?.Canonical}), a {Size(disc.Disc.Bytes)} {(disc.Disc.Media == DiscMedia.Cd ? "CD" : disc.Disc.Layers > 1 ? "two-layer DVD" : "DVD")} in drive {disc.Disc.Drive.TrimEnd(':')}{(string.IsNullOrEmpty(speeds) ? "" : $", which reads it at {speeds}")}";
         Status = _sameDisc switch
@@ -642,6 +710,10 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
         _files = null;
         _filesFrom = files.Image;
+        _stallTold = false;
+        SetDetails(null);
+        TaskbarProgress = resume is null ? 0 : (double)resume.ReadSectors / Math.Max(1, resume.Sectors);
+        TaskbarState = TaskbarItemProgressState.Normal;
         Status = PageStatus.Busy(resume is null ? "Backing up " + chosen.Title : "Going on with " + chosen.Title, "Opening the disc…");
         StatusLine = string.Empty;
         _tick.Start();
@@ -665,6 +737,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _log.Add($"Backing up {chosen.Title} stopped: {ex.Message}");
             WriteReport(files, chosen, started, "Stopped: " + ex.Message);
             RefreshList();
+            SetDetails(files.Report);
+            TaskbarState = TaskbarItemProgressState.Error;
+            Notify(BackupNoticeKind.Stopped, $"Backing up {chosen.Title} stopped", ex.Message);
             return;
         }
         finally
@@ -703,6 +778,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _log.Add(string.Create(CultureInfo.CurrentCulture, $"Stopped backing up {chosen.Title} at {done:0.0}%."));
             WriteReport(files, chosen, started, string.Create(CultureInfo.InvariantCulture, $"Stopped at {done:0.0}%."));
             RefreshList();
+            SetDetails(files.Report);
+            TaskbarState = TaskbarItemProgressState.None;
             return;
         }
 
@@ -786,15 +863,41 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                 PageStatus.Warn("Backed up " + chosen.Title + "; not checked yet", (list.Failure ?? "Redump's list could not be had.") + " The copy is checked when Loadout next gets the list."),
                 "not checked against Redump yet"),
         };
-        _log.Add($"Backed up {name}: {line}.");
+        _log.Add($"Backed up {name}: {CopySummary(backup.Files)}{line}.");
         WriteReport(backup.Files, chosen, started, "Complete: " + line + ".");
         RefreshList();
+        SetDetails(backup.Files.Report);
+        TaskbarState = TaskbarItemProgressState.None;
         if (_keepGoing)
         {
             Eject(chosen.Disc.Drive);
         }
 
+        Notify(
+            BackupNoticeKind.BackedUp,
+            backup.Result == DiscBackupResult.MatchesRedump ? $"{chosen.Title} backed up, matches Redump" : Status.Headline,
+            (backup.Result switch
+            {
+                DiscBackupResult.MatchesRedump => "The copy is exact: " + name + ".",
+                DiscBackupResult.DoesNotMatchRedump => "Another printing, or a read error the drive did not notice: Back up again reads it once more.",
+                DiscBackupResult.NotInRedump => "Redump doesn't list this disc, so the copy can't be checked against it.",
+                _ => "Redump's list could not be had; the copy is checked when Loadout next gets it.",
+            }) + (_keepGoing ? " Insert the next disc." : string.Empty));
         return backup;
+    }
+
+    // How the copy went, for its line on the Logs page, such as "99.3% on the first pass, 2 weak areas, 2 cleanings, ".
+    private static string CopySummary(DiscBackupFiles files)
+    {
+        try
+        {
+            var map = DiscCopyMap.Load(files.Map);
+            return DiscCopySummary.Describe(map.Ranges, map.Sectors, map.Cleanings) + ", ";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return string.Empty;
+        }
     }
 
     private void Eject(string drive)
@@ -812,6 +915,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _cleaning = null;
             TroubleRings = [];
             IsWorking = false;
+            TaskbarState = TaskbarItemProgressState.None;
             Status = PageStatus.Idle("Stopped", "The copy is kept. Resume this disc goes on from there, after cleaning the disc or in another drive too.");
             StatusLine = string.Empty;
             OnPropertyChanged(nameof(CanPauseToClean));
@@ -855,6 +959,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             opened ? "Clean the disc, then put it back" : "Take the disc out, clean it, and put it back",
             missing + "Wipe it with a soft lint-free cloth in straight lines from the centre outwards, never in circles, and use no cleaners. The copy goes on by itself.");
         StatusLine = "Waiting for " + chosen.Title + " to come back…";
+        TaskbarState = TaskbarItemProgressState.Paused;
     }
 
     private async Task DiscBackAfterCleaningAsync((DiscIdentity Identity, string Drive, string Title) cleaning, DiscInDrive? disc)
@@ -909,6 +1014,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         SetMap(status.Ranges, status.TotalSectors, _selected?.Disc.Media ?? DiscMedia.Dvd, _selected?.Disc.Layer0Sectors ?? 0, status.Sector, status.CleanedRingsMm);
         var percent = 100.0 * status.ReadSectors / Math.Max(1, status.TotalSectors);
         var title = _selected?.Title ?? "the disc";
+        TaskbarProgress = percent / 100;
+        TaskbarState = status.Stalled ? TaskbarItemProgressState.Paused : TaskbarItemProgressState.Normal;
+        if (status.Stalled && !_stallTold)
+        {
+            Notify(BackupNoticeKind.NeedsCleaning, title + " needs cleaning to go on", "Little has been read for a while. Pause to clean the disc, and the copy goes on where it was.");
+        }
+
+        _stallTold = status.Stalled;
         Status = status.Stalled
             ? PageStatus.Warn("Little is being read", "Cleaning the disc helps most here: Pause to clean the disc, and the copy goes on where it was.")
             : status.Phase is DiscCopyPhase.Sweep or DiscCopyPhase.Resting && status.Sweep > 0
@@ -1309,6 +1422,50 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         else if (folder.Length > 0 && Directory.Exists(folder))
         {
             Process.Start("explorer.exe", "\"" + folder + "\"");
+        }
+    }
+
+    private void ShowDetails()
+    {
+        if (_detailsReport is { } report && File.Exists(report))
+        {
+            Process.Start(new ProcessStartInfo(report) { UseShellExecute = true });
+        }
+    }
+
+    private void SaveReport()
+    {
+        if (_selectedBackup is not { } row)
+        {
+            return;
+        }
+
+        if (!File.Exists(row.Backup.Files.Report))
+        {
+            Status = PageStatus.Idle("No report for " + row.Name, "It was made before reports were kept, or its report was removed.");
+            return;
+        }
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save the report of " + row.Name,
+            FileName = Path.GetFileName(row.Backup.Files.Report),
+            Filter = "Text files (*.txt)|*.txt",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            File.Copy(row.Backup.Files.Report, dialog.FileName, overwrite: true);
+            _log.Add($"Saved the report of {row.Name} as {dialog.FileName}.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = PageStatus.Error("The report could not be saved", ex.Message);
         }
     }
 

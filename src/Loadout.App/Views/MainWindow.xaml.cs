@@ -61,6 +61,10 @@ public partial class MainWindow : LoadoutWindow
             // Redump's list (about 1.3 MB) is kept in the data folder beside the database.
             new Loadout.Discs.RedumpDatCache(Downloads, Path.GetDirectoryName(layout.DatabaseFile)!, ProductInfo.Version));
         DataContext = viewModel;
+        // Back up discs' news while Loadout isn't in front: a Windows notification, and a flashing taskbar button.
+        var notifier = new DesktopNotifier(this, () => viewModel.ShowBackupCommand.Execute(null));
+        viewModel.Backup.Notice += (_, notice) => notifier.Show(notice.Title, notice.Text, needsUser: notice.Kind != BackupNoticeKind.BackedUp);
+        Closed += (_, _) => notifier.Dispose();
         for (var i = 0; i < viewModel.Pages.Count; i++)
         {
             var page = viewModel.Pages[i];
