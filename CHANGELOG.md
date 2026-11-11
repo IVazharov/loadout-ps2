@@ -2,13 +2,12 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
-## Unreleased
+## 0.10.0 - 2026-11-11
 
 ### Added
 
 - Installed Games has a Memory card column: the size of the card in slot 1 of each game's OPL settings, "shared" when other games use the same card, or Missing when the card the settings name is not on the PS2. Its tooltip names the card and the games that share it.
 - Give memory cards gives the selected games a card at once, from 8 to 64 MB, and a new card in place of a missing one. A card already on the PS2 is used as it is, with its saves, and never replaced. Before anything is written, it lists what each game gets and checks that the new cards fit in OPL's partition.
-
 - An About page (Ctrl+6) shows Loadout's version and author, links to the GitHub page, the issues page and the changelog, where the game data and the artwork come from, and the licence texts. Its Check for updates asks GitHub whether a newer Loadout is out.
 - Loadout checks GitHub for a newer version when it starts, and when one is out it shows what's new. Update now downloads it, checks that it is signed by its publisher and is the version offered, replaces Loadout's files, and restarts Loadout as the new version. Settings stay as they are, and a Loadout that was connected to Loadout Bay connects again. The check can be turned off in Settings, under Updates, or in the update dialog itself; About's Check for updates works at any time.
 - With the update check on, Connect sends this Loadout's Loadout Bay without asking when the one on the PS2 is older. A newer one is still only replaced when you say so.
