@@ -89,11 +89,15 @@ public static class DiscBackupLibrary
             image.Exists ? image.LastWriteTimeUtc : File.GetLastWriteTimeUtc(files.Map));
     }
 
-    /// <summary>The backup of the same disc, if the folder has one: complete ones first.</summary>
+    /// <summary>
+    /// The backup of the same disc, if the folder has one: its newest copy, so a second copy that was stopped is the one
+    /// to resume; a complete one first when they are as new.
+    /// </summary>
     public static DiscBackup? FindSameDisc(IEnumerable<DiscBackup> backups, DiscIdentity identity) =>
         backups
             .Where(b => b.Identity is { } known && known.IsSameDisc(identity))
-            .OrderBy(b => b.Result == DiscBackupResult.Incomplete)
+            .OrderByDescending(b => b.ModifiedUtc)
+            .ThenBy(b => b.Result == DiscBackupResult.Incomplete)
             .FirstOrDefault();
 
     /// <summary>

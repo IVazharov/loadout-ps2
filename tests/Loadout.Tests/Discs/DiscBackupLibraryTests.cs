@@ -82,15 +82,24 @@ public sealed class DiscBackupLibraryTests : IDisposable
     public void AFolderThatIsNotThereHasNoBackups() => Assert.Empty(DiscBackupLibrary.List(Path.Combine(_folder, "missing")));
 
     [Fact]
-    public void TheSameDiscIsFoundCompleteCopyFirst()
+    public void TheSameDiscIsFoundByItsNewestCopy()
     {
-        Copy("A half [SLES-55002]", complete: false);
-        Copy("B whole [SLES-55002]", complete: true);
-        var backups = DiscBackupLibrary.List(_folder);
+        var half = Copy("A half [SLES-55002]", complete: false);
+        var whole = Copy("B whole [SLES-55002]", complete: true);
+        var earlier = new DateTime(2026, 11, 11, 10, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(whole.Image, earlier);
+        File.SetLastWriteTimeUtc(half.Image, earlier.AddMinutes(5));
         Assert.True(DiscIdentity.TryParse(Identity, out var identity));
 
-        Assert.Equal("B whole [SLES-55002]", DiscBackupLibrary.FindSameDisc(backups, identity)?.Files.Name);
-        Assert.Null(DiscBackupLibrary.FindSameDisc(backups, identity with { VolumeHash = "ffffffffffffffff" }));
+        // Backed up again and stopped: the newer, incomplete copy is the one to resume.
+        Assert.Equal("A half [SLES-55002]", DiscBackupLibrary.FindSameDisc(DiscBackupLibrary.List(_folder), identity)?.Files.Name);
+
+        File.SetLastWriteTimeUtc(whole.Image, earlier.AddMinutes(10));
+        Assert.Equal("B whole [SLES-55002]", DiscBackupLibrary.FindSameDisc(DiscBackupLibrary.List(_folder), identity)?.Files.Name);
+
+        File.SetLastWriteTimeUtc(half.Image, earlier.AddMinutes(10));
+        Assert.Equal("B whole [SLES-55002]", DiscBackupLibrary.FindSameDisc(DiscBackupLibrary.List(_folder), identity)?.Files.Name);
+        Assert.Null(DiscBackupLibrary.FindSameDisc(DiscBackupLibrary.List(_folder), identity with { VolumeHash = "ffffffffffffffff" }));
     }
 
     private DiscBackupFiles Copy(string name, bool complete)

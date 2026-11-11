@@ -607,7 +607,6 @@
                             <TextBlock Margin="0,4,0,0"
                                        Style="{StaticResource Text.Body}"
                                        Foreground="{DynamicResource AppText}"
-                                       AutomationProperties.Name="Install on the PS2"
                                        Text="{Binding InstallLine}"
                                        TextWrapping="Wrap"
                                        Visibility="{Binding HasInstallLine, Converter={StaticResource VisibleWhenTrue}}" />
