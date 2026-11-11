@@ -39,7 +39,10 @@ public sealed class DiscCopier
     private TimeSpan _stallSince;
     private long _stallRead;
     private bool _stalled;
-    private DiscCopyStatus _status = new();
+    private DiscCopyPhase _phase = (DiscCopyPhase)(-1);
+    private long _sector;
+    private int _piece;
+    private bool _backwards;
 
     public DiscCopier(IDiscReader drive, Stream image, DiscCopyMap map, Action<DiscCopyMap> saveMap, DiscCopierSettings? settings = null, IDiscCopyClock? clock = null)
     {
@@ -406,7 +409,7 @@ public sealed class DiscCopier
         {
             _stalled = true;
             Tell(DiscCopyNoteKind.Stalled, string.Create(CultureInfo.InvariantCulture, $"Under {Mb(_settings.StallSectors)} read in {_settings.StallTime.TotalMinutes:0} minutes: cleaning the disc is likely to help."));
-            Report(_status.Phase, force: true);
+            Report(_phase, force: true);
         }
     }
 
@@ -430,14 +433,29 @@ public sealed class DiscCopier
     private void Report(DiscCopyPhase phase, bool force = false, long sector = -1, int piece = 0, int sweep = -1, bool backwards = false, TimeSpan restLeft = default)
     {
         var now = _clock.Elapsed;
-        var changed = phase != _status.Phase;
-        _status = new DiscCopyStatus
+        var changed = phase != _phase;
+        _phase = phase;
+        if (sweep >= 0)
+        {
+            _backwards = backwards;
+        }
+
+        _sector = sector >= 0 ? sector : _sector;
+        _piece = piece > 0 ? piece : _piece;
+        if (Progress is null || (!force && !changed && now - _lastStatus < _settings.StatusEvery))
+        {
+            return;
+        }
+
+        // Built only when sent: it counts the map and copies its stretches for the page's disc map.
+        _lastStatus = now;
+        Progress.Report(new DiscCopyStatus
         {
             Phase = phase,
-            Sweep = sweep >= 0 ? sweep : _map.Sweep,
-            Backwards = sweep >= 0 ? backwards : _status.Backwards,
-            Sector = sector >= 0 ? sector : _status.Sector,
-            PieceSectors = piece > 0 ? piece : _status.PieceSectors,
+            Sweep = _map.Sweep,
+            Backwards = _backwards,
+            Sector = _sector,
+            PieceSectors = _piece,
             TotalSectors = _map.Sectors,
             ReadSectors = _map.ReadSectors,
             MissingSectors = _map.MissingSectors,
@@ -446,14 +464,9 @@ public sealed class DiscCopier
             RestLeft = restLeft,
             Failures = Failures,
             Stalled = _stalled,
-        };
-        if (Progress is null || (!force && !changed && now - _lastStatus < _settings.StatusEvery))
-        {
-            return;
-        }
-
-        _lastStatus = now;
-        Progress.Report(_status);
+            Cleanings = _map.Cleanings,
+            Ranges = [.. _map.Ranges],
+        });
     }
 
     private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;

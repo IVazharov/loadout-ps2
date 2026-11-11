@@ -22,7 +22,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Func<Question, int?> choose,
         IDiscTitleCatalog titles,
         Func<byte[]?> bundledBay,
-        Loadout.Updates.GitHubReleaseFeed releases)
+        Loadout.Updates.GitHubReleaseFeed releases,
+        Loadout.Discs.RedumpDatCache redump)
     {
         ArgumentNullException.ThrowIfNull(settingsStore);
         ArgumentNullException.ThrowIfNull(savedList);
@@ -56,18 +57,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Artwork = new ArtworkViewModel(artworkCache, artworkDownloader, () => Settings.Host, () => Installed.Games, log);
         Logs = new LogsViewModel(log);
         About = new AboutViewModel(releases, log);
+        Backup = new BackupViewModel(
+            log,
+            Settings,
+            titles,
+            redump,
+            confirm,
+            () => [.. Installed.Games.Select(g => g.DiscId)]);
         Pages =
         [
             new NavPage { Title = "Installed Games", Content = Installed, Number = 1 },
             new NavPage { Title = "Install", Content = Install, Number = 2 },
-            new NavPage { Title = "Artwork", Content = Artwork, Number = 3 },
-            new NavPage { Title = "Settings", Content = Settings, Number = 4 },
-            new NavPage { Title = "Logs", Content = Logs, Number = 5 },
-            new NavPage { Title = "About", Content = About, Number = 6 },
+            new NavPage { Title = "Backup", Content = Backup, Number = 3 },
+            new NavPage { Title = "Artwork", Content = Artwork, Number = 4 },
+            new NavPage { Title = "Settings", Content = Settings, Number = 5 },
+            new NavPage { Title = "Logs", Content = Logs, Number = 6 },
+            new NavPage { Title = "About", Content = About, Number = 7 },
         ];
         _selected = Pages[0];
         ShowInstalledCommand = new RelayCommand(() => SelectedPage = Pages[0]);
         ShowInstallCommand = new RelayCommand(() => SelectedPage = Pages[1]);
+        ShowBackupCommand = new RelayCommand(() => SelectedPage = Pages[2]);
         LoadSavedList(savedList);
     }
 
@@ -75,6 +85,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public System.Windows.Input.ICommand ShowInstalledCommand { get; }
 
     public System.Windows.Input.ICommand ShowInstallCommand { get; }
+
+    /// <summary>Install's way to Back up discs.</summary>
+    public System.Windows.Input.ICommand ShowBackupCommand { get; }
+
+    public BackupViewModel Backup { get; }
 
     public InstalledGamesViewModel Installed { get; }
 
@@ -105,10 +120,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => _selected;
         set
         {
-            if (value is not null && SetField(ref _selected, value) && value.Content is ArtworkViewModel artwork)
+            if (value is not null && SetField(ref _selected, value))
             {
                 // The installed list may have changed since the page was last open.
-                artwork.Refresh();
+                if (value.Content is ArtworkViewModel artwork)
+                {
+                    artwork.Refresh();
+                }
+                else if (value.Content is BackupViewModel backup)
+                {
+                    backup.RefreshList();
+                }
             }
         }
     }
@@ -117,6 +139,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         Install.Dispose();
+        Backup.Dispose();
         Artwork.Dispose();
         About.Dispose();
     }

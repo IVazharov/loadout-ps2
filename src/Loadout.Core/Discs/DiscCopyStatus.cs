@@ -53,6 +53,11 @@ public sealed record DiscCopyStatus
 
     /// <summary>Little has been read for a while: cleaning the disc is likely to help.</summary>
     public bool Stalled { get; init; }
+
+    public int Cleanings { get; init; }
+
+    /// <summary>The map's stretches as they were when this status was sent, for the page's disc map.</summary>
+    public IReadOnlyList<DiscMapRange> Ranges { get; init; } = [];
 }
 
 public enum DiscCopyNoteKind

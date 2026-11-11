@@ -16,6 +16,8 @@ public class DiscCopierTests
         Assert.Contains(run.Notes, n => n.Kind == DiscCopyNoteKind.Complete);
         Assert.Equal(DiscCopyPhase.Complete, run.Statuses[^1].Phase);
         Assert.Equal(2000, run.Statuses[^1].ReadSectors);
+        Assert.Equal(run.Map.Ranges, run.Statuses[^1].Ranges);
+        Assert.Contains(run.Statuses, s => s.Phase == DiscCopyPhase.FirstPass && s.PieceSectors == 128);
     }
 
     [Fact]

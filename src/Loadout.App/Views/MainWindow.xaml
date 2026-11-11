@@ -334,6 +334,10 @@
                             Content="Add folder and _subfolders…"
                             ToolTip="Adds the disc images in a folder and every folder inside it: iso, bin, cue or chd."
                             Command="{Binding AddFolderRecursiveCommand}" />
+                    <Button Margin="8,0,0,0"
+                            Content="Back up a _disc…"
+                            ToolTip="Opens Back up discs, which copies a PS2 disc in a drive on this PC to an image here."
+                            Command="{Binding DataContext.ShowBackupCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
                     <Button Margin="16,0,0,0"
                             Content="_Remove"
                             ToolTip="Takes the selected games out of the queue. Nothing is deleted on the PS2."
@@ -496,6 +500,207 @@
                                 <Button Style="{StaticResource PrimaryButton}" Content="Add files…" Command="{Binding AddFilesCommand}" />
                                 <Button Margin="8,0,0,0" Content="Add folder…" Command="{Binding AddFolderCommand}" />
                             </StackPanel>
+                        </StackPanel>
+                    </c:ChamferBorder>
+                </Grid>
+            </DockPanel>
+        </DataTemplate>
+        <!-- Back up discs: a PS2 disc in a PC drive copied to an image, checked against Redump. The disc map shows how each
+             stretch was read: as a disc picture with thin rings, and as one bar from the centre to the edge. -->
+        <DataTemplate DataType="{x:Type local:BackupViewModel}">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top">
+                    <TextBlock Style="{StaticResource Text.PageTitle}" Text="BACK UP DISCS" AutomationProperties.Name="Back up discs" />
+                    <TextBlock Style="{StaticResource PageSummary}" Text="{Binding Summary}" />
+                </Grid>
+                <DockPanel DockPanel.Dock="Top" Style="{StaticResource CommandBar}">
+                    <Button DockPanel.Dock="Right"
+                            Style="{StaticResource PrimaryButton}"
+                            Content="{Binding BackUpLabel}"
+                            ToolTip="Copies the PS2 disc in the drive to an image in the backup folder, and checks it against Redump. A copy can be stopped and resumed."
+                            IsEnabled="{Binding CanBackUp}"
+                            Command="{Binding BackUpCommand}"
+                            Visibility="{Binding CanBackUpAgain, Converter={StaticResource CollapsedWhenTrue}}" />
+                    <Button DockPanel.Dock="Right"
+                            Content="Back up _again"
+                            ToolTip="Makes a second copy of a disc that is backed up already. Two equal copies tell another printing from a read error."
+                            Command="{Binding BackUpAgainCommand}"
+                            Visibility="{Binding CanBackUpAgain, Converter={StaticResource VisibleWhenTrue}}" />
+                    <Button DockPanel.Dock="Right"
+                            Margin="0,0,8,0"
+                            Content="_Stop"
+                            ToolTip="Stops the copy and keeps what it has. Resume this disc goes on from there, after cleaning the disc or in another drive too."
+                            Command="{Binding StopCommand}"
+                            Visibility="{Binding IsWorking, Converter={StaticResource VisibleWhenTrue}}" />
+                    <ComboBox Width="360"
+                              Margin="0,0,16,0"
+                              VerticalAlignment="Center"
+                              AutomationProperties.Name="Disc to back up"
+                              ItemsSource="{Binding Discs}"
+                              DisplayMemberPath="Label"
+                              SelectedItem="{Binding SelectedDisc}"
+                              IsEnabled="{Binding CanChooseDisc}"
+                              Visibility="{Binding HasSeveralDiscs, Converter={StaticResource VisibleWhenTrue}}" />
+                    <CheckBox VerticalAlignment="Center" Content="_Keep going" IsChecked="{Binding KeepGoing}" />
+                    <c:InfoTip Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               AutomationProperties.Name="More about keep going"
+                               ToolTip="For a collection: when a disc is backed up, Loadout opens the drive, and the next PS2 disc you put in is backed up by itself. A disc that is backed up already is left alone." />
+                </DockPanel>
+                <c:StatusPanel DockPanel.Dock="Top" Margin="0,12,0,0" Status="{Binding Status}" />
+                <Border DockPanel.Dock="Top"
+                        Margin="0,12,0,0"
+                        Padding="16"
+                        Background="{DynamicResource AppSurface}"
+                        BorderBrush="{DynamicResource AppBorder}"
+                        BorderThickness="1"
+                        Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="24" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <c:DiscPicture Width="200"
+                                       Height="200"
+                                       AutomationProperties.Name="Disc map as a disc"
+                                       View="{Binding Map}"
+                                       Describe="{Binding Describe}"
+                                       NotReadBrush="{DynamicResource AppTrack}"
+                                       Foreground="{DynamicResource AppBorder}"
+                                       MarkerBrush="{DynamicResource AppAccent}"
+                                       DiscBrush="{DynamicResource AppSurfaceRaised}"
+                                       HoleBrush="{DynamicResource AppSurface}" />
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="EDGE" />
+                                <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="CENTRE" />
+                            </DockPanel>
+                            <c:DiscMapBar Margin="0,2,0,0"
+                                          AutomationProperties.Name="Disc map from the centre to the edge"
+                                          View="{Binding Map}"
+                                          Describe="{Binding Describe}"
+                                          NotReadBrush="{DynamicResource AppTrack}"
+                                          Foreground="{DynamicResource AppMuted}"
+                                          MarkerBrush="{DynamicResource AppAccent}" />
+                            <TextBlock Margin="0,8,0,0"
+                                       Style="{StaticResource Text.Body}"
+                                       Foreground="{DynamicResource AppText}"
+                                       Text="{Binding StatusLine}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding Legend}" Focusable="False">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,4,16,0" Orientation="Horizontal">
+                                            <Rectangle Width="10" Height="10" VerticalAlignment="Center" Fill="{Binding Brush}" />
+                                            <TextBlock Margin="6,0,0,0" Style="{StaticResource Text.Detail}" Foreground="{DynamicResource AppMuted}">
+                                                <Run Text="{Binding Label, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Amount, Mode=OneWay}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                <DockPanel DockPanel.Dock="Top" Style="{StaticResource CommandBar}">
+                    <Button Content="Open _folder"
+                            ToolTip="Opens the backup folder in Explorer, with the selected copy picked."
+                            Command="{Binding OpenFolderCommand}" />
+                    <Button Margin="8,0,0,0"
+                            Content="Show _report"
+                            ToolTip="Opens the selected copy's report: every pass, failed read and rest of its backup."
+                            Command="{Binding ShowReportCommand}" />
+                </DockPanel>
+                <Grid Margin="0,12,0,0">
+                    <ListView AutomationProperties.Name="Backed-up discs"
+                              c:TableColumns.Key="backups"
+                              c:TableColumns.Fill="name"
+                              ItemsSource="{Binding Backups}"
+                              SelectedItem="{Binding SelectedBackup}"
+                              SelectionMode="Single"
+                              Loaded="GameList_Loaded"
+                              Visibility="{Binding HasBackups, Converter={StaticResource VisibleWhenTrue}}">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Name"
+                                                c:TableColumns.Id="name"
+                                                c:TableColumns.MinWidth="200"
+                                                c:TableColumns.MaxAutoWidth="560"
+                                                c:TableColumns.MeasurePath="Name">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Style="{StaticResource Text.Cell}" TextTrimming="CharacterEllipsis" Text="{Binding Name, Mode=OneWay}" ToolTip="{Binding Name, Mode=OneWay}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Size"
+                                                c:TableColumns.Id="size"
+                                                c:TableColumns.MinWidth="72"
+                                                c:TableColumns.MaxAutoWidth="110"
+                                                c:TableColumns.MeasurePath="SizeLabel">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Cell}" Text="{Binding SizeLabel, Mode=OneWay}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Date"
+                                                DisplayMemberBinding="{Binding DateLabel}"
+                                                c:TableColumns.Id="date"
+                                                c:TableColumns.MinWidth="88"
+                                                c:TableColumns.MaxAutoWidth="130" />
+                                <GridViewColumn Header="Result"
+                                                c:TableColumns.Id="result"
+                                                c:TableColumns.MinWidth="150"
+                                                c:TableColumns.MaxAutoWidth="220"
+                                                c:TableColumns.MeasurePath="ResultLabel"
+                                                c:TableColumns.Chip="True">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border x:Name="Chip" Style="{StaticResource Chip}" AutomationProperties.Name="{Binding ResultLabel, Mode=OneWay}">
+                                                <TextBlock x:Name="ChipText"
+                                                           Style="{StaticResource Text.Label}"
+                                                           Text="{Binding ResultLabel, Mode=OneWay, Converter={StaticResource UpperCase}}" />
+                                            </Border>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding Result}" Value="MatchesRedump">
+                                                    <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AppOk}" />
+                                                    <Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource AppOk}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Result}" Value="DoesNotMatchRedump">
+                                                    <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AppWarn}" />
+                                                    <Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource AppWarn}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Result}" Value="NotCheckedYet">
+                                                    <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AppWarn}" />
+                                                    <Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource AppWarn}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Result}" Value="Incomplete">
+                                                    <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AppInfo}" />
+                                                    <Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource AppInfo}" />
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="On PS2"
+                                                DisplayMemberBinding="{Binding OnPs2Label}"
+                                                c:TableColumns.Id="onPs2"
+                                                c:TableColumns.MinWidth="64"
+                                                c:TableColumns.MaxAutoWidth="100" />
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                    <c:ChamferBorder Style="{StaticResource EmptyState}" Visibility="{Binding HasBackups, Converter={StaticResource CollapsedWhenTrue}}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
+                            <TextBlock Style="{StaticResource EmptyHeadline}" Text="No discs backed up yet" />
+                            <TextBlock Style="{StaticResource EmptyDetail}" Text="Put a PS2 disc in a drive on this PC, then Back up this disc. The copies are kept on the PC, checked against Redump." />
                         </StackPanel>
                     </c:ChamferBorder>
                 </Grid>
@@ -758,6 +963,30 @@
                                 </StackPanel>
                             </Grid>
                             <TextBlock Style="{StaticResource SettingsNote}" Text="Reads the game back from the PS2 and compares it. Slower." />
+
+                            <ContentControl Content="{Binding Backups}" ContentTemplate="{StaticResource SettingsHeading}" Focusable="False" />
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Backup folder" />
+                                <TextBlock Grid.Column="1"
+                                           Style="{StaticResource Text.Body}"
+                                           Foreground="{DynamicResource AppText}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding BackupFolderText}"
+                                           ToolTip="{Binding BackupFolderText}" />
+                                <Button Grid.Column="2"
+                                        Margin="12,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Content="Change…"
+                                        AutomationProperties.Name="Change the backup folder"
+                                        Command="{Binding ChangeBackupFolderCommand}" />
+                            </Grid>
+                            <TextBlock Style="{StaticResource SettingsNote}" Text="Where Back up discs keeps its copies, with their reports and maps." />
 
                             <ContentControl Content="{Binding Appearance}" ContentTemplate="{StaticResource SettingsHeading}" Focusable="False" />
                             <Grid Style="{StaticResource SettingsRow}">

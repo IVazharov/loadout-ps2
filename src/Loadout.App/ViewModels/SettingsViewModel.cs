@@ -44,6 +44,7 @@ public sealed class SettingsViewModel : ObservableObject
     private string _cutNote = "";
     private ThemeChoice _theme;
     private bool _checkForUpdates;
+    private string _backupFolder;
     private bool _finding;
     private bool _choosing;
     private CancellationTokenSource? _findRun;
@@ -61,6 +62,8 @@ public sealed class SettingsViewModel : ObservableObject
         _addressNote = HelpNote;
         _theme = stored.Theme;
         _checkForUpdates = stored.CheckForUpdates;
+        _backupFolder = stored.BackupFolder;
+        ChangeBackupFolderCommand = new RelayCommand(() => ChooseBackupFolder());
         FindBayCommand = new AsyncRelayCommand(FindBayAsync, ex => Report(ex.Message));
         CancelFindCommand = new RelayCommand(CancelFind);
         // The user's own input wins over a search, and ends what the last one said.
@@ -86,6 +89,71 @@ public sealed class SettingsViewModel : ObservableObject
     public SettingsSection Appearance { get; } = new("Appearance");
 
     public SettingsSection Updates { get; } = new("Updates");
+
+    public SettingsSection Backups { get; } = new("Backups");
+
+    /// <summary>Where Back up discs keeps its copies; empty until the first backup asks for one.</summary>
+    public string BackupFolder => _backupFolder;
+
+    public string BackupFolderText => _backupFolder.Length == 0 ? "Not chosen yet. The first backup asks for one." : _backupFolder;
+
+    public ICommand ChangeBackupFolderCommand { get; }
+
+    /// <summary>The folder Windows' documents folder suggests: Documents\PS2 Backups.</summary>
+    public static string SuggestedBackupFolder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PS2 Backups");
+
+    /// <summary>
+    /// Asks for the backup folder, starting in the one set or the suggested one, and keeps the answer. Returns the folder,
+    /// or null when the choice was cancelled or could not be saved.
+    /// </summary>
+    public string? ChooseBackupFolder()
+    {
+        var start = _backupFolder.Length > 0 ? _backupFolder : SuggestedBackupFolder;
+        try
+        {
+            Directory.CreateDirectory(start);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            start = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        }
+
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Choose where to keep disc backups",
+            InitialDirectory = start,
+            FolderName = start,
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return null;
+        }
+
+        return SetBackupFolder(dialog.FolderName) ? _backupFolder : null;
+    }
+
+    /// <summary>Keeps a new backup folder. Returns false when it could not be saved.</summary>
+    public bool SetBackupFolder(string folder)
+    {
+        var value = folder.Trim();
+        if (string.Equals(value, _backupFolder, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!Save(Backups, settings => settings with { BackupFolder = value }))
+        {
+            return false;
+        }
+
+        _backupFolder = value;
+        OnPropertyChanged(nameof(BackupFolder));
+        OnPropertyChanged(nameof(BackupFolderText));
+        _log.Add("Disc backups are kept in " + value + ".");
+        return true;
+    }
 
     /// <summary>Whether Loadout asks GitHub for a newer version when it starts. The update dialog changes it too.</summary>
     public bool CheckForUpdates

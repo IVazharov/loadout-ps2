@@ -41,6 +41,17 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public void TheBackupFolderIsEmptyUntilChosenAndKeptOnceChosen()
+    {
+        var store = new AppSettingsStore(Database);
+        Assert.Equal(string.Empty, store.Load().BackupFolder);
+
+        store.Save(AppSettings.Defaults with { BackupFolder = @"C:\Users\someone\Documents\PS2 Backups " });
+
+        Assert.Equal(@"C:\Users\someone\Documents\PS2 Backups", new AppSettingsStore(Database).Load().BackupFolder);
+    }
+
+    [Fact]
     public void TheInstallCheckIsOnByDefaultAndKeptOnceChosen()
     {
         var store = new AppSettingsStore(Database);

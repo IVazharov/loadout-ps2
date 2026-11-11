@@ -57,7 +57,9 @@ public partial class MainWindow : LoadoutWindow
             question => QuestionDialog.Choose(this, question),
             new OplCfgTitleCatalog(Http, new DiscTitleCache(layout.DatabaseFile)),
             BundledBay,
-            new Loadout.Updates.GitHubReleaseFeed(Http, ProductInfo.Version));
+            new Loadout.Updates.GitHubReleaseFeed(Http, ProductInfo.Version),
+            // Redump's list (about 1.3 MB) is kept in the data folder beside the database.
+            new Loadout.Discs.RedumpDatCache(Downloads, Path.GetDirectoryName(layout.DatabaseFile)!, ProductInfo.Version));
         DataContext = viewModel;
         for (var i = 0; i < viewModel.Pages.Count; i++)
         {

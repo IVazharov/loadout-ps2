@@ -20,6 +20,7 @@ public sealed class WindowsDiscDrive : IDiscReader
     private const uint IoctlDiskGetLengthInfo = 0x0007405C;
     private const uint IoctlCdromGetConfiguration = 0x00024058;
     private const uint IoctlDvdReadStructure = 0x00335140;
+    private const uint IoctlStorageEjectMedia = 0x002D4808;
 
     private readonly SafeFileHandle _handle;
 
@@ -126,6 +127,18 @@ public sealed class WindowsDiscDrive : IDiscReader
     }
 
     public void Dispose() => _handle.Dispose();
+
+    /// <summary>Opens the drive's tray. Returns false when the drive would not (no tray, or the disc is in use).</summary>
+    public static bool TryEject(string driveName)
+    {
+        if (!IsDriveName(driveName))
+        {
+            return false;
+        }
+
+        using var handle = NativeMethods.CreateFile($@"\\.\{char.ToUpperInvariant(driveName[0])}:", GenericRead, FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
+        return !handle.IsInvalid && NativeMethods.DeviceIoControl(handle, IoctlStorageEjectMedia, null, 0, null, 0, out _, IntPtr.Zero);
+    }
 
     private static int? ReadProfile(SafeFileHandle handle)
     {
