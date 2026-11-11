@@ -43,7 +43,7 @@ Choose a theme, or follow Windows.
 
 ## Before you start
 
-Loadout does not set up the PS2 for you. You need all of this first.
+Loadout does not set up the PS2 for you. To install games, you need all of this first.
 
 On the PC:
 
@@ -74,7 +74,7 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 7. On **Install**, add iso, bin and cue, or chd files, then press **Install on PS2**.
 8. Start OPL on the PS2. It lists the games from its hard disk section.
 
-To back up a disc, step 4 is all you need. Put the disc in the PC's drive and open **Backup** (Ctrl+3). **Back up this disc** asks once where to keep the copies, suggesting `Documents\PS2 Backups`, and starts. A scratched disc can take minutes or hours: **Stop** keeps what has been read, and **Resume this disc** goes on later, after cleaning the disc or in another drive too. For a pile of discs, tick **Keep going**: each finished disc comes out, and the next one you put in starts by itself. A copy that doesn't match Redump may be another printing of the game: **Back up again** reads it once more, and two equal copies point to that. CDs with audio tracks are not supported yet.
+To back up a disc, you need only Loadout itself: its zip (step 2), run as in step 4. Put the disc in the PC's drive and open **Backup** (Ctrl+3). **Back up this disc** asks once where to keep the copies, suggesting `Documents\PS2 Backups`, and starts. A scratched disc can take minutes or hours: **Stop** keeps what has been read, and **Resume this disc** goes on later, after cleaning the disc or in another drive too. For a pile of discs, tick **Keep going**: each finished disc comes out, and the next one you put in starts by itself. A copy that doesn't match Redump may be another printing of the game: **Back up again** reads it once more, and two equal copies point to that. CDs with audio tracks are not supported yet.
 
 If OPL has already made its 128 MB partition and the memory cards need more room, OPL can move to a bigger one, saves included. Create it with wLaunchELF's HDD Manager under a name that starts with `+`, such as `+OPL2`, and copy everything in `+OPL` into it with wLaunchELF's file browser, the memory cards in `VMC` and Loadout Bay in `APPS` too. Then change the line in `hdd0:/__common/OPL/conf_hdd.cfg` to `hdd_partition=+OPL2`. OPL and Loadout Bay both use the partition that file names. Keep the old `+OPL`, as some setups start OPL itself from it.
 
