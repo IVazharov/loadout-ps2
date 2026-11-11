@@ -120,21 +120,20 @@ jobs:
       - name: Publish framework-dependent single-file win-x64
         run: dotnet publish src/Loadout.App/Loadout.App.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -p:SatelliteResourceLanguages=en -o publish
 
-      # The executable embeds Open PS2 Loader's memory card groups, Loadout Bay and more, so their licences go with it.
-      - name: Zip the executable, readme, and licences
+      # Only the executable and the readme: the licences of Loadout and of everything it holds (Open PS2 Loader's memory
+      # card groups, Loadout Bay and more) are in LICENSE and THIRD-PARTY-NOTICES.txt, which it shows on its About page.
+      - name: Zip the executable and readme
         id: zip
         run: |
           $exe = 'publish/LoadoutPS2.exe'
           if (-not (Test-Path $exe)) { throw "$exe was not produced." }
-          New-Item -ItemType Directory app, app/third_party | Out-Null
-          Copy-Item $exe, README.md, LICENSE, THIRD-PARTY-NOTICES.txt app/
+          New-Item -ItemType Directory app | Out-Null
+          Copy-Item $exe, README.md app/
           # The zip's readme is text only: the screenshots are for the repository page.
           $readme = (Resolve-Path app/README.md).Path
           $text = [regex]::Replace([IO.File]::ReadAllText($readme), '(?s)<!-- showcase:start -->.*?<!-- showcase:end -->\r?\n\r?\n', '')
           if ($text -match '!\[|<img|\.png|showcase:') { throw "The zip's readme still has images in it." }
           [IO.File]::WriteAllText($readme, $text)
-          Copy-Item -Recurse src/Loadout.Core/ThirdParty/* app/third_party/
-          Copy-Item -Recurse ps2/third_party/* app/third_party/
           $zip = "Loadout-PS2-${{ steps.version.outputs.version }}-win-x64.zip"
           Compress-Archive -Path app/* -DestinationPath $zip
           "zip=$zip" >> $env:GITHUB_OUTPUT

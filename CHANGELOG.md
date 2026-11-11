@@ -21,6 +21,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 
 ### Changed
 
+- The Windows download holds only `LoadoutPS2.exe` and its readme: every licence text, the fonts' and the chd reader's included, is on the About page. Loadout Bay's download keeps its licence files.
 - Backup is the third page, after Install, so Artwork, Settings, Logs and About are now Ctrl+4 to Ctrl+7.
 
 ## 0.10.0 - 2026-11-11

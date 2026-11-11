@@ -93,7 +93,7 @@ The game data, Redump's list and the artwork are not part of Loadout or under it
 
 Each release has two downloads:
 
-- `Loadout-PS2-<version>-win-x64.zip` holds `LoadoutPS2.exe`, this readme, and the licence texts.
+- `Loadout-PS2-<version>-win-x64.zip` holds `LoadoutPS2.exe` and this readme. Its licence texts are on its About page.
 - `Loadout-Bay-PS2-<version>.zip` holds `loadout-bay.elf`, an example network settings file, a short readme, and the licence texts.
 
 ## Docs
@@ -105,7 +105,7 @@ Each release has two downloads:
 
 ## Licence
 
-The source code written for Loadout and Loadout Bay is under the MIT licence: see [LICENSE](LICENSE). The downloads also contain other projects' code, under their own licences: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) lists them, and comes with both downloads. By using or redistributing the binaries you accept those licences. Code taken from other projects is in `ps2/third_party/` and `src/Loadout.Core/ThirdParty/`. The Barlow fonts in `ps2/assets/fonts` and `src/Loadout.App/Assets/Fonts`, and `ps2/src/font_data.c`, which is rendered from them, are under the SIL Open Font License 1.1.
+The source code written for Loadout and Loadout Bay is under the MIT licence: see [LICENSE](LICENSE). The downloads also contain other projects' code, under their own licences: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) has their texts. It comes with Loadout Bay's download, and Loadout shows it, and its own licence, on its About page. By using or redistributing the binaries you accept those licences. Code taken from other projects is in `ps2/third_party/` and `src/Loadout.Core/ThirdParty/`. The Barlow fonts in `ps2/assets/fonts` and `src/Loadout.App/Assets/Fonts`, and `ps2/src/font_data.c`, which is rendered from them, are under the SIL Open Font License 1.1.
 
 Maintained by Ivan Vazharov.
 
