@@ -1,16 +1,20 @@
 # Loadout for PS2
 
-Install PlayStation 2 games and artwork from a Windows PC, over the network.
+Back up your PlayStation 2 discs on a Windows PC, and install games and artwork on the PS2 over the network.
 
 Loadout has two parts:
 
-- **Loadout for PS2** is the Windows app. It scans disc images on the PC and sends games and artwork to the PS2.
+- **Loadout for PS2** is the Windows app. It backs up original PS2 discs from a disc drive on the PC, checked against Redump, and sends games and artwork to the PS2.
 - **Loadout Bay for PS2** is the PS2 app. It receives games and artwork and writes them to the PS2's internal hard disk, in the layout Open PS2 Loader (OPL) reads.
 
 Both parts share one version number.
 
 <!-- showcase:start -->
 ![Loadout for PS2 on Windows and Loadout Bay on the PS2, showing the same install at 42%](docs/images/hero.png)
+
+### Back up your discs
+
+Put an original PS2 disc, DVD or CD, in your PC's drive. Loadout copies it, checks the copy against [Redump](http://redump.org)'s list of verified discs so you know it's exact, and names it as Redump does. A scratched disc is read in passes that go back to its weak spots. A map of the disc shows where the trouble is, Loadout tells you when cleaning would help, and the copy goes on where it was. Stop and resume any time. Tick Also install on PS2 and the game goes to the PS2 as it's copied.
 
 ### Send games from your PC
 
@@ -45,6 +49,7 @@ On the PC:
 - The x64 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0), which Loadout does not include.
 - Nothing to install for SQLite: Loadout uses the copy that comes with Windows (`winsqlite3.dll`). It avoids newer SQLite features and passes its tests on versions as old as 3.12.2. To see your version, run `(Get-Item C:\Windows\System32\winsqlite3.dll).VersionInfo.ProductVersion` in PowerShell. If Windows has no such file, Loadout says so when it starts.
 - A network connection to the same network as the PS2.
+- To back up discs: a DVD drive, built in or USB. Backing up needs nothing else, no PS2 at all.
 
 On the PS2:
 
