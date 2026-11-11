@@ -7,18 +7,35 @@ using Loadout.Discs;
 
 namespace Loadout.App.Controls;
 
-/// <summary>The disc map's colours, the same in both themes except "not read yet", which follows the theme's track.</summary>
+/// <summary>
+/// The disc map's colours, the same in both themes except "not read yet", which follows the theme's track. The trouble
+/// shades run from a true yellow to a dark red, each lighter than the next and as far apart as five such steps can be on
+/// the dark surface (OKLab distance at least 12.7 between neighbours, 9.6 for colour-blind sight). The markers are not
+/// amber, which these shades would hide.
+/// </summary>
 public static class DiscMapBrushes
 {
     private static readonly Brush[] Fixed =
     [
         Frozen(0x5B, 0x9B, 0xD5), // read normally: soft blue
-        Frozen(0xF2, 0xC9, 0x4C), // read on a later pass: yellow
-        Frozen(0xF2, 0xA5, 0x41), // read in 32 KB pieces: light amber
-        Frozen(0xE8, 0x83, 0x3A), // read sector by sector: amber
-        Frozen(0xD9, 0x62, 0x2B), // read only after cleaning: deep amber
+        Frozen(0xFE, 0xDD, 0x0E), // read on a later pass: yellow
+        Frozen(0xFE, 0xAF, 0x55), // read in 32 KB pieces: light orange
+        Frozen(0xED, 0x75, 0x03), // read sector by sector: orange
+        Frozen(0xDB, 0x2F, 0x05), // read only after cleaning: red-orange
         Brushes.Transparent,      // not read yet: the theme's
-        Frozen(0xC6, 0x28, 0x28), // could not be read: red
+        Frozen(0xA7, 0x04, 0x21), // could not be read: dark red
+    ];
+
+    /// <summary>The legend's order: how hard each part was to read, then what is still to read.</summary>
+    public static IReadOnlyList<DiscMapShade> LegendOrder { get; } =
+    [
+        DiscMapShade.ReadNormally,
+        DiscMapShade.ReadLater,
+        DiscMapShade.ReadInPieces,
+        DiscMapShade.ReadBySector,
+        DiscMapShade.ReadAfterCleaning,
+        DiscMapShade.Failed,
+        DiscMapShade.NotRead,
     ];
 
     public static Brush For(DiscMapShade shade, Brush notRead) => shade == DiscMapShade.NotRead ? notRead : Fixed[(int)shade];

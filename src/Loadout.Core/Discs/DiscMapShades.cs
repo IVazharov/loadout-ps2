@@ -9,19 +9,19 @@ public enum DiscMapShade
     /// <summary>Yellow: read on a later pass.</summary>
     ReadLater,
 
-    /// <summary>Light amber: read in 32 KB pieces.</summary>
+    /// <summary>Light orange: read in 32 KB pieces.</summary>
     ReadInPieces,
 
-    /// <summary>Amber: read one sector at a time.</summary>
+    /// <summary>Orange: read one sector at a time.</summary>
     ReadBySector,
 
-    /// <summary>Deep amber: read only after the disc was cleaned.</summary>
+    /// <summary>Red-orange: read only after the disc was cleaned.</summary>
     ReadAfterCleaning,
 
     /// <summary>Track grey: not read yet.</summary>
     NotRead,
 
-    /// <summary>Red: a read failed here and it is still missing.</summary>
+    /// <summary>Dark red: a read failed here and it is still missing.</summary>
     Failed,
 }
 

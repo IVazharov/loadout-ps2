@@ -580,7 +580,7 @@
                                        Describe="{Binding Describe}"
                                        NotReadBrush="{DynamicResource AppTrack}"
                                        Foreground="{DynamicResource AppBorder}"
-                                       MarkerBrush="{DynamicResource AppAccent}"
+                                       MarkerBrush="{DynamicResource AppText}"
                                        DiscBrush="{DynamicResource AppSurfaceRaised}"
                                        HoleBrush="{DynamicResource AppSurface}"
                                        MarkedRings="{Binding TroubleRings}" />
@@ -597,7 +597,7 @@
                                           Describe="{Binding Describe}"
                                           NotReadBrush="{DynamicResource AppTrack}"
                                           Foreground="{DynamicResource AppMuted}"
-                                          MarkerBrush="{DynamicResource AppAccent}" />
+                                          MarkerBrush="{DynamicResource AppText}" />
                             <TextBlock Margin="0,8,0,0"
                                        Style="{StaticResource Text.Body}"
                                        Foreground="{DynamicResource AppText}"

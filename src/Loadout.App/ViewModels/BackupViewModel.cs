@@ -71,6 +71,10 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 {
     private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(2);
 
+    // A drive that refuses even the disc's first sectors, as one does for a while after a failed read, is left idle this
+    // long before it is tried again: reading it sooner keeps it from coming back.
+    private static readonly TimeSpan LookAgainAfter = TimeSpan.FromSeconds(30);
+
     private readonly OperationLog _log;
     private readonly SettingsViewModel _settings;
     private readonly IDiscTitleCatalog _titles;
@@ -85,6 +89,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private readonly object _reportGate = new();
     private readonly List<string> _report = [];
     private bool _looking;
+    private readonly Dictionary<string, DateTime> _lookAgain = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _run;
     private Task? _copyRun;
     private (DiscBackupFiles Files, DriveDisc Disc, DateTime Started)? _current;
@@ -428,6 +433,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         try
         {
             var busyDrive = _copyRun is not null ? _selected?.Disc.Drive : null;
+            var now = DateTime.UtcNow;
+            var due = _lookAgain.Where(p => p.Value <= now).Select(p => p.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var changes = await Task.Run(() =>
             {
                 var found = new List<(string Drive, string Print, DiscInDrive? Disc)>();
@@ -439,7 +446,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                     }
 
                     var print = DiscDrives.Fingerprint(drive);
-                    if (_fingerprints.TryGetValue(drive, out var was) && was == print)
+                    if (_fingerprints.TryGetValue(drive, out var was) && was == print && !due.Contains(drive))
                     {
                         continue;
                     }
@@ -453,6 +460,15 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             foreach (var (drive, print, disc) in changes)
             {
                 _fingerprints[drive] = print;
+                if (disc is { Identity: null })
+                {
+                    _lookAgain[drive] = DateTime.UtcNow + LookAgainAfter;
+                }
+                else
+                {
+                    _lookAgain.Remove(drive);
+                }
+
                 await ShowDiscAsync(drive, disc).ConfigureAwait(true);
             }
         }
@@ -500,9 +516,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasSeveralDiscs));
         if (!_working && _selected is null)
         {
-            Status = disc is not null && !disc.IsPs2Game
-                ? PageStatus.Idle("This is not a PS2 game disc", $"The disc in {drive} has no PS2 game on it.")
-                : PageStatus.Idle("Insert a PS2 disc", "Into a disc drive on this PC. Back up this disc copies it to a file here.");
+            Status = disc switch
+            {
+                { Identity: null } => PageStatus.Idle(
+                    "The drive can't read the disc yet",
+                    $"The drive in {drive} may still be resting after a failed read. Loadout tries the disc again in half a minute."),
+                { IsPs2Game: false } => PageStatus.Idle("This is not a PS2 game disc", $"The disc in {drive} has no PS2 game on it."),
+                _ => PageStatus.Idle("Insert a PS2 disc", "Into a disc drive on this PC. Back up this disc copies it to a file here."),
+            };
         }
     }
 
@@ -837,6 +858,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // The drive can't read it yet, as just after the tray closes: it is tried again shortly.
+        if (disc.Identity is null)
+        {
+            StatusLine = "Reading " + cleaning.Title + " again; the drive needs a moment…";
+            return;
+        }
+
         if (disc.Identity is not { } identity || !identity.IsSameDisc(cleaning.Identity))
         {
             Status = PageStatus.Warn("This is another disc", $"Put {cleaning.Title} back in to go on with its copy, or Stop to keep the copy for later.");
@@ -934,20 +962,18 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         var totals = DiscMapShades.Totals(ranges);
         var notRead = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("AppTrack");
 
-        // A shade joins the legend when it first shows and stays, in the shades' order; amounts change in place.
-        foreach (var shade in Enum.GetValues<DiscMapShade>())
+        // Every state is in the legend from the start, so it never grows a row during a copy; amounts change in place.
+        if (Legend.Count == 0)
         {
-            var item = Legend.FirstOrDefault(i => i.Shade == shade);
-            if (item is null && (totals[shade] > 0 || shade is DiscMapShade.ReadNormally or DiscMapShade.NotRead))
+            foreach (var shade in DiscMapBrushes.LegendOrder)
             {
-                item = new DiscMapLegendItem(shade, DiscMapBrushes.For(shade, notRead), DiscMapBrushes.Label(shade));
-                Legend.Insert(Legend.Count(i => i.Shade < shade), item);
+                Legend.Add(new DiscMapLegendItem(shade, DiscMapBrushes.For(shade, notRead), DiscMapBrushes.Label(shade)));
             }
+        }
 
-            if (item is not null)
-            {
-                item.Amount = LegendSize(totals[shade] * DiscSectors.Size);
-            }
+        foreach (var item in Legend)
+        {
+            item.Amount = LegendSize(totals[item.Shade] * DiscSectors.Size);
         }
     }
 
