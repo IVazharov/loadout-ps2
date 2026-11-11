@@ -59,7 +59,7 @@ On the PS2:
 - **A hard disk formatted for the PS2.** Loadout Bay does not format disks. wLaunchELF's HDD Manager can. Only the PS2's first internal hard disk is used.
 - **A way to start homebrew and run an ELF from a USB drive**, such as FreeMcBoot or Free HDBoot with [wLaunchELF](https://github.com/ps2homebrew/wLaunchELF), to start Loadout Bay the first time. Other launchers should work too, as long as they tell Loadout Bay where it was started from, which it needs to save its settings and updates. wLaunchELF and OPL's Apps menu are the ones it has been tried with.
 - **[Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader)**, which plays the games. Loadout only installs them.
-- **A USB drive formatted as FAT32.** Loadout Bay also starts from a memory card, but updates sent from Loadout can only be saved to a USB drive or the hard disk.
+- **A USB drive formatted as FAT32**, to start Loadout Bay the first time. After that it lives on the hard disk (step 6 below). It also starts from a memory card, but updates sent from Loadout can only be saved to a USB drive or the hard disk.
 
 Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has been tested on one console, so back up anything you can't replace. Backing up discs has been tested with one drive, a slim USB DVD writer. Please report problems on the [issues page](https://github.com/IVazharov/loadout-ps2/issues).
 
@@ -67,13 +67,12 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 
 1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in. OPL makes it 128 MB: room for about a dozen 8 MB memory cards beside the artwork, and it can't safely be made bigger later. For more, create a partition named `+OPL` of the size you want with wLaunchELF's HDD Manager before OPL first opens that list, and OPL uses it instead. 1 GB holds cards for about a hundred games.
 2. Download both zips from the [releases page](https://github.com/IVazharov/loadout-ps2/releases).
-3. Copy `loadout-bay.elf` to the USB drive and start it with your homebrew launcher, such as wLaunchELF. Its screen shows the PS2's address.
-4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed by Open Source Developer Ivan Vazharov, and runs with Smart App Control on. The certificate is new, so Windows may still warn you about it.
+3. Copy `loadout-bay.elf` to the USB drive and start it with your homebrew launcher, such as wLaunchELF. Its screen shows the PS2's address. This is the only time Loadout Bay needs the USB drive.
+4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed, and runs with Smart App Control on. The certificate is new, so Windows may still warn you about it.
 5. In Settings, press **Find Bay** or enter the address from the TV.
-6. On **Install**, add iso, bin and cue, or chd files, then press **Install on PS2**.
-7. Start OPL on the PS2. It lists the games from its hard disk section.
-
-To start Loadout Bay without the USB drive from then on, see [From the hard disk](ps2/README.md#from-the-hard-disk).
+6. Put Loadout Bay on the hard disk: on **Installed Games**, press **Connect**, then **Put Loadout Bay on the hard disk…**. It goes into OPL's partition, and in OPL, with **Settings → Applications Start Mode** on, it is in the Apps menu. Start it from there from now on, with no USB drive. This is the setup Loadout is made for: after Loadout updates itself, its next Connect brings the Loadout Bay on the hard disk to the same version, asking first if you turned off the update check in Settings. [From the hard disk](ps2/README.md#from-the-hard-disk) has the details, such as a fixed address.
+7. On **Install**, add iso, bin and cue, or chd files, then press **Install on PS2**.
+8. Start OPL on the PS2. It lists the games from its hard disk section.
 
 To back up a disc, step 4 is all you need. Put the disc in the PC's drive and open **Backup** (Ctrl+3). **Back up this disc** asks once where to keep the copies, suggesting `Documents\PS2 Backups`, and starts. A scratched disc can take minutes or hours: **Stop** keeps what has been read, and **Resume this disc** goes on later, after cleaning the disc or in another drive too. For a pile of discs, tick **Keep going**: each finished disc comes out, and the next one you put in starts by itself. A copy that doesn't match Redump may be another printing of the game: **Back up again** reads it once more, and two equal copies point to that. CDs with audio tracks are not supported yet.
 

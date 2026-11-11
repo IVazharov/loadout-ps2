@@ -17,8 +17,9 @@ public partial class ReadmeTests
         "A hard disk formatted for the PS2.",
         "A way to start homebrew and run an ELF from a USB drive",
         "[Open PS2 Loader](https://github.com/ps2homebrew/Open-PS2-Loader)",
-        "A USB drive formatted as FAT32.",
+        "A USB drive formatted as FAT32",
         "Settings → HDD Device Start Mode",
+        "Settings → Applications Start Mode",
     ];
 
     private static readonly string[] Counts = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
