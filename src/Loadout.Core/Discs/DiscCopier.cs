@@ -70,6 +70,12 @@ public sealed class DiscCopier
     /// <summary>Gets the copy's status a few times a second, and at each change of phase.</summary>
     public IProgress<DiscCopyStatus>? Progress { get; init; }
 
+    /// <summary>
+    /// For an install that follows the copy: told of each piece once it is in the file, and broken at the first failed
+    /// read or when the copy stops, as the sectors after it then won't come in order.
+    /// </summary>
+    public DiscCopyFeed? Feed { get; init; }
+
     public int Failures { get; private set; }
 
     /// <summary>The time spent resting the drive.</summary>
@@ -100,6 +106,7 @@ public sealed class DiscCopier
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            Feed?.Break();
             Save(force: true);
             Tell(DiscCopyNoteKind.Stopped, $"Stopped with {Mb(_map.ReadSectors)} of {Mb(_map.Sectors)} in the copy.");
             Report(DiscCopyPhase.Stopped, force: true);
@@ -327,6 +334,12 @@ public sealed class DiscCopier
             _image.Position = sector * _sectorSize;
             _image.Write(data);
             _map.Mark(sector, count, readAs);
+            if (Feed is not null)
+            {
+                // Into the file before the install that follows reads it there.
+                _image.Flush();
+                Feed.Wrote(sector, count);
+            }
             if (took > TimeSpan.Zero)
             {
                 var speed = data.Length / took.TotalSeconds;
@@ -344,6 +357,7 @@ public sealed class DiscCopier
         }
 
         Failures++;
+        Feed?.Break();
         _map.Mark(sector, count, DiscSectorState.Failed);
         Tell(DiscCopyNoteKind.ReadFailed, string.Create(CultureInfo.InvariantCulture, $"Failed to read {count} sectors at {sector} in {took.TotalSeconds:0.0} s: {error}"), sector, count, took);
         CheckStall();

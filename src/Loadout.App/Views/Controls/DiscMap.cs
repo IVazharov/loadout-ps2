@@ -48,6 +48,9 @@ public sealed record DiscMapView(IReadOnlyList<DiscMapRange> Ranges, long Sector
     /// <summary>Where the disc was cleaned (mm from the centre): a small cloth is drawn on each ring.</summary>
     public IReadOnlyList<double> CleanedRingsMm { get; init; } = [];
 
+    /// <summary>How far an install on the PS2 that follows the copy has got, as a sector; -1 when none follows it.</summary>
+    public long InstallSector { get; init; } = -1;
+
     public static DiscMapView Empty { get; } = new([], 0, DiscMedia.Dvd, 0, -1);
 }
 
@@ -149,10 +152,24 @@ public sealed class DiscMapBar : DiscMapElement
     private const double BarTop = 10;
     private const double BarHeight = 24;
 
+    // Under the bar: room for the PS2's marker, which the size labels sit below.
+    private const double InstallBand = 10;
+
+    public static readonly DependencyProperty InstallBrushProperty = DependencyProperty.Register(
+        nameof(InstallBrush), typeof(Brush), typeof(DiscMapBar),
+        new FrameworkPropertyMetadata(Brushes.White, FrameworkPropertyMetadataOptions.AffectsRender));
+
     public DiscMapBar()
     {
-        Height = BarTop + BarHeight + 22;
+        Height = BarTop + BarHeight + InstallBand + 17;
         SnapsToDevicePixels = true;
+    }
+
+    /// <summary>The marker under the bar for how far an install on the PS2 that follows the copy has got.</summary>
+    public Brush InstallBrush
+    {
+        get => (Brush)GetValue(InstallBrushProperty);
+        set => SetValue(InstallBrushProperty, value);
     }
 
     protected override (long From, long To)? SectorsAt(Point point)
@@ -213,7 +230,7 @@ public sealed class DiscMapBar : DiscMapElement
                         : (at / 1_000_000_000.0).ToString("0.#", CultureInfo.CurrentCulture) + " GB",
                     11);
                 var left = Math.Clamp(x - (label.Width / 2), 0, width - label.Width);
-                drawingContext.DrawText(label, new Point(left, BarTop + BarHeight + 5));
+                drawingContext.DrawText(label, new Point(left, BarTop + BarHeight + InstallBand));
             }
 
             // Where the drive reads now: a small amber triangle over the bar.
@@ -230,6 +247,22 @@ public sealed class DiscMapBar : DiscMapElement
 
                 marker.Freeze();
                 drawingContext.DrawGeometry(MarkerBrush, null, marker);
+            }
+
+            // How far the install on the PS2 has got: a small triangle under the bar, pointing up at it.
+            if (view.InstallSector >= 0 && view.InstallSector <= view.Sectors)
+            {
+                var x = Math.Min((double)view.InstallSector / view.Sectors * width, width - 1);
+                var marker = new StreamGeometry();
+                using (var context = marker.Open())
+                {
+                    context.BeginFigure(new Point(x, BarTop + BarHeight + 1), isFilled: true, isClosed: true);
+                    context.LineTo(new Point(x + 5, BarTop + BarHeight + InstallBand), isStroked: false, isSmoothJoin: false);
+                    context.LineTo(new Point(x - 5, BarTop + BarHeight + InstallBand), isStroked: false, isSmoothJoin: false);
+                }
+
+                marker.Freeze();
+                drawingContext.DrawGeometry(InstallBrush, null, marker);
             }
         }
     }

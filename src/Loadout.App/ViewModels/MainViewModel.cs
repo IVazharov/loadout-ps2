@@ -62,6 +62,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Settings,
             titles,
             redump,
+            Install,
             confirm,
             () => [.. Installed.Games.Select(g => g.DiscId)]);
         Pages =

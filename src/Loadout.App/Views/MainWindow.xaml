@@ -552,6 +552,11 @@
                                VerticalAlignment="Center"
                                AutomationProperties.Name="More about keep going"
                                ToolTip="For a collection: when a disc is backed up, Loadout opens the drive, and the next PS2 disc you put in is backed up by itself. A disc that is backed up already is left alone." />
+                    <CheckBox Margin="24,0,0,0" VerticalAlignment="Center" Content="Also _install on PS2" IsChecked="{Binding AlsoInstall}" />
+                    <c:InfoTip Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               AutomationProperties.Name="More about also install on PS2"
+                               ToolTip="Installs each disc on the PS2 as it is copied, with the Install page's options: artwork, memory cards and the install check. If the copy meets a weak area, that install is cancelled, Loadout Bay removes what it had, and the finished copy is installed instead." />
                 </DockPanel>
                 <c:StatusPanel DockPanel.Dock="Top" Margin="0,12,0,0" Status="{Binding Status}" />
                 <Border DockPanel.Dock="Top"
@@ -560,7 +565,7 @@
                         Background="{DynamicResource AppSurface}"
                         BorderBrush="{DynamicResource AppBorder}"
                         BorderThickness="1"
-                        Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}">
+                        Visibility="{Binding HasPanel, Converter={StaticResource VisibleWhenTrue}}">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -569,6 +574,7 @@
                         </Grid.ColumnDefinitions>
                         <c:DiscPicture Width="200"
                                        Height="200"
+                                       Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}"
                                        AutomationProperties.Name="Disc map as a disc"
                                        View="{Binding Map}"
                                        Describe="{Binding Describe}"
@@ -579,12 +585,14 @@
                                        HoleBrush="{DynamicResource AppSurface}"
                                        MarkedRings="{Binding TroubleRings}" />
                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                            <DockPanel>
+                            <DockPanel Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}">
                                 <TextBlock DockPanel.Dock="Right" Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="EDGE" />
                                 <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="CENTRE" />
                             </DockPanel>
                             <c:DiscMapBar Margin="0,2,0,0"
                                           AutomationProperties.Name="Disc map from the centre to the edge"
+                                          Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}"
+                                          InstallBrush="{DynamicResource AppText}"
                                           View="{Binding Map}"
                                           Describe="{Binding Describe}"
                                           NotReadBrush="{DynamicResource AppTrack}"
@@ -594,8 +602,19 @@
                                        Style="{StaticResource Text.Body}"
                                        Foreground="{DynamicResource AppText}"
                                        Text="{Binding StatusLine}"
-                                       TextTrimming="CharacterEllipsis" />
-                            <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding Legend}" Focusable="False">
+                                       TextTrimming="CharacterEllipsis"
+                                       Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}" />
+                            <TextBlock Margin="0,4,0,0"
+                                       Style="{StaticResource Text.Body}"
+                                       Foreground="{DynamicResource AppText}"
+                                       AutomationProperties.Name="Install on the PS2"
+                                       Text="{Binding InstallLine}"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding HasInstallLine, Converter={StaticResource VisibleWhenTrue}}" />
+                            <ItemsControl Margin="0,8,0,0"
+                                          ItemsSource="{Binding Legend}"
+                                          Focusable="False"
+                                          Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel />
@@ -627,6 +646,16 @@
                             Content="Show _report"
                             ToolTip="Opens the selected copy's report: every pass, failed read and rest of its backup."
                             Command="{Binding ShowReportCommand}" />
+                    <Button Margin="8,0,0,0"
+                            Content="I_nstall on PS2"
+                            ToolTip="Installs the selected copy on the PS2 now, with the Install page's options: artwork, memory cards and the install check."
+                            IsEnabled="{Binding CanInstallBackup}"
+                            Command="{Binding InstallBackupCommand}" />
+                    <Button Margin="8,0,0,0"
+                            Content="Cancel ins_tall"
+                            ToolTip="Cancels the installs on the PS2 that this page started. Loadout Bay removes what it had of them."
+                            Command="{Binding CancelInstallCommand}"
+                            Visibility="{Binding IsInstallingOnPs2, Converter={StaticResource VisibleWhenTrue}}" />
                 </DockPanel>
                 <Grid Margin="0,12,0,0">
                     <ListView AutomationProperties.Name="Backed-up discs"

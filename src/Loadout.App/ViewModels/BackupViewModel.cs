@@ -6,8 +6,10 @@ using System.Text;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Loadout.App.Controls;
+using Loadout.Bay;
 using Loadout.Core;
 using Loadout.Discs;
+using Loadout.Images;
 using Loadout.Metadata;
 
 namespace Loadout.App;
@@ -73,6 +75,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private readonly SettingsViewModel _settings;
     private readonly IDiscTitleCatalog _titles;
     private readonly RedumpDatCache _redump;
+    private readonly InstallViewModel _installer;
+    private readonly List<Ps2Install> _ps2 = [];
     private readonly Func<Question, bool> _confirm;
     private readonly Func<IReadOnlyCollection<string>> _installedDiscIds;
     private readonly DispatcherTimer _poll;
@@ -105,12 +109,16 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private IsoFileList? _files;
     private string? _filesFrom;
     private DateTime _filesTried;
+    private bool _alsoInstall;
+    private string _installLine = string.Empty;
+    private Ps2Install? _following;
 
     public BackupViewModel(
         OperationLog log,
         SettingsViewModel settings,
         IDiscTitleCatalog titles,
         RedumpDatCache redump,
+        InstallViewModel installer,
         Func<Question, bool> confirm,
         Func<IReadOnlyCollection<string>> installedDiscIds)
     {
@@ -118,6 +126,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _titles = titles ?? throw new ArgumentNullException(nameof(titles));
         _redump = redump ?? throw new ArgumentNullException(nameof(redump));
+        _installer = installer ?? throw new ArgumentNullException(nameof(installer));
         _confirm = confirm ?? throw new ArgumentNullException(nameof(confirm));
         _installedDiscIds = installedDiscIds ?? throw new ArgumentNullException(nameof(installedDiscIds));
         BackUpCommand = new AsyncRelayCommand(BackUpAsync, Fail);
@@ -126,6 +135,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         PauseToCleanCommand = new RelayCommand(PauseToClean);
         OpenFolderCommand = new RelayCommand(OpenFolder);
         ShowReportCommand = new RelayCommand(ShowReport);
+        InstallBackupCommand = new RelayCommand(InstallSelected);
+        CancelInstallCommand = new RelayCommand(CancelInstalls);
         Describe = DescribeSectors;
         _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = PollEvery };
         _poll.Tick += (_, _) => _ = PollAsync();
@@ -166,6 +177,61 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     public ICommand ShowReportCommand { get; }
 
+    /// <summary>Installs the backup picked in the list on the PS2 now, with the Install page's options.</summary>
+    public ICommand InstallBackupCommand { get; }
+
+    /// <summary>Cancels the installs on the PS2 this page started; Loadout Bay removes what it had of them.</summary>
+    public ICommand CancelInstallCommand { get; }
+
+    /// <summary>The backup picked in the list is complete, so it can go to the PS2.</summary>
+    public bool CanInstallBackup => _selectedBackup is { Result: not DiscBackupResult.Incomplete };
+
+    /// <summary>An install on the PS2 that this page started is under way, or waits for its turn.</summary>
+    public bool IsInstallingOnPs2 => _ps2.Count > 0;
+
+    /// <summary>
+    /// When on, each disc is installed on the PS2 as it is copied, with the Install page's options; when the copy meets a
+    /// weak area, that install is cancelled and the finished copy is installed instead. Off at each start of Loadout, and
+    /// kept from disc to disc.
+    /// </summary>
+    public bool AlsoInstall
+    {
+        get => _alsoInstall;
+        set
+        {
+            if (SetField(ref _alsoInstall, value))
+            {
+                _log.Add(value ? "Back up discs also installs each disc on the PS2." : "Back up discs no longer installs the discs on the PS2.");
+                if (!value)
+                {
+                    foreach (var install in _ps2.Where(i => i.ByTick).ToList())
+                    {
+                        Cancel(install);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>A second line under the status line: how far the install on the PS2 has got, or how it ended.</summary>
+    public string InstallLine
+    {
+        get => _installLine;
+        private set
+        {
+            if (SetField(ref _installLine, value))
+            {
+                OnPropertyChanged(nameof(HasInstallLine));
+                OnPropertyChanged(nameof(HasPanel));
+            }
+        }
+    }
+
+    public bool HasInstallLine => _installLine.Length > 0;
+
+    /// <summary>The panel under the status shows the disc map, the install line, or both.</summary>
+    public bool HasPanel => HasMap || HasInstallLine;
+
     /// <summary>The PS2 discs in the PC's drives; the page offers a choice when there are several.</summary>
     public ObservableCollection<DriveDisc> Discs { get; } = [];
 
@@ -182,7 +248,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                 {
                     Map = DiscMapView.Empty;
                     Legend.Clear();
-                    OnPropertyChanged(nameof(HasMap));
+                    MapShown();
                 }
 
                 UpdateSameDisc();
@@ -197,7 +263,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     public BackupRow? SelectedBackup
     {
         get => _selectedBackup;
-        set => SetField(ref _selectedBackup, value);
+        set
+        {
+            if (SetField(ref _selectedBackup, value))
+            {
+                OnPropertyChanged(nameof(CanInstallBackup));
+            }
+        }
     }
 
     public bool HasBackups => Backups.Count > 0;
@@ -525,6 +597,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         }
 
         var files = resume?.Files ?? DiscBackupFiles.Unused(folder, DiscBackupFiles.NameFor(chosen.Title, identity.DiscId), isCd: chosen.Disc.Media == DiscMedia.Cd);
+        var follow = _alsoInstall ? StartFollowing(chosen, identity, files, resume) : null;
+        _following = follow;
         IsWorking = true;
         _autoPlay ??= new AutoPlayBlocker(chosen.Disc.Drive);
         var cleaned = _resumeCleaned;
@@ -550,13 +624,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _current = (files, chosen, started);
         try
         {
-            var copy = Task.Run(() => CopyAsync(chosen.Disc, identity, files, resume is not null, cleaned, rings, progress, run.Token));
+            var copy = Task.Run(() => CopyAsync(chosen.Disc, identity, files, resume is not null, cleaned, rings, follow?.Feed, progress, run.Token));
             _copyRun = copy;
             OnPropertyChanged(nameof(CanPauseToClean));
             (outcome, map) = await copy.ConfigureAwait(true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
+            follow?.Feed?.Break();
             _tick.Stop();
             IsWorking = false;
             Status = PageStatus.Error("The backup stopped", ex.Message);
@@ -570,6 +645,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _run = null;
             _copyRun = null;
             _current = null;
+            _following = null;
             OnPropertyChanged(nameof(CanPauseToClean));
             if (!_closed)
             {
@@ -603,10 +679,21 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await FinishAsync(chosen, files, started).ConfigureAwait(true);
+        // An install still waiting for its turn hasn't opened the copy yet: as the copy is renamed now, the finished copy
+        // is installed instead. One that has it open reads on from its open file.
+        if (follow?.Feed is { } feed && feed.CloseUnopened())
+        {
+            follow.Superseded = true;
+        }
+
+        var backup = await FinishAsync(chosen, files, started).ConfigureAwait(true);
+        if (_alsoInstall && (follow is null || (follow.Feed!.IsBroken && !follow.CancelledHere && !follow.CopyStopped)))
+        {
+            _ = InstallFinishedAsync(backup, byTick: true);
+        }
     }
 
-    private async Task<(DiscCopyOutcome, DiscCopyMap)> CopyAsync(DiscInDrive disc, DiscIdentity identity, DiscBackupFiles files, bool resume, bool cleaned, IReadOnlyList<double> rings, IProgress<DiscCopyStatus> progress, CancellationToken cancellationToken)
+    private async Task<(DiscCopyOutcome, DiscCopyMap)> CopyAsync(DiscInDrive disc, DiscIdentity identity, DiscBackupFiles files, bool resume, bool cleaned, IReadOnlyList<double> rings, DiscCopyFeed? feed, IProgress<DiscCopyStatus> progress, CancellationToken cancellationToken)
     {
         using var drive = WindowsDiscDrive.Open(disc.Drive);
         var now = DiscIdentity.Read(drive);
@@ -640,13 +727,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         {
             Note = note => Note(note.Message),
             Progress = progress,
+            Feed = feed,
         };
         var outcome = await copier.RunAsync(cancellationToken).ConfigureAwait(false);
         Note(string.Create(CultureInfo.InvariantCulture, $"{copier.Failures} failed reads; the drive rested {copier.Rested.TotalMinutes:0.0} min."));
         return (outcome, map);
     }
 
-    private async Task FinishAsync(DriveDisc chosen, DiscBackupFiles files, DateTime started)
+    private async Task<DiscBackup> FinishAsync(DriveDisc chosen, DiscBackupFiles files, DateTime started)
     {
         Status = PageStatus.Busy("Checking the copy", "Reading it back for its hashes, and getting Redump's list…", 0);
         StatusLine = string.Empty;
@@ -678,6 +766,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         {
             Eject(chosen.Disc.Drive);
         }
+
+        return backup;
     }
 
     private void Eject(string drive)
@@ -704,6 +794,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         if (_run is { } run)
         {
             Status = PageStatus.Busy("Stopping", "After the read under way, which can take a few seconds on a weak area.");
+            _following?.CopyStopped = true;
             run.Cancel();
         }
     }
@@ -713,6 +804,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         if (_run is { } run && _cleaning is null)
         {
             _cleanAfterStop = true;
+            _following?.CopyStopped = true;
             Status = PageStatus.Busy("Stopping to clean the disc", "After the read under way, which can take a few seconds on a weak area.");
             run.Cancel();
         }
@@ -837,8 +929,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private void SetMap(IReadOnlyList<DiscMapRange> ranges, long sectors, DiscMedia media, long layer0, long current, IReadOnlyList<double>? cleanedRingsMm = null)
     {
-        Map = new DiscMapView(ranges, sectors, media, layer0, current) { CleanedRingsMm = cleanedRingsMm ?? [] };
-        OnPropertyChanged(nameof(HasMap));
+        Map = new DiscMapView(ranges, sectors, media, layer0, current) { CleanedRingsMm = cleanedRingsMm ?? [], InstallSector = MarkerSector() };
+        MapShown();
         var totals = DiscMapShades.Totals(ranges);
         var notRead = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("AppTrack");
 
@@ -974,6 +1066,207 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void MapShown()
+    {
+        OnPropertyChanged(nameof(HasMap));
+        OnPropertyChanged(nameof(HasPanel));
+    }
+
+    // Starts the install on the PS2 that follows the copy, when the copy has nothing missing so far: it reads the copy's
+    // file as the copy fills it. Otherwise (a two-layer DVD, or a copy with gaps) the finished copy is installed instead.
+    private Ps2Install? StartFollowing(DriveDisc chosen, DiscIdentity identity, DiscBackupFiles files, DiscBackup? resume)
+    {
+        if (identity.DiscId is not { } id
+            || DiscBackupInstall.FollowingCopy(files, chosen.Title, id, chosen.Disc.Media, chosen.Disc.Sectors, chosen.Disc.Layers) is not { } item)
+        {
+            return null;
+        }
+
+        DiscCopyFeed feed;
+        try
+        {
+            var known = resume is null ? null : DiscCopyMap.Load(resume.Files.Map);
+            if (known is not null && (!DiscCopyFeed.CanFollow(known) || known.Sectors != chosen.Disc.Sectors))
+            {
+                return null;
+            }
+
+            feed = known is null ? new DiscCopyFeed(chosen.Disc.Sectors, 0) : DiscCopyFeed.For(known);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return null;
+        }
+
+        var install = new Ps2Install(identity, feed, byTick: true);
+        var stride = files.IsCd ? 2352 : DiscSectors.Size;
+        _log.Add($"Installing {chosen.Title} on the PS2 as it is copied.");
+        _ = RunPs2InstallAsync(install, item, _ => new DiscCopyFeedStream(feed, files.Image, stride));
+        return install;
+    }
+
+    // A finished copy to the PS2: scanned and titled as the Install page does, then installed through its queue.
+    private async Task InstallFinishedAsync(DiscBackup backup, bool byTick)
+    {
+        try
+        {
+            var path = DiscBackupInstall.ScanPath(backup.Files);
+            var scan = await Task.Run(() => DiscScanner.ScanAsync([new ScanInput(path, ScanDepth.File)], null, new DiscScanOptions())).ConfigureAwait(true);
+            var items = await QueueTitleLookup.ApplyAsync(scan.Items, _titles, CancellationToken.None).ConfigureAwait(true);
+            var found = items.Count > 0 ? items[0] : null;
+            if (found is not { Status: QueueItemStatus.Ready } item)
+            {
+                InstallLine = $"{backup.Files.Name} can't be installed on the PS2 ({found?.StatusLabel ?? "not a game image"}).";
+                _log.Add(InstallLine);
+                return;
+            }
+
+            await RunPs2InstallAsync(new Ps2Install(backup.Identity, null, byTick), item, open: null).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            InstallLine = $"{backup.Files.Name} was not installed on the PS2: {ex.Message}";
+            _log.Add(InstallLine);
+        }
+    }
+
+    private void InstallSelected()
+    {
+        if (_selectedBackup is { Result: not DiscBackupResult.Incomplete } row)
+        {
+            _log.Add($"Installing {row.Name} on the PS2 from its backup.");
+            _ = InstallFinishedAsync(row.Backup, byTick: false);
+        }
+    }
+
+    private void CancelInstalls()
+    {
+        foreach (var install in _ps2.ToList())
+        {
+            Cancel(install);
+        }
+    }
+
+    private static void Cancel(Ps2Install install)
+    {
+        install.CancelledHere = true;
+        install.Stop.Cancel();
+    }
+
+    // Through the Install page's queue, which runs one install at a time: this one waits for its turn there.
+    private async Task RunPs2InstallAsync(Ps2Install install, QueuePreviewItem item, Func<QueuePreviewItem, Stream>? open)
+    {
+        _ps2.Add(install);
+        OnPropertyChanged(nameof(IsInstallingOnPs2));
+        if (_ps2.Count == 1)
+        {
+            InstallLine = "On the PS2: starting the install of " + item.DetectedTitle + "…";
+        }
+
+        BayQueueResult? result;
+        string? notStarted;
+        try
+        {
+            (result, notStarted) = await _installer.InstallNowAsync(item, open, status => ShowInstall(install, status), install.Stop.Token).ConfigureAwait(true);
+        }
+        finally
+        {
+            _ps2.Remove(install);
+            OnPropertyChanged(nameof(IsInstallingOnPs2));
+            install.Dispose();
+            RefreshMarker();
+        }
+
+        // A row that read the copy as it was made points at its provisional name: it goes once that install is over.
+        if (install.Feed is not null && result?.Outcome != BayInstallOutcome.Installed)
+        {
+            _installer.Forget(item);
+        }
+
+        var title = item.DetectedTitle;
+        var removed = result is { PartialCopyLeft: true }
+            ? " Loadout Bay could not remove what it had of it; the next install of it replaces that."
+            : " Loadout Bay removed what it had of it.";
+        var line = notStarted is not null
+            ? $"{title} was not installed on the PS2: {notStarted}."
+            : result?.Outcome switch
+            {
+                null => null,
+                BayInstallOutcome.Installed => $"{title} is installed on the PS2{(result.PartitionName is { } name ? " as " + name : string.Empty)}.",
+                BayInstallOutcome.AlreadyOnPs2 => $"{title} is already on the PS2.",
+                BayInstallOutcome.Cancelled when install.Superseded => null,
+                BayInstallOutcome.Cancelled when install.CopyStopped => $"The install of {title} on the PS2 stopped with the copy.{removed}",
+                BayInstallOutcome.Cancelled when install.Feed is { IsBroken: true } && !install.CancelledHere =>
+                    $"The install of {title} on the PS2 stopped at the copy's first weak area.{removed} The finished copy is installed once it is complete.",
+                BayInstallOutcome.Cancelled => $"The install of {title} on the PS2 was cancelled.{removed}",
+                _ => result.Message,
+            };
+        if (line is not null)
+        {
+            InstallLine = line;
+            _log.Add("Back up discs: " + line);
+        }
+
+        // The install read the PS2's list back, so the list's On PS2 column follows it.
+        RefreshList();
+    }
+
+    // The line shows the first install this page started; one waiting behind it shows once that one is done.
+    private void ShowInstall(Ps2Install install, BayInstallStatus? status)
+    {
+        if (_ps2.FirstOrDefault() != install)
+        {
+            return;
+        }
+
+        if (status is null)
+        {
+            InstallLine = "On the PS2: waiting for the install under way to end…";
+            return;
+        }
+
+        if (status.Checking)
+        {
+            InstallLine = "On the PS2: all sent; Loadout Bay reads it back to check it…";
+            install.Sector = (long)(status.TotalBytes / DiscSectors.Size);
+        }
+        else
+        {
+            var now = DateTime.UtcNow;
+            var written = status.WrittenBytes;
+            if (written > 0 && install.FirstWritten is null)
+            {
+                install.FirstWritten = (now, written);
+            }
+
+            var rate = install.FirstWritten is { } first && (now - first.At).TotalSeconds >= 2
+                ? (written - first.Bytes) / 1_000_000.0 / (now - first.At).TotalSeconds
+                : 0;
+            InstallLine = $"On the PS2: {Size((long)written)} of {Size((long)status.TotalBytes)}{(rate > 0 ? string.Create(CultureInfo.CurrentCulture, $" · {rate:0.0} MB/s") : string.Empty)}";
+            install.Sector = (long)(written / DiscSectors.Size);
+        }
+
+        RefreshMarker();
+    }
+
+    // Where the install that follows the disc on the map has got, for the bar's second marker; -1 when none follows it.
+    private long MarkerSector()
+    {
+        var shown = _selected?.Disc.Identity;
+        return shown is null
+            ? -1
+            : _ps2.FirstOrDefault(i => i.Feed is not null && i.Identity is { } id && id.IsSameDisc(shown))?.Sector ?? -1;
+    }
+
+    private void RefreshMarker()
+    {
+        var sector = MarkerSector();
+        if (_map.Sectors > 0 && _map.InstallSector != sector)
+        {
+            Map = _map with { InstallSector = sector };
+        }
+    }
+
     private void OpenFolder()
     {
         var folder = _settings.BackupFolder;
@@ -996,6 +1289,38 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         else if (_selectedBackup is { } other)
         {
             Status = PageStatus.Idle("No report for " + other.Name, "It was made before reports were kept, or its report was removed.");
+        }
+    }
+
+    /// <summary>An install on the PS2 this page started: one following a copy (with a feed), or one of a finished copy.</summary>
+    private sealed class Ps2Install(DiscIdentity? identity, DiscCopyFeed? feed, bool byTick) : IDisposable
+    {
+        public DiscIdentity? Identity { get; } = identity;
+
+        public DiscCopyFeed? Feed { get; } = feed;
+
+        /// <summary>Started by Also install on PS2, so turning it off cancels it.</summary>
+        public bool ByTick { get; } = byTick;
+
+        /// <summary>Cancels the install: from the page, or when the copy it follows can't be followed any more.</summary>
+        public CancellationTokenSource Stop { get; } = feed is null ? new CancellationTokenSource() : CancellationTokenSource.CreateLinkedTokenSource(feed.Broken);
+
+        public bool CancelledHere { get; set; }
+
+        /// <summary>The copy it follows was stopped, or paused for cleaning.</summary>
+        public bool CopyStopped { get; set; }
+
+        /// <summary>The copy finished before it opened it: the finished copy is installed instead.</summary>
+        public bool Superseded { get; set; }
+
+        public long Sector { get; set; } = -1;
+
+        public (DateTime At, ulong Bytes)? FirstWritten { get; set; }
+
+        public void Dispose()
+        {
+            Stop.Dispose();
+            Feed?.Dispose();
         }
     }
 }

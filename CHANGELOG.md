@@ -10,6 +10,8 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - A CD is backed up as Redump keeps it: its raw sectors in a .bin, with a .cue, so the copy can be checked against Redump and installed from the Install page like any bin and cue.
 - Pause to clean the disc, while a backup runs, stops the copy, opens the tray and shows where the disc has trouble, circled on a picture of it. Put the disc back cleaned and the copy goes on by itself; a small cloth then marks each cleaned ring, and its hover text says what came back there. While a backup runs, Windows doesn't open AutoPlay or Explorer for a disc put in that drive.
 - Back up discs shows the drive's own read speed for the disc in it, such as 10x–24x for a CD, and where it reads now while copying.
+- Also install on PS2, on Back up discs, installs each disc on the PS2 as it is copied, with the Install page's options. If the copy meets a weak area, that install is cancelled and the finished copy is installed instead. A second marker under the disc map shows how far the PS2 has got.
+- Install on PS2, on Back up discs, installs the copy picked in the list.
 - Keep going, on Back up discs, is for a collection: a backed-up disc comes out of the drive, and the next PS2 disc put in is backed up by itself.
 - Settings has a Backups section with the folder the copies go to. The first backup asks for it, suggesting Documents\PS2 Backups.
 - Install has Back up a disc…, which opens Back up discs.

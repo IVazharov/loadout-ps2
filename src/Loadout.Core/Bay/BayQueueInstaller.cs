@@ -57,7 +57,8 @@ public sealed record BayQueueRun(IReadOnlyList<BayQueueResult> Results, BayLibra
 /// cannot be made is reported in the game's result and does not undo the install. With <c>artwork</c>,
 /// each game installed gets its files from that cache, unless OPL's ART folder already has them; missing
 /// or refused artwork is reported in the same way. It is downloaded before this runs, as a connection
-/// left idle while it downloads would be closed.
+/// left idle while it downloads would be closed. With <c>open</c>, a game's sectors come from it instead of its
+/// file, such as a disc copy still being read.
 /// </summary>
 public static class BayQueueInstaller
 {
@@ -90,6 +91,7 @@ public static class BayQueueInstaller
         MemoryCardRequest? memoryCards = null,
         ArtworkCache? artwork = null,
         IProgress<BayQueueResult>? finished = null,
+        Func<QueuePreviewItem, Stream>? open = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -160,7 +162,7 @@ public static class BayQueueInstaller
             var report = new Relay(status => progress?.Report(new BayQueueProgress(index, count, item, status)));
             try
             {
-                using var sectors = IsoUserDataStream.Open(item.DataFile!);
+                using var sectors = open?.Invoke(item) ?? IsoUserDataStream.Open(item.DataFile!);
                 var start = await bay.InstallAsync(request, sectors, report, dataPort, cancellationToken).ConfigureAwait(false);
                 onPs2[request.DiscId] = new InstalledGameRow(start.PartitionName, request.Title, request.DiscId, 0, 0, 0, 0, 0);
                 var message = Name(item) + " was installed as " + start.PartitionName + ".";

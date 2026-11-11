@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Windows.Input;
 using Loadout.Artwork;
 using Loadout.Bay;
@@ -384,7 +385,85 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
             return;
         }
 
-        _install = new CancellationTokenSource();
+        await RunInstallAsync(host, queue, open: null, follow: null, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Installs one game for Back up discs, with this page's options (artwork, memory cards, the install check), as a row
+    /// of its queue. It waits for an install under way to end first, as Loadout Bay serves one connection at a time.
+    /// <paramref name="open"/>, when given, gives the game's sectors instead of its file: a disc copy still being read.
+    /// <paramref name="follow"/> gets its progress. Returns its result, or why it did not start.
+    /// </summary>
+    public async Task<(BayQueueResult? Result, string? NotStarted)> InstallNowAsync(
+        QueuePreviewItem item,
+        Func<QueuePreviewItem, Stream>? open,
+        Action<BayInstallStatus?> follow,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        ArgumentNullException.ThrowIfNull(follow);
+        while (_install is not null)
+        {
+            // Null: waiting for the install under way.
+            follow(null);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return (new BayQueueResult(item, BayInstallOutcome.Cancelled, item.DetectedTitle + " was cancelled before it started."), null);
+            }
+        }
+
+        var host = _hostFor().Trim();
+        if (host.Length == 0)
+        {
+            return (null, "the PS2's address is not set in Settings");
+        }
+
+        // The disc's row replaces any other of it: the queue keeps one row per disc.
+        _scanned.RemoveAll(row => !row.Installing && string.Equals(row.DiscId, item.DiscId, StringComparison.OrdinalIgnoreCase));
+        _scanned.Add(item);
+        Publish();
+        try
+        {
+            var run = await RunInstallAsync(host, [item], open, follow, cancellationToken);
+            return (run is { Results.Count: > 0 } ? run.Results[0] : null, run is null ? "it could not start" : null);
+        }
+        catch (Exception ex) when (ex is LoadoutBayException or IOException or OperationCanceledException or System.Net.Sockets.SocketException)
+        {
+            OnInstallFailed(ex);
+            return ex is OperationCanceledException
+                ? (new BayQueueResult(item, BayInstallOutcome.Cancelled, item.DetectedTitle + " was cancelled before it started."), null)
+                : (null, ex is LoadoutBayException bay ? PageStatus.BayReason(bay) : UserFacingText.Describe(ex.Message));
+        }
+    }
+
+    /// <summary>Takes a game's row out of the queue, unless it is installing: one Back up discs put there that no longer applies.</summary>
+    public void Forget(QueuePreviewItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (_scanned.RemoveAll(row => !row.Installing && !row.InstalledFromQueue && row.SourceFile == item.SourceFile) > 0)
+        {
+            Publish();
+        }
+    }
+
+    private async Task<BayQueueRun?> RunInstallAsync(
+        string host,
+        List<QueuePreviewItem> queue,
+        Func<QueuePreviewItem, Stream>? open,
+        Action<BayInstallStatus?>? follow,
+        CancellationToken cancellationToken)
+    {
+        if (_install is not null)
+        {
+            return null;
+        }
+
+        _install = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        BayQueueRun run;
         var reading = _spaceReading;
         OnPropertyChanged(nameof(IsInstalling));
         OnPropertyChanged(nameof(CanInstall));
@@ -395,6 +474,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         var checking = false;
         var progress = new Progress<BayQueueProgress>(step =>
         {
+            follow?.Invoke(step.Status);
             if (step.Index != current)
             {
                 current = step.Index;
@@ -421,8 +501,8 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
                 await DownloadArtworkAsync(queue, _install.Token);
             }
 
-            var run = await BayQueueInstaller.RunAsync(
-                host, queue, progress, CheckInstalls, memoryCards: cards, artwork: artwork, finished: new Progress<BayQueueResult>(result => ShowResult(result, reading)), cancellationToken: _install.Token);
+            run = await BayQueueInstaller.RunAsync(
+                host, queue, progress, CheckInstalls, memoryCards: cards, artwork: artwork, finished: new Progress<BayQueueResult>(result => ShowResult(result, reading)), open: open, cancellationToken: _install.Token);
             if (run.Library is not null)
             {
                 await _onLibraryRead(run.Library);
@@ -460,6 +540,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         }
 
         _log.Add(Status.LogLine);
+        return run;
     }
 
     private void MarkInstalling(QueuePreviewItem item, bool installing)
