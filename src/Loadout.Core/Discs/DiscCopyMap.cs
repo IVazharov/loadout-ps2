@@ -18,6 +18,7 @@ public sealed class DiscCopyMap
     private const string Header = "loadout disc map 1";
 
     private readonly List<DiscMapRange> _ranges;
+    private readonly List<double> _cleanedRings = [];
 
     private DiscCopyMap(long sectors, string identity, List<DiscMapRange> ranges)
     {
@@ -42,6 +43,9 @@ public sealed class DiscCopyMap
 
     /// <summary>How many times the disc was cleaned during this copy.</summary>
     public int Cleanings { get; private set; }
+
+    /// <summary>Where the disc was cleaned: the distances from the centre (mm) of its trouble at each cleaning.</summary>
+    public IReadOnlyList<double> CleanedRingsMm => _cleanedRings;
 
     /// <summary>Every stretch, in order, covering the whole disc.</summary>
     public IReadOnlyList<DiscMapRange> Ranges => _ranges;
@@ -83,7 +87,21 @@ public sealed class DiscCopyMap
 
         var ranges = new List<DiscMapRange>();
         var expected = 0L;
-        foreach (var line in lines.Skip(5))
+        var cleanedAt = new List<double>();
+        var first = 5;
+        if (lines[5].StartsWith("cleaned-at ", StringComparison.Ordinal))
+        {
+            foreach (var mm in lines[5]["cleaned-at ".Length..].Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                cleanedAt.Add(double.TryParse(mm, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+                    ? value
+                    : throw new InvalidDataException($"The disc map has '{mm}' where a distance should be."));
+            }
+
+            first = 6;
+        }
+
+        foreach (var line in lines.Skip(first))
         {
             var parts = line.Split(' ');
             if (parts.Length != 3 || parts[2].Length != 1 || !DiscSectorStates.TryFromCode(parts[2][0], out var state))
@@ -118,6 +136,7 @@ public sealed class DiscCopyMap
             map.Append(range);
         }
 
+        map._cleanedRings.AddRange(cleanedAt);
         return map;
     }
 
@@ -129,6 +148,10 @@ public sealed class DiscCopyMap
         text.Append(CultureInfo.InvariantCulture, $"disc {Identity}\n");
         text.Append(CultureInfo.InvariantCulture, $"sweep {Sweep} {SweepPosition}\n");
         text.Append(CultureInfo.InvariantCulture, $"cleanings {Cleanings}\n");
+        if (_cleanedRings.Count > 0)
+        {
+            text.Append("cleaned-at ").Append(string.Join(' ', _cleanedRings.Select(mm => mm.ToString("0.0", CultureInfo.InvariantCulture)))).Append('\n');
+        }
         foreach (var range in _ranges)
         {
             text.Append(CultureInfo.InvariantCulture, $"{range.Start} {range.Count} {(char)range.State}\n");
@@ -161,13 +184,21 @@ public sealed class DiscCopyMap
     /// Starts the passes over everything still missing, from the first sweep in big pieces: after the disc was cleaned
     /// (<paramref name="cleaned"/>), or when it is in another drive.
     /// </summary>
-    public void StartOver(bool cleaned)
+    public void StartOver(bool cleaned, IReadOnlyList<double>? troubleRingsMm = null)
     {
         Sweep = 0;
         SweepPosition = -1;
         if (cleaned)
         {
             Cleanings++;
+            foreach (var mm in troubleRingsMm ?? [])
+            {
+                // A ring cleaned again is still one ring.
+                if (!_cleanedRings.Any(known => Math.Abs(known - mm) <= 1.5))
+                {
+                    _cleanedRings.Add(Math.Round(mm, 1));
+                }
+            }
         }
     }
 

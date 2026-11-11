@@ -156,8 +156,63 @@ public sealed class WindowsDiscDrive : IDiscReader
     /// pass-through (which needs the drive opened for writing too; Windows allows that without admin rights). No retry of
     /// its own. Returns false with the drive's answer when any of them could not be read.
     /// </summary>
+    /// <summary>
+    /// Asks the drive about its read speed for the disc in it: GET PERFORMANCE (nominal, along the disc) and the
+    /// capabilities page (MODE SENSE page 2A: the maximum). Null when it answers neither.
+    /// </summary>
+    public DriveSpeeds? ReadSpeeds()
+    {
+        // GET PERFORMANCE: performance data (type 0), tolerance 10b as MMC requires, read, nominal; from sector 0, 16 at most.
+        Span<byte> cdb = stackalloc byte[12];
+        cdb[0] = 0xAC;
+        cdb[1] = 0x10;
+        cdb[9] = 16;
+        var answer = new byte[8 + (16 * 16)];
+        IReadOnlyList<DriveSpeedStretch> stretches = Command(cdb, answer, out _) ? DriveSpeeds.ParsePerformance(answer) : [];
+
+        // MODE SENSE (10), page 2A, no block descriptors: the maximum read speed at bytes 8-9 of the page.
+        cdb.Clear();
+        cdb[0] = 0x5A;
+        cdb[1] = 0x08;
+        cdb[2] = 0x2A;
+        cdb[8] = 0xFF;
+        var page = new byte[255];
+        var max = Command(cdb[..10], page, out _) && (page[8] & 0x3F) == 0x2A ? (page[8 + 8] << 8) | page[8 + 9] : 0;
+        return stretches.Count == 0 && max == 0 ? null : new DriveSpeeds(Media, max, stretches);
+    }
+
     public bool TryReadRawCd(long sector, Span<byte> destination, out string? failure)
     {
+        if (!OpenPassThrough(out failure))
+        {
+            return false;
+        }
+
+        var total = destination.Length / RawCdSectorSize;
+        Span<byte> cdb = stackalloc byte[12];
+        for (var done = 0; done < total; done += RawSectorsPerCommand)
+        {
+            var count = Math.Min(RawSectorsPerCommand, total - done);
+            cdb.Clear();
+            cdb[0] = 0xBE; // READ CD, any sector type
+            BinaryPrimitives.WriteUInt32BigEndian(cdb[2..], (uint)(sector + done));
+            cdb[6] = (byte)(count >> 16);
+            cdb[7] = (byte)(count >> 8);
+            cdb[8] = (byte)count;
+            cdb[9] = 0xF8; // sync, all headers, user data, EDC/ECC: 2352 bytes
+            if (!Command(cdb, destination.Slice(done * RawCdSectorSize, count * RawCdSectorSize), out failure))
+            {
+                return false;
+            }
+        }
+
+        failure = null;
+        return true;
+    }
+
+    private bool OpenPassThrough(out string? failure)
+    {
+        failure = null;
         if (_passThrough is null)
         {
             var handle = NativeMethods.CreateFile($@"\\.\{Name}", GenericRead | GenericWrite, FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
@@ -173,44 +228,43 @@ public sealed class WindowsDiscDrive : IDiscReader
             _passThroughBuffer = new byte[DataOffset + (RawSectorsPerCommand * RawCdSectorSize)];
         }
 
-        var buffer = _passThroughBuffer!;
-        var total = destination.Length / RawCdSectorSize;
-        for (var done = 0; done < total; done += RawSectorsPerCommand)
+        return true;
+    }
+
+    /// <summary>Sends one SCSI command that reads data in (at most 27 raw CD sectors' worth) through pass-through.</summary>
+    private bool Command(ReadOnlySpan<byte> cdb, Span<byte> data, out string? failure)
+    {
+        if (!OpenPassThrough(out failure))
         {
-            var count = Math.Min(RawSectorsPerCommand, total - done);
-            var bytes = count * RawCdSectorSize;
-            Array.Clear(buffer, 0, DataOffset);
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer, SenseOffset);
-            buffer[6] = 12; // CDB length
-            buffer[7] = 32; // sense length
-            buffer[8] = 1; // SCSI_IOCTL_DATA_IN
-            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(12), (uint)bytes);
-            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(16), 60); // timeout, seconds
-            BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(24), DataOffset);
-            BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(32), SenseOffset);
-            var cdb = buffer.AsSpan(36, 12);
-            cdb[0] = 0xBE; // READ CD, any sector type
-            BinaryPrimitives.WriteUInt32BigEndian(cdb[2..], (uint)(sector + done));
-            cdb[6] = (byte)(count >> 16);
-            cdb[7] = (byte)(count >> 8);
-            cdb[8] = (byte)count;
-            cdb[9] = 0xF8; // sync, all headers, user data, EDC/ECC: 2352 bytes
-            if (!NativeMethods.DeviceIoControl(_passThrough, IoctlScsiPassThrough, buffer, DataOffset, buffer, DataOffset + bytes, out _, IntPtr.Zero))
-            {
-                var error = Marshal.GetLastPInvokeError();
-                failure = $"{Marshal.GetPInvokeErrorMessage(error)} (error {error})";
-                return false;
-            }
-
-            if (buffer[2] != 0)
-            {
-                failure = $"the drive answered SCSI status 0x{buffer[2]:X2}, sense {buffer[SenseOffset + 2] & 0x0F:X}/{buffer[SenseOffset + 12]:X2}/{buffer[SenseOffset + 13]:X2}";
-                return false;
-            }
-
-            buffer.AsSpan(DataOffset, bytes).CopyTo(destination[(done * RawCdSectorSize)..]);
+            return false;
         }
 
+        var buffer = _passThroughBuffer!;
+        var bytes = Math.Min(data.Length, buffer.Length - DataOffset);
+        Array.Clear(buffer, 0, DataOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer, SenseOffset);
+        buffer[6] = (byte)cdb.Length;
+        buffer[7] = 32; // sense length
+        buffer[8] = 1; // SCSI_IOCTL_DATA_IN
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(12), (uint)bytes);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(16), 60); // timeout, seconds
+        BinaryPrimitives.WriteUInt64LittleEndian(buffer.AsSpan(24), DataOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(32), SenseOffset);
+        cdb.CopyTo(buffer.AsSpan(36, 16));
+        if (!NativeMethods.DeviceIoControl(_passThrough!, IoctlScsiPassThrough, buffer, DataOffset, buffer, DataOffset + bytes, out _, IntPtr.Zero))
+        {
+            var error = Marshal.GetLastPInvokeError();
+            failure = $"{Marshal.GetPInvokeErrorMessage(error)} (error {error})";
+            return false;
+        }
+
+        if (buffer[2] != 0)
+        {
+            failure = $"the drive answered SCSI status 0x{buffer[2]:X2}, sense {buffer[SenseOffset + 2] & 0x0F:X}/{buffer[SenseOffset + 12]:X2}/{buffer[SenseOffset + 13]:X2}";
+            return false;
+        }
+
+        buffer.AsSpan(DataOffset, bytes).CopyTo(data);
         failure = null;
         return true;
     }

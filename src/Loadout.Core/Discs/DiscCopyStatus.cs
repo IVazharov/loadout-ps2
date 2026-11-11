@@ -56,6 +56,9 @@ public sealed record DiscCopyStatus
 
     public int Cleanings { get; init; }
 
+    /// <summary>Where the disc was cleaned, in mm from the centre.</summary>
+    public IReadOnlyList<double> CleanedRingsMm { get; init; } = [];
+
     /// <summary>The map's stretches as they were when this status was sent, for the page's disc map.</summary>
     public IReadOnlyList<DiscMapRange> Ranges { get; init; } = [];
 }

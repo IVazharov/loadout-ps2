@@ -467,6 +467,7 @@ public sealed class DiscCopier
             Failures = Failures,
             Stalled = _stalled,
             Cleanings = _map.Cleanings,
+            CleanedRingsMm = [.. _map.CleanedRingsMm],
             Ranges = [.. _map.Ranges],
         });
     }

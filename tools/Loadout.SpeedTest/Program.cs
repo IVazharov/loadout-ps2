@@ -211,6 +211,11 @@ if (args[0] == "disc-copy" && args.Length >= 2 && DiscDrive.IsDriveName(args[1])
     return result == 2 ? UsageError() : result;
 }
 
+if (args[0] == "disc-speed" && args.Length == 2 && DiscDrive.IsDriveName(args[1]))
+{
+    return DiscCommands.Speed(args[1]);
+}
+
 if (args[0] == "cd-raw" && args.Length == 3 && DiscDrive.IsDriveName(args[1]))
 {
     var result = await DiscCommands.CdRawAsync(args[1], args[2..]);

@@ -85,6 +85,12 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private Task? _copyRun;
     private (DiscBackupFiles Files, DriveDisc Disc, DateTime Started)? _current;
     private bool _closed;
+    private bool _cleanAfterStop;
+    private bool _resumeCleaned;
+    private IReadOnlyList<double> _resumeRings = [];
+    private (DiscIdentity Identity, string Drive, string Title)? _cleaning;
+    private IReadOnlyList<double> _troubleRings = [];
+    private AutoPlayBlocker? _autoPlay;
     private DriveDisc? _selected;
     private PageStatus _status = PageStatus.Idle("Insert a PS2 disc", "Into a disc drive on this PC. Back up this disc copies it to a file here.");
     private string _statusLine = string.Empty;
@@ -117,6 +123,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         BackUpCommand = new AsyncRelayCommand(BackUpAsync, Fail);
         BackUpAgainCommand = new AsyncRelayCommand(() => BackUpAsync(again: true), Fail);
         StopCommand = new RelayCommand(Stop);
+        PauseToCleanCommand = new RelayCommand(PauseToClean);
         OpenFolderCommand = new RelayCommand(OpenFolder);
         ShowReportCommand = new RelayCommand(ShowReport);
         Describe = DescribeSectors;
@@ -141,6 +148,19 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     public ICommand BackUpAgainCommand { get; }
 
     public ICommand StopCommand { get; }
+
+    /// <summary>Stops the copy, opens the tray and waits for the same disc, cleaned; the copy then goes on in big pieces.</summary>
+    public ICommand PauseToCleanCommand { get; }
+
+    /// <summary>While a copy reads: it can pause for cleaning.</summary>
+    public bool CanPauseToClean => _copyRun is not null && _cleaning is null;
+
+    /// <summary>During the cleaning pause: where the missing sectors are, in mm from the centre, circled on the disc picture.</summary>
+    public IReadOnlyList<double> TroubleRings
+    {
+        get => _troubleRings;
+        private set => SetField(ref _troubleRings, value);
+    }
 
     public ICommand OpenFolderCommand { get; }
 
@@ -209,6 +229,12 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         {
             if (SetField(ref _working, value))
             {
+                if (!value)
+                {
+                    _autoPlay?.Dispose();
+                    _autoPlay = null;
+                }
+
                 OnPropertyChanged(nameof(CanBackUp));
                 OnPropertyChanged(nameof(CanBackUpAgain));
                 OnPropertyChanged(nameof(CanChooseDisc));
@@ -270,6 +296,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _closed = true;
         _poll.Stop();
         _tick.Stop();
+        _autoPlay?.Dispose();
+        _autoPlay = null;
         if (_run is { } run && _copyRun is { } copy && _current is { } current)
         {
             run.Cancel();
@@ -327,7 +355,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _looking = true;
         try
         {
-            var busyDrive = _working ? _selected?.Disc.Drive : null;
+            var busyDrive = _copyRun is not null ? _selected?.Disc.Drive : null;
             var changes = await Task.Run(() =>
             {
                 var found = new List<(string Drive, string Print, DiscInDrive? Disc)>();
@@ -364,6 +392,12 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private async Task ShowDiscAsync(string drive, DiscInDrive? disc)
     {
+        if (_cleaning is { } cleaning && string.Equals(drive, cleaning.Drive, StringComparison.OrdinalIgnoreCase))
+        {
+            await DiscBackAfterCleaningAsync(cleaning, disc).ConfigureAwait(true);
+            return;
+        }
+
         var old = Discs.FirstOrDefault(d => string.Equals(d.Disc.Drive, drive, StringComparison.OrdinalIgnoreCase));
         if (old is not null && !(_working && old == _selected))
         {
@@ -416,7 +450,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var what = $"{disc.Title} ({disc.Disc.Identity?.DiscId?.Canonical}), a {Size(disc.Disc.Bytes)} {(disc.Disc.Media == DiscMedia.Cd ? "CD" : disc.Disc.Layers > 1 ? "two-layer DVD" : "DVD")} in drive {disc.Disc.Drive.TrimEnd(':')}";
+        var speeds = disc.Disc.Speeds?.Range(CultureInfo.CurrentCulture);
+        var what = $"{disc.Title} ({disc.Disc.Identity?.DiscId?.Canonical}), a {Size(disc.Disc.Bytes)} {(disc.Disc.Media == DiscMedia.Cd ? "CD" : disc.Disc.Layers > 1 ? "two-layer DVD" : "DVD")} in drive {disc.Disc.Drive.TrimEnd(':')}{(string.IsNullOrEmpty(speeds) ? "" : $", which reads it at {speeds}")}";
         Status = _sameDisc switch
         {
             { Result: DiscBackupResult.Incomplete } same => PageStatus.Idle(
@@ -441,7 +476,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         try
         {
             var map = DiscCopyMap.Load(backup.Files.Map);
-            SetMap(map.Ranges.ToList(), map.Sectors, disc?.Media ?? DiscMedia.Dvd, disc?.Layer0Sectors ?? 0, -1);
+            SetMap(map.Ranges.ToList(), map.Sectors, disc?.Media ?? DiscMedia.Dvd, disc?.Layer0Sectors ?? 0, -1, [.. map.CleanedRingsMm]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -491,6 +526,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
         var files = resume?.Files ?? DiscBackupFiles.Unused(folder, DiscBackupFiles.NameFor(chosen.Title, identity.DiscId), isCd: chosen.Disc.Media == DiscMedia.Cd);
         IsWorking = true;
+        _autoPlay ??= new AutoPlayBlocker(chosen.Disc.Drive);
+        var cleaned = _resumeCleaned;
+        var rings = _resumeRings;
+        _resumeCleaned = false;
+        _resumeRings = [];
         var run = new CancellationTokenSource();
         _run = run;
         var progress = new Progress<DiscCopyStatus>(Show);
@@ -510,8 +550,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _current = (files, chosen, started);
         try
         {
-            var copy = Task.Run(() => CopyAsync(chosen.Disc, identity, files, resume is not null, progress, run.Token));
+            var copy = Task.Run(() => CopyAsync(chosen.Disc, identity, files, resume is not null, cleaned, rings, progress, run.Token));
             _copyRun = copy;
+            OnPropertyChanged(nameof(CanPauseToClean));
             (outcome, map) = await copy.ConfigureAwait(true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -529,6 +570,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _run = null;
             _copyRun = null;
             _current = null;
+            OnPropertyChanged(nameof(CanPauseToClean));
             if (!_closed)
             {
                 run.Dispose();
@@ -541,6 +583,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         }
 
         _tick.Stop();
+        if (outcome == DiscCopyOutcome.Stopped && _cleanAfterStop)
+        {
+            _cleanAfterStop = false;
+            WriteReport(files, chosen, started, "Paused to clean the disc.");
+            WaitForCleaning(chosen, identity, map);
+            return;
+        }
+
         if (outcome == DiscCopyOutcome.Stopped)
         {
             IsWorking = false;
@@ -556,7 +606,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         await FinishAsync(chosen, files, started).ConfigureAwait(true);
     }
 
-    private async Task<(DiscCopyOutcome, DiscCopyMap)> CopyAsync(DiscInDrive disc, DiscIdentity identity, DiscBackupFiles files, bool resume, IProgress<DiscCopyStatus> progress, CancellationToken cancellationToken)
+    private async Task<(DiscCopyOutcome, DiscCopyMap)> CopyAsync(DiscInDrive disc, DiscIdentity identity, DiscBackupFiles files, bool resume, bool cleaned, IReadOnlyList<double> rings, IProgress<DiscCopyStatus> progress, CancellationToken cancellationToken)
     {
         using var drive = WindowsDiscDrive.Open(disc.Drive);
         var now = DiscIdentity.Read(drive);
@@ -574,8 +624,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                 throw new InvalidDataException($"{files.Name} is the copy of another disc.");
             }
 
-            // Another drive, or the same one after a while: the passes start over on what is missing, in big pieces.
-            map.StartOver(cleaned: false);
+            // Cleaned, in another drive, or the same one after a while: the passes start over on what is missing, in big pieces.
+            map.StartOver(cleaned, rings);
         }
         else
         {
@@ -584,7 +634,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
         Directory.CreateDirectory(files.Folder);
         map.Save(files.Map);
-        Note($"Backup of {files.Name} ({now.Format()}) from {disc.Drive}, {(resume ? "going on" : "new")}: {map.ReadSectors} of {map.Sectors} sectors copied.");
+        Note($"Backup of {files.Name} ({now.Format()}) from {disc.Drive}, {(resume ? cleaned ? $"going on after cleaning {map.Cleanings}" : "going on" : "new")}: {map.ReadSectors} of {map.Sectors} sectors copied.");
         await using var image = new FileStream(files.Image, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1 << 20);
         var copier = new DiscCopier(drive, image, map, m => m.Save(files.Map))
         {
@@ -640,11 +690,81 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private void Stop()
     {
+        if (_cleaning is not null)
+        {
+            _cleaning = null;
+            TroubleRings = [];
+            IsWorking = false;
+            Status = PageStatus.Idle("Stopped", "The copy is kept. Resume this disc goes on from there, after cleaning the disc or in another drive too.");
+            StatusLine = string.Empty;
+            OnPropertyChanged(nameof(CanPauseToClean));
+            return;
+        }
+
         if (_run is { } run)
         {
             Status = PageStatus.Busy("Stopping", "After the read under way, which can take a few seconds on a weak area.");
             run.Cancel();
         }
+    }
+
+    private void PauseToClean()
+    {
+        if (_run is { } run && _cleaning is null)
+        {
+            _cleanAfterStop = true;
+            Status = PageStatus.Busy("Stopping to clean the disc", "After the read under way, which can take a few seconds on a weak area.");
+            run.Cancel();
+        }
+    }
+
+    // The copy is saved and stopped: open the tray, show where the trouble is, and wait for the disc to come back.
+    private void WaitForCleaning(DriveDisc chosen, DiscIdentity identity, DiscCopyMap map)
+    {
+        var trouble = DiscTrouble.From(map.Ranges, chosen.Disc.Media, chosen.Disc.Layer0Sectors);
+        _cleaning = (identity, chosen.Disc.Drive, chosen.Title);
+        OnPropertyChanged(nameof(CanPauseToClean));
+        RefreshList();
+        TroubleRings = trouble.RingsMm;
+        _resumeRings = trouble.RingsMm;
+        var opened = WindowsDiscDrive.TryEject(chosen.Disc.Drive);
+        var where = trouble.Where(CultureInfo.CurrentCulture);
+        var missing = trouble.MissingSectors > 0
+            ? $"{Size(trouble.MissingSectors * DiscSectors.Size)} is missing in {trouble.Areas} small area{(trouble.Areas == 1 ? "" : "s")}{(where.Length > 0 ? ", " + where : "")}, circled on the disc. "
+            : string.Empty;
+        Status = PageStatus.Warn(
+            opened ? "Clean the disc, then put it back" : "Take the disc out, clean it, and put it back",
+            missing + "Wipe it with a soft lint-free cloth in straight lines from the centre outwards, never in circles, and use no cleaners. The copy goes on by itself.");
+        StatusLine = "Waiting for " + chosen.Title + " to come back…";
+    }
+
+    private async Task DiscBackAfterCleaningAsync((DiscIdentity Identity, string Drive, string Title) cleaning, DiscInDrive? disc)
+    {
+        if (disc is null)
+        {
+            return;
+        }
+
+        if (disc.Identity is not { } identity || !identity.IsSameDisc(cleaning.Identity))
+        {
+            Status = PageStatus.Warn("This is another disc", $"Put {cleaning.Title} back in to go on with its copy, or Stop to keep the copy for later.");
+            return;
+        }
+
+        _cleaning = null;
+        TroubleRings = [];
+        IsWorking = false;
+        OnPropertyChanged(nameof(CanPauseToClean));
+        var entry = Discs.FirstOrDefault(d => string.Equals(d.Disc.Drive, cleaning.Drive, StringComparison.OrdinalIgnoreCase)) is { } shown
+            ? shown with { Disc = disc }
+            : new DriveDisc(disc, cleaning.Title);
+        Discs.Remove(Discs.FirstOrDefault(d => string.Equals(d.Disc.Drive, cleaning.Drive, StringComparison.OrdinalIgnoreCase))!);
+        Discs.Add(entry);
+        SelectedDisc = entry;
+        _log.Add($"{cleaning.Title} is back after cleaning: its copy goes on.");
+        _resumeCleaned = true;
+        _resumeRings = TroubleRings.Count > 0 ? TroubleRings : _resumeRings;
+        await BackUpAsync(again: false).ConfigureAwait(true);
     }
 
     private void Show(DiscCopyStatus status)
@@ -660,11 +780,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _restUntil = DateTime.UtcNow + status.RestLeft;
         }
 
-        SetMap(status.Ranges, status.TotalSectors, _selected?.Disc.Media ?? DiscMedia.Dvd, _selected?.Disc.Layer0Sectors ?? 0, status.Sector);
+        SetMap(status.Ranges, status.TotalSectors, _selected?.Disc.Media ?? DiscMedia.Dvd, _selected?.Disc.Layer0Sectors ?? 0, status.Sector, status.CleanedRingsMm);
         var percent = 100.0 * status.ReadSectors / Math.Max(1, status.TotalSectors);
         var title = _selected?.Title ?? "the disc";
         Status = status.Stalled
-            ? PageStatus.Warn("Little is being read", "Cleaning the disc helps most here. Stop, clean it, put it back and Resume this disc: the copy goes on where it was.")
+            ? PageStatus.Warn("Little is being read", "Cleaning the disc helps most here: Pause to clean the disc, and the copy goes on where it was.")
             : status.Phase is DiscCopyPhase.Sweep or DiscCopyPhase.Resting && status.Sweep > 0
                 ? PageStatus.Busy("Backing up " + title, $"Weak areas can take minutes or hours. You can stop and resume any time. {Size(status.MissingSectors * DiscSectors.Size)} left.", percent)
                 : PageStatus.Busy("Backing up " + title, status.Failures == 0 ? "Reading the disc." : "The first pass jumps past weak areas; later passes go back to them.", percent);
@@ -687,13 +807,25 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                 ? string.Create(CultureInfo.CurrentCulture, $"The drive needs a short rest after a failed read ({left:0} s)…")
                 : "The drive needs a short rest after a failed read; trying it again…",
             DiscCopyPhase.FirstPass => status.BytesPerSecond > 0
-                ? $"Reading normally · {speed} · about {Left(status.UntriedSectors * (_selected?.Disc.Media == DiscMedia.Cd ? 2352 : DiscSectors.Size) / status.BytesPerSecond)} left"
+                ? $"Reading normally{DriveNow(status.Sector)} · {speed} · about {Left(status.UntriedSectors * (_selected?.Disc.Media == DiscMedia.Cd ? 2352 : DiscSectors.Size) / status.BytesPerSecond)} left"
                 : "Reading normally",
             DiscCopyPhase.Sweep when status.PieceSectors < 128 => $"Weak area at {at}: reading it in small pieces",
             DiscCopyPhase.Sweep when status.Backwards => $"Pass {status.Sweep + 1}: going back over {Size(status.MissingSectors * DiscSectors.Size)} from the end",
             DiscCopyPhase.Sweep => $"Pass {status.Sweep + 1}: going over {Size(status.MissingSectors * DiscSectors.Size)} again",
             _ => string.Empty,
         };
+    }
+
+    // The drive's own nominal speed where it reads now, from the curve it gave for this disc, such as " · drive 17x of 24x".
+    private string DriveNow(long sector)
+    {
+        if (_selected?.Disc is not { Speeds: { } speeds } disc || speeds.KbPerSecondAt(sector, disc.Layer0Sectors) is not { } now)
+        {
+            return string.Empty;
+        }
+
+        var max = speeds.MaxKbPerSecond > 0 ? speeds.MaxKbPerSecond : speeds.Stretches.Max(s => Math.Max(s.StartKbPerSecond, s.EndKbPerSecond));
+        return $" · drive {speeds.X(now, CultureInfo.CurrentCulture)} of {speeds.X(max, CultureInfo.CurrentCulture)}";
     }
 
     private static string Left(double seconds) => seconds switch
@@ -703,9 +835,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _ => string.Create(CultureInfo.CurrentCulture, $"{seconds / 3600:0.0} h"),
     };
 
-    private void SetMap(IReadOnlyList<DiscMapRange> ranges, long sectors, DiscMedia media, long layer0, long current)
+    private void SetMap(IReadOnlyList<DiscMapRange> ranges, long sectors, DiscMedia media, long layer0, long current, IReadOnlyList<double>? cleanedRingsMm = null)
     {
-        Map = new DiscMapView(ranges, sectors, media, layer0, current);
+        Map = new DiscMapView(ranges, sectors, media, layer0, current) { CleanedRingsMm = cleanedRingsMm ?? [] };
         OnPropertyChanged(nameof(HasMap));
         var totals = DiscMapShades.Totals(ranges);
         var notRead = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("AppTrack");
@@ -736,6 +868,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         if (DiscMapShades.Worst(map.Ranges, from, to) is { } shade)
         {
             text.Append('\n').Append(DiscMapBrushes.Label(shade));
+        }
+
+        var mm = DiscGeometry.RadiusMm(from, map.Media, map.Layer0Sectors);
+        foreach (var ring in map.CleanedRingsMm.Where(r => Math.Abs(r - mm) <= 1.5).Take(1))
+        {
+            var back = DiscTrouble.CameBackNear(map.Ranges, ring, map.Media, map.Layer0Sectors);
+            text.Append('\n').Append(back > 0 ? $"Cleaned here: {Size(back * DiscSectors.Size)} came back" : "Cleaned here: nothing has come back yet");
         }
 
         var files = FilesForHover();

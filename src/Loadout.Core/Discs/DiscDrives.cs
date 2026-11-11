@@ -5,6 +5,9 @@ namespace Loadout.Discs;
 /// <summary>A disc found in a drive: what it is and, for a PS2 disc, which game.</summary>
 public sealed record DiscInDrive(string Drive, DiscMedia Media, long Sectors, int Layers, long Layer0Sectors, string? VolumeLabel, DiscIdentity? Identity)
 {
+    /// <summary>What the drive says about its read speed for this disc, or null when it doesn't say.</summary>
+    public DriveSpeeds? Speeds { get; init; }
+
     /// <summary>A PS2 game disc: its SYSTEM.CNF names the game's disc ID.</summary>
     public bool IsPs2Game => Identity?.DiscId is not null;
 
@@ -52,7 +55,10 @@ public static class DiscDrives
                 // A disc with no file system Windows knows has no label; it is still a disc.
             }
 
-            return new DiscInDrive(reader.Name, reader.Media, reader.Sectors, reader.Layers, reader.Layer0Sectors, label, DiscIdentity.Read(reader));
+            return new DiscInDrive(reader.Name, reader.Media, reader.Sectors, reader.Layers, reader.Layer0Sectors, label, DiscIdentity.Read(reader))
+            {
+                Speeds = reader.ReadSpeeds(),
+            };
         }
         catch (IOException)
         {

@@ -45,6 +45,9 @@ public static class DiscMapBrushes
 /// <summary>What the disc map draws: a copy's stretches, the disc's shape, and where the drive reads now.</summary>
 public sealed record DiscMapView(IReadOnlyList<DiscMapRange> Ranges, long Sectors, DiscMedia Media, long Layer0Sectors, long CurrentSector)
 {
+    /// <summary>Where the disc was cleaned (mm from the centre): a small cloth is drawn on each ring.</summary>
+    public IReadOnlyList<double> CleanedRingsMm { get; init; } = [];
+
     public static DiscMapView Empty { get; } = new([], 0, DiscMedia.Dvd, 0, -1);
 }
 
@@ -363,6 +366,11 @@ public sealed class DiscPicture : DiscMapElement
                 drawingContext.DrawEllipse(null, marker, centre, mm * px, mm * px);
             }
 
+            foreach (var mm in view.CleanedRingsMm)
+            {
+                DrawCloth(drawingContext, centre, mm * px);
+            }
+
             if (view.CurrentSector >= 0 && view.CurrentSector < view.Sectors)
             {
                 var at = DiscGeometry.RadiusMm(view.CurrentSector, view.Media, view.Layer0Sectors) * px;
@@ -371,5 +379,33 @@ public sealed class DiscPicture : DiscMapElement
         }
 
         drawingContext.DrawEllipse(HoleBrush, edge, centre, HoleMm * px, HoleMm * px);
+    }
+
+    private static readonly Brush ClothFill = Frozen(Color.FromRgb(0xF4, 0xE7, 0xCF));
+    private static readonly Pen ClothEdge = FrozenPen(Color.FromRgb(0x8A, 0x6D, 0x45), 1);
+
+    // A tiny folded cloth on a ring, at the upper right: where on the ring is unknown, how far out is not.
+    private static void DrawCloth(DrawingContext drawingContext, Point centre, double radius)
+    {
+        var at = new Point(centre.X + (radius * Math.Cos(-Math.PI / 4)), centre.Y + (radius * Math.Sin(-Math.PI / 4)));
+        drawingContext.PushTransform(new RotateTransform(-15, at.X, at.Y));
+        drawingContext.DrawRoundedRectangle(ClothFill, ClothEdge, new Rect(at.X - 6, at.Y - 4.5, 12, 9), 2, 2);
+        drawingContext.DrawLine(ClothEdge, new Point(at.X - 3, at.Y - 4.5), new Point(at.X - 3, at.Y + 4.5));
+        drawingContext.DrawLine(ClothEdge, new Point(at.X + 1, at.Y - 4.5), new Point(at.X + 1, at.Y + 4.5));
+        drawingContext.Pop();
+    }
+
+    private static SolidColorBrush Frozen(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
+    private static Pen FrozenPen(Color color, double thickness)
+    {
+        var pen = new Pen(Frozen(color), thickness);
+        pen.Freeze();
+        return pen;
     }
 }

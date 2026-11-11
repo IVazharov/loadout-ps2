@@ -146,6 +146,22 @@ public class DiscCopyMapTests
     }
 
     [Fact]
+    public void WhereTheDiscWasCleanedIsKeptOnceARing()
+    {
+        var map = DiscCopyMap.New(10, "x");
+
+        map.StartOver(cleaned: true, [35.58, 48.95]);
+        map.StartOver(cleaned: true, [35.9]);
+        map.StartOver(cleaned: false, [20.0]);
+
+        Assert.Equal([35.6, 49.0], map.CleanedRingsMm);
+        Assert.Equal(2, map.Cleanings);
+        var copy = DiscCopyMap.Parse(map.Format());
+        Assert.Equal([35.6, 49.0], copy.CleanedRingsMm);
+        Assert.Contains("cleaned-at 35.6 49.0\n", map.Format(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void StartingOverAfterCleaningCountsTheCleaning()
     {
         var map = DiscCopyMap.New(10, "x");

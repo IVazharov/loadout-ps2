@@ -626,6 +626,64 @@ public static class DiscCommands
         return await RedumpCheckAsync([path]);
     }
 
+    /// <summary>
+    /// Shows what the drive says about its read speed: GET PERFORMANCE (nominal, per stretch of the disc in it) and the
+    /// capabilities page (MODE SENSE page 2A: maximum and current read speed). Speeds are in kB/s (1000 bytes): CD 1x is
+    /// 176.4 kB/s of raw sectors (150 of data), DVD 1x is 1385 kB/s.
+    /// </summary>
+    public static int Speed(string driveName)
+    {
+        using var drive = DiscDrive.Open(driveName);
+        var x = drive.IsCd ? 176.4 : 1385.0;
+        var unit = drive.IsCd ? "CD" : "DVD";
+        Console.WriteLine($"{drive.Name}: {(drive.IsCd ? "CD" : "DVD")}, {drive.Length / DiscDrive.SectorSize} sectors.");
+
+        // GET PERFORMANCE, type 0 (performance), nominal read figures, from LBA 0, up to 16 descriptors.
+        var cdb = new byte[12];
+        cdb[0] = 0xAC;
+        cdb[1] = 0x10; // tolerance 10b, as MMC requires for performance data; read, nominal
+        cdb[9] = 16;
+        var data = new byte[8 + (16 * 16)];
+        var error = drive.Scsi(cdb, data, dataIn: true, 30, out var status, out var sense);
+        if (error is not null || status != 0)
+        {
+            Console.WriteLine($"GET PERFORMANCE: {error ?? $"status 0x{status:X2}, sense {sense[2] & 0x0F:X}/{sense[12]:X2}/{sense[13]:X2}"}");
+        }
+        else
+        {
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(data);
+            Console.WriteLine($"GET PERFORMANCE: {length} bytes after the length, flags 0x{data[4]:X2}");
+            for (var at = 8; at + 16 <= Math.Min(data.Length, length + 4); at += 16)
+            {
+                var d = data.AsSpan(at);
+                var startLba = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(d);
+                var startKb = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(d[4..]);
+                var endLba = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(d[8..]);
+                var endKb = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(d[12..]);
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  sectors {startLba}-{endLba}: {startKb} kB/s ({startKb / x:0.0}x {unit}) to {endKb} kB/s ({endKb / x:0.0}x)"));
+            }
+        }
+
+        // MODE SENSE (10), page 2A, no block descriptors.
+        cdb = new byte[10];
+        cdb[0] = 0x5A;
+        cdb[1] = 0x08;
+        cdb[2] = 0x2A;
+        cdb[7] = 1;
+        data = new byte[256];
+        error = drive.Scsi(cdb, data, dataIn: true, 30, out status, out sense);
+        if (error is not null || status != 0)
+        {
+            Console.WriteLine($"MODE SENSE 2A: {error ?? $"status 0x{status:X2}, sense {sense[2] & 0x0F:X}/{sense[12]:X2}/{sense[13]:X2}"}");
+            return 1;
+        }
+
+        var page = data[8..];
+        int Word(int offset) => (page[offset] << 8) | page[offset + 1];
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"MODE SENSE 2A (page 0x{page[0] & 0x3F:X2}, {page[1]} bytes): max read {Word(8)} kB/s ({Word(8) / x:0.0}x), current read {Word(14)} kB/s ({Word(14) / x:0.0}x), max write {Word(18)} kB/s, current write {Word(28)} kB/s"));
+        return 0;
+    }
+
     private static string Mb(long sectors) => string.Create(CultureInfo.InvariantCulture, $"{sectors * DiscSectors.Size / 1_000_000.0:0.0} MB");
 
     /// <summary>Hands each status on as it comes, on the copier's thread.</summary>

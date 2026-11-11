@@ -528,6 +528,12 @@
                             Visibility="{Binding CanBackUpAgain, Converter={StaticResource VisibleWhenTrue}}" />
                     <Button DockPanel.Dock="Right"
                             Margin="0,0,8,0"
+                            Content="_Pause to clean the disc"
+                            ToolTip="Stops the copy, opens the tray and shows where the disc has trouble. Put it back cleaned and the copy goes on by itself, starting on what is missing in big pieces."
+                            Command="{Binding PauseToCleanCommand}"
+                            Visibility="{Binding CanPauseToClean, Converter={StaticResource VisibleWhenTrue}}" />
+                    <Button DockPanel.Dock="Right"
+                            Margin="0,0,8,0"
                             Content="_Stop"
                             ToolTip="Stops the copy and keeps what it has. Resume this disc goes on from there, after cleaning the disc or in another drive too."
                             Command="{Binding StopCommand}"
@@ -570,7 +576,8 @@
                                        Foreground="{DynamicResource AppBorder}"
                                        MarkerBrush="{DynamicResource AppAccent}"
                                        DiscBrush="{DynamicResource AppSurfaceRaised}"
-                                       HoleBrush="{DynamicResource AppSurface}" />
+                                       HoleBrush="{DynamicResource AppSurface}"
+                                       MarkedRings="{Binding TroubleRings}" />
                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Right" Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="EDGE" />
