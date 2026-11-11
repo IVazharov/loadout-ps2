@@ -66,3 +66,47 @@ public static class DiscDrives
         }
     }
 }
+
+/// <summary>The disc drives Back up discs uses: Windows' own, or a simulated one for testing (<see cref="SimulatedDiscDrives"/>).</summary>
+public interface IDiscDrives
+{
+    /// <summary>The drives, such as "E:", whether or not they hold a disc.</summary>
+    IReadOnlyList<string> List();
+
+    /// <summary>A cheap sign of what is in a drive: empty when there is no disc. The disc is read again when it changes.</summary>
+    string Fingerprint(string drive);
+
+    /// <summary>Reads what disc is in a drive, or null when it has none it can read.</summary>
+    DiscInDrive? Look(string drive);
+
+    /// <summary>Opens the disc in a drive. Throws <see cref="IOException"/> when the drive has no readable disc.</summary>
+    IDiscReader Open(string drive);
+
+    /// <summary>Opens the drive's tray. Returns false when it would not.</summary>
+    bool TryEject(string drive);
+
+    /// <summary>The copy's numbers for these drives, or null for the defaults, which suit a real drive.</summary>
+    DiscCopierSettings? CopierSettings { get; }
+
+    /// <summary>True for a simulated drive, which Windows knows nothing about (so there is no AutoPlay to hold back).</summary>
+    bool IsSimulated { get; }
+}
+
+/// <summary>The PC's own optical drives.</summary>
+[SupportedOSPlatform("windows")]
+public sealed class WindowsDiscDrives : IDiscDrives
+{
+    public DiscCopierSettings? CopierSettings => null;
+
+    public bool IsSimulated => false;
+
+    public IReadOnlyList<string> List() => DiscDrives.List();
+
+    public string Fingerprint(string drive) => DiscDrives.Fingerprint(drive);
+
+    public DiscInDrive? Look(string drive) => DiscDrives.Look(drive);
+
+    public IDiscReader Open(string drive) => WindowsDiscDrive.Open(drive);
+
+    public bool TryEject(string drive) => WindowsDiscDrive.TryEject(drive);
+}

@@ -75,6 +75,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     // long before it is tried again: reading it sooner keeps it from coming back.
     private static readonly TimeSpan LookAgainAfter = TimeSpan.FromSeconds(30);
 
+    private readonly IDiscDrives _drives;
     private readonly OperationLog _log;
     private readonly SettingsViewModel _settings;
     private readonly IDiscTitleCatalog _titles;
@@ -119,6 +120,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private Ps2Install? _following;
 
     public BackupViewModel(
+        IDiscDrives drives,
         OperationLog log,
         SettingsViewModel settings,
         IDiscTitleCatalog titles,
@@ -127,6 +129,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         Func<Question, bool> confirm,
         Func<IReadOnlyCollection<string>> installedDiscIds)
     {
+        _drives = drives ?? throw new ArgumentNullException(nameof(drives));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _titles = titles ?? throw new ArgumentNullException(nameof(titles));
@@ -438,20 +441,20 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             var changes = await Task.Run(() =>
             {
                 var found = new List<(string Drive, string Print, DiscInDrive? Disc)>();
-                foreach (var drive in DiscDrives.List())
+                foreach (var drive in _drives.List())
                 {
                     if (string.Equals(drive, busyDrive, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
 
-                    var print = DiscDrives.Fingerprint(drive);
+                    var print = _drives.Fingerprint(drive);
                     if (_fingerprints.TryGetValue(drive, out var was) && was == print && !due.Contains(drive))
                     {
                         continue;
                     }
 
-                    found.Add((drive, print, print.Length == 0 ? null : DiscDrives.Look(drive)));
+                    found.Add((drive, print, print.Length == 0 ? null : _drives.Look(drive)));
                 }
 
                 return found;
@@ -621,7 +624,10 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         var follow = _alsoInstall ? StartFollowing(chosen, identity, files, resume) : null;
         _following = follow;
         IsWorking = true;
-        _autoPlay ??= new AutoPlayBlocker(chosen.Disc.Drive);
+        if (!_drives.IsSimulated)
+        {
+            _autoPlay ??= new AutoPlayBlocker(chosen.Disc.Drive);
+        }
         var cleaned = _resumeCleaned;
         var rings = _resumeRings;
         _resumeCleaned = false;
@@ -716,7 +722,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private async Task<(DiscCopyOutcome, DiscCopyMap)> CopyAsync(DiscInDrive disc, DiscIdentity identity, DiscBackupFiles files, bool resume, bool cleaned, IReadOnlyList<double> rings, DiscCopyFeed? feed, IProgress<DiscCopyStatus> progress, CancellationToken cancellationToken)
     {
-        using var drive = WindowsDiscDrive.Open(disc.Drive);
+        using var drive = _drives.Open(disc.Drive);
         var now = DiscIdentity.Read(drive);
         if (now is null || !now.IsSameDisc(identity))
         {
@@ -744,7 +750,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         map.Save(files.Map);
         Note($"Backup of {files.Name} ({now.Format()}) from {disc.Drive}, {(resume ? cleaned ? $"going on after cleaning {map.Cleanings}" : "going on" : "new")}: {map.ReadSectors} of {map.Sectors} sectors copied.");
         await using var image = new FileStream(files.Image, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read, 1 << 20);
-        var copier = new DiscCopier(drive, image, map, m => m.Save(files.Map))
+        var copier = new DiscCopier(drive, image, map, m => m.Save(files.Map), _drives.CopierSettings)
         {
             Note = note => Note(note.Message),
             Progress = progress,
@@ -793,7 +799,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private void Eject(string drive)
     {
-        if (WindowsDiscDrive.TryEject(drive))
+        if (_drives.TryEject(drive))
         {
             Status = Status with { Detail = Status.Detail + " Insert the next disc." };
         }
@@ -840,7 +846,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         RefreshList();
         TroubleRings = trouble.RingsMm;
         _resumeRings = trouble.RingsMm;
-        var opened = WindowsDiscDrive.TryEject(chosen.Disc.Drive);
+        var opened = _drives.TryEject(chosen.Disc.Drive);
         var where = trouble.Where(CultureInfo.CurrentCulture);
         var missing = trouble.MissingSectors > 0
             ? $"{Size(trouble.MissingSectors * DiscSectors.Size)} is missing in {trouble.Areas} small area{(trouble.Areas == 1 ? "" : "s")}{(where.Length > 0 ? ", " + where : "")}, circled on the disc. "

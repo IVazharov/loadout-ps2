@@ -1,6 +1,7 @@
 using Loadout.Artwork;
 using Loadout.Bay;
 using Loadout.Core;
+using Loadout.Discs;
 using Loadout.Images;
 using Loadout.Metadata;
 using Loadout.Persistence;
@@ -58,6 +59,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Logs = new LogsViewModel(log);
         About = new AboutViewModel(releases, log);
         Backup = new BackupViewModel(
+            Drives(log),
             log,
             Settings,
             titles,
@@ -96,6 +98,30 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     // Install calls these only after the constructor, once Settings and Installed exist.
     private string CurrentHost() => Settings.Host;
+
+    // The PC's drives, or for testing a simulated one with a scratched disc (StartOptions: --simulate-disc <image>).
+    private static IDiscDrives Drives(OperationLog log)
+    {
+        var options = StartOptions.Current;
+        if (options.SimulatedDisc is not { } image)
+        {
+            return new WindowsDiscDrives();
+        }
+
+        try
+        {
+            var sectors = new System.IO.FileInfo(image).Length / DiscSectors.Size;
+            var dirt = options.SimulatedDirt is { } text ? SimulatedDiscDrives.ParseDirt(text) : SimulatedDiscDrives.DefaultDirt(sectors);
+            var drives = new SimulatedDiscDrives(image, dirt);
+            log.Add($"Back up discs uses a simulated drive {SimulatedDiscDrives.DriveName} for testing: {image}, dirty at sectors {string.Join(", ", dirt.Select(d => $"{d.From}-{d.To}"))}.");
+            return drives;
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.IO.InvalidDataException or FormatException)
+        {
+            log.Add($"The simulated drive could not start ({ex.Message}), so Back up discs uses the PC's drives.");
+            return new WindowsDiscDrives();
+        }
+    }
 
     private async Task AfterInstallAsync(InstalledGameListStore savedList, BayLibrary library)
     {
