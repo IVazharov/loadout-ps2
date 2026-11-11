@@ -107,6 +107,8 @@ Each release has two downloads:
 
 The source code written for Loadout and Loadout Bay is under the MIT licence: see [LICENSE](LICENSE). The downloads also contain other projects' code, under their own licences: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) has their texts. It comes with Loadout Bay's download, and Loadout shows it, and its own licence, on its About page. By using or redistributing the binaries you accept those licences. Code taken from other projects is in `ps2/third_party/` and `src/Loadout.Core/ThirdParty/`. The Barlow fonts in `ps2/assets/fonts` and `src/Loadout.App/Assets/Fonts`, and `ps2/src/font_data.c`, which is rendered from them, are under the SIL Open Font License 1.1.
 
+If you publish a changed version, please give it another name and say that it is not the official Loadout, so that people don't mistake one for the other. Official releases are only those on this repository's [Releases page](https://github.com/IVazharov/loadout-ps2/releases).
+
 Maintained by Ivan Vazharov.
 
 ## Notice
