@@ -431,18 +431,93 @@ public sealed class DiscPicture : DiscMapElement
         drawingContext.DrawEllipse(HoleBrush, edge, centre, HoleMm * px, HoleMm * px);
     }
 
-    private static readonly Brush ClothFill = Frozen(Color.FromRgb(0xF4, 0xE7, 0xCF));
-    private static readonly Pen ClothEdge = FrozenPen(Color.FromRgb(0x8A, 0x6D, 0x45), 1);
+    // The cloth mark, drawn in a box of 13 units across (pens in the same units) and scaled to 16 px: a cloth draped over
+    // the ring, with two soft folds and a wavy hem, and a small sparkle at its corner for "cleaned here".
+    private const double ClothScale = 16.0 / 13.0;
 
-    // A tiny folded cloth on a ring, at the upper right: where on the ring is unknown, how far out is not.
+    private static readonly Brush ClothFill = Frozen(Color.FromRgb(0xF3, 0xF5, 0xF8));
+    private static readonly Pen ClothEdge = RoundPen(Color.FromRgb(0x3E, 0x4C, 0x60), 0.9);
+    private static readonly Pen ClothFold = RoundPen(Color.FromRgb(0xC3, 0xCE, 0xDB), 1.2);
+    private static readonly Brush SparkleFill = Frozen(Color.FromRgb(0xFE, 0xDD, 0x0E));
+    private static readonly Pen SparkleEdge = FrozenPen(Color.FromRgb(0x3E, 0x4C, 0x60), 0.8);
+    private static readonly Geometry Cloth = ClothShape();
+    private static readonly Geometry Folds = FoldShape();
+    private static readonly Geometry Sparkle = SparkleShape(6.5, -6.5, 3.4);
+
+    // The cloth on a ring, at the upper right: where on the ring is unknown, how far out is not.
     private static void DrawCloth(DrawingContext drawingContext, Point centre, double radius)
     {
         var at = new Point(centre.X + (radius * Math.Cos(-Math.PI / 4)), centre.Y + (radius * Math.Sin(-Math.PI / 4)));
-        drawingContext.PushTransform(new RotateTransform(-15, at.X, at.Y));
-        drawingContext.DrawRoundedRectangle(ClothFill, ClothEdge, new Rect(at.X - 6, at.Y - 4.5, 12, 9), 2, 2);
-        drawingContext.DrawLine(ClothEdge, new Point(at.X - 3, at.Y - 4.5), new Point(at.X - 3, at.Y + 4.5));
-        drawingContext.DrawLine(ClothEdge, new Point(at.X + 1, at.Y - 4.5), new Point(at.X + 1, at.Y + 4.5));
+        var place = new TransformGroup();
+        place.Children.Add(new ScaleTransform(ClothScale, ClothScale));
+        place.Children.Add(new RotateTransform(-15));
+        place.Children.Add(new TranslateTransform(at.X, at.Y));
+        place.Freeze();
+        drawingContext.PushTransform(place);
+        drawingContext.DrawGeometry(ClothFill, ClothEdge, Cloth);
+        drawingContext.DrawGeometry(null, ClothFold, Folds);
+        drawingContext.DrawGeometry(SparkleFill, SparkleEdge, Sparkle);
         drawingContext.Pop();
+    }
+
+    private static StreamGeometry ClothShape()
+    {
+        var shape = new StreamGeometry();
+        using (var c = shape.Open())
+        {
+            c.BeginFigure(new Point(-6, -5), isFilled: true, isClosed: true);
+            c.BezierTo(new Point(-2, -6.5), new Point(2, -6.5), new Point(6, -5), isStroked: true, isSmoothJoin: true);
+            c.LineTo(new Point(6.5, 5), isStroked: true, isSmoothJoin: true);
+            c.BezierTo(new Point(4.5, 7), new Point(3, 4), new Point(1, 6), isStroked: true, isSmoothJoin: true);
+            c.BezierTo(new Point(-1, 7.5), new Point(-2.5, 4), new Point(-4, 6), isStroked: true, isSmoothJoin: true);
+            c.BezierTo(new Point(-5, 7), new Point(-6, 6), new Point(-6.5, 5), isStroked: true, isSmoothJoin: true);
+        }
+
+        shape.Freeze();
+        return shape;
+    }
+
+    private static StreamGeometry FoldShape()
+    {
+        var shape = new StreamGeometry();
+        using (var c = shape.Open())
+        {
+            c.BeginFigure(new Point(-2, -4.5), isFilled: false, isClosed: false);
+            c.BezierTo(new Point(-2.5, -1), new Point(-1.5, 2), new Point(-2, 5), isStroked: true, isSmoothJoin: true);
+            c.BeginFigure(new Point(2.5, -4.5), isFilled: false, isClosed: false);
+            c.BezierTo(new Point(2, -1), new Point(3, 2), new Point(2.5, 5), isStroked: true, isSmoothJoin: true);
+        }
+
+        shape.Freeze();
+        return shape;
+    }
+
+    // A four-point star: its tips at the radius, its waist at about a quarter of it.
+    private static StreamGeometry SparkleShape(double x, double y, double radius)
+    {
+        var waist = radius * 0.28;
+        var shape = new StreamGeometry();
+        using (var c = shape.Open())
+        {
+            c.BeginFigure(new Point(x, y - radius), isFilled: true, isClosed: true);
+            c.PolyLineTo(
+                [
+                    new Point(x + waist, y - waist), new Point(x + radius, y), new Point(x + waist, y + waist), new Point(x, y + radius),
+                    new Point(x - waist, y + waist), new Point(x - radius, y), new Point(x - waist, y - waist),
+                ],
+                isStroked: true,
+                isSmoothJoin: false);
+        }
+
+        shape.Freeze();
+        return shape;
+    }
+
+    private static Pen RoundPen(Color color, double thickness)
+    {
+        var pen = new Pen(Frozen(color), thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+        pen.Freeze();
+        return pen;
     }
 
     private static SolidColorBrush Frozen(Color color)
