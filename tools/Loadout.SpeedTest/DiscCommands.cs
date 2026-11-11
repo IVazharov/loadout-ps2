@@ -542,22 +542,43 @@ public static class DiscCommands
             }
         }
 
-        clock.Restart();
-        using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
-        using var sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-        using (var image = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20))
+        return RedumpCheckAsync([imagePath]).GetAwaiter().GetResult() == 0 ? 0 : 1;
+    }
+
+    /// <summary>Hashes an image and checks it against Redump's PS2 list, kept in the speed test's temp folder.</summary>
+    public static async Task<int> RedumpCheckAsync(string[] options)
+    {
+        var imagePath = Path.GetFullPath(options[0]);
+        var refresh = options.Length == 2 && options[1] == "--refresh";
+        if (options.Length > 2 || (options.Length == 2 && !refresh) || !File.Exists(imagePath))
         {
-            var buffer = new byte[1 << 20];
-            int n;
-            while ((n = image.Read(buffer)) > 0)
-            {
-                md5.AppendData(buffer, 0, n);
-                sha1.AppendData(buffer, 0, n);
-            }
+            return 2;
         }
 
-        Console.WriteLine($"Complete. MD5 {Convert.ToHexStringLower(md5.GetHashAndReset())}  SHA-1 {Convert.ToHexStringLower(sha1.GetHashAndReset())} (hashed in {clock.Elapsed.TotalSeconds:0} s)");
-        return 0;
+        using var http = new HttpClient();
+        var cache = new RedumpDatCache(http, Path.Combine(Path.GetTempPath(), "Loadout.SpeedTest", "redump"), "speedtest");
+        var list = await cache.GetAsync(refresh, CancellationToken.None);
+        if (list.Failure is not null)
+        {
+            Console.WriteLine(list.Failure);
+        }
+
+        var clock = Stopwatch.StartNew();
+        DiscImageHashes hashes;
+        await using (var image = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, useAsync: true))
+        {
+            hashes = await DiscImageHashes.ComputeAsync(image, null, CancellationToken.None);
+        }
+
+        var check = list.Dat?.Check(hashes.Size, hashes.Sha1);
+        Console.Write(hashes.Format(Path.GetFileName(imagePath), check, list.Dat?.Version));
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Hashed in {clock.Elapsed.TotalSeconds:0.0} s{(list.Downloaded ? "; Redump's list was downloaded" : string.Empty)}."));
+        if (check?.Verdict == RedumpVerdict.Matches)
+        {
+            Console.WriteLine($"Named as Redump names it: {DiscBackupFiles.NameFor(check.Game!)}{DiscBackupFiles.ImageExtension}");
+        }
+
+        return check?.Verdict == RedumpVerdict.Matches ? 0 : 1;
     }
 
     private static string Mb(long sectors) => string.Create(CultureInfo.InvariantCulture, $"{sectors * DiscSectors.Size / 1_000_000.0:0.0} MB");

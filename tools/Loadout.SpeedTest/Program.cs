@@ -45,6 +45,11 @@ const string Usage =
     complete copy is hashed (MD5, SHA-1); an incomplete one lists what is missing, where on the disc and in which
     files. --cleaned after cleaning the disc, --another-drive in another drive: the passes start over in big pieces.
 
+           Loadout.SpeedTest redump-check <image> [--refresh]
+
+    Hashes a disc image (size, CRC-32, MD5, SHA-1) and checks it against Redump's PS2 list, which it downloads
+    to %TEMP%\Loadout.SpeedTest\redump when it has none or it is a month old (--refresh: now).
+
            Loadout.SpeedTest disc-probe <drive> [--from <sector>] [--to <sector>] [--chunk <n>] [--gap <ms>] [--stride <n>] [--rest <s>]
 
     An experiment: reads a range in order or strided, resting the drive after a failed read.
@@ -198,6 +203,12 @@ if (args[0] == "disc-fastfail" && args.Length >= 3 && DiscDrive.IsDriveName(args
 if (args[0] == "disc-copy" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))
 {
     var result = DiscCommands.Copy(args[1], args[2..]);
+    return result == 2 ? UsageError() : result;
+}
+
+if (args[0] == "redump-check" && args.Length >= 2)
+{
+    var result = await DiscCommands.RedumpCheckAsync(args[1..]);
     return result == 2 ? UsageError() : result;
 }
 
