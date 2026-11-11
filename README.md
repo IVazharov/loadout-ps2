@@ -79,13 +79,14 @@ If OPL has already made its 128 MB partition and the memory cards need more room
 
 ## What Loadout downloads
 
-Loadout goes online for three things only:
+Loadout goes online for four things only:
 
 - Game titles and settings data come from the [PS2-OPL-CFG-Database](https://github.com/Thecat1080/PS2-OPL-CFG-Database) by Thecat1080.
-- Artwork comes from the [psx-ps2-opl-art-database](https://github.com/Luden02/psx-ps2-opl-art-database) by Luden02, when you press **Download artwork**. The images belong to their owners.
+- Artwork comes from the [psx-ps2-opl-art-database](https://github.com/Luden02/psx-ps2-opl-art-database) by Luden02, when you press **Download artwork**, and when you install games with **Send each game's artwork** ticked, as it is at first. The images belong to their owners.
+- Back up discs checks each copy against [Redump](http://redump.org)'s list of verified PS2 discs. Loadout downloads the list (about 1.3 MB) when it checks a copy and has none yet, or has one more than 30 days old, and keeps it in its data folder. redump.org offers it over plain HTTP only.
 - When Loadout starts, and when you press **Check for updates** on the About page, Loadout reads its list of releases from GitHub. A newer version is downloaded only when you press **Update now**. Settings, **Updates**, turns the check at start off.
 
-The game data and the artwork are not part of Loadout or under its licence.
+The game data, Redump's list and the artwork are not part of Loadout or under its licence.
 
 ## Downloads
 
