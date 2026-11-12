@@ -477,6 +477,14 @@ public partial class MainWindow : LoadoutWindow
         install.SetSelection(selected);
     }
 
+    private void BackupList_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListView list && list.DataContext is BackupViewModel backup)
+        {
+            backup.SetPicked([.. list.SelectedItems.OfType<BackupRow>()]);
+        }
+    }
+
     private void GameList_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is ListView list)

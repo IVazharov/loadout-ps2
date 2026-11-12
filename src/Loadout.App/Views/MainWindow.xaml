@@ -329,7 +329,7 @@
                             Visibility="{Binding IsWorking, Converter={StaticResource VisibleWhenTrue}}" />
                     <Button DockPanel.Dock="Right"
                             Margin="0,0,8,0"
-                            Content="S_kip the check"
+                            Content="Skip the c_heck"
                             ToolTip="Stops reading the game back and keeps it on the PS2, installed but not checked. Cancel removes it instead."
                             Command="{Binding SkipCheckCommand}"
                             Visibility="{Binding CanSkipCheck, Converter={StaticResource VisibleWhenTrue}}" />
@@ -541,7 +541,7 @@
                             Visibility="{Binding CanBackUpAgain, Converter={StaticResource CollapsedWhenTrue}}" />
                     <Button DockPanel.Dock="Right"
                             Content="Back up _again"
-                            ToolTip="Makes a second copy of a disc that is backed up already. Two equal copies tell another printing from a read error."
+                            ToolTip="Copies a disc that is backed up already once more: beside the earlier copy, or in its place once the new one is complete. Two equal copies tell another printing from a read error."
                             Command="{Binding BackUpAgainCommand}"
                             Visibility="{Binding CanBackUpAgain, Converter={StaticResource VisibleWhenTrue}}" />
                     <Button DockPanel.Dock="Right"
@@ -711,6 +711,11 @@
                             ToolTip="Opens the backup folder in Explorer, with the selected copy picked."
                             Command="{Binding OpenFolderCommand}" />
                     <Button Margin="8,0,0,0"
+                            Content="D_elete"
+                            ToolTip="Sends the selected copies to the Recycle Bin, with their reports, hashes and maps. Games on the PS2 are not touched. Ctrl-click or Shift-click to select several."
+                            IsEnabled="{Binding CanDelete}"
+                            Command="{Binding DeleteCommand}" />
+                    <Button Margin="8,0,0,0"
                             Content="Show _report"
                             ToolTip="Opens the selected copy's report: every pass, failed read and rest of its backup."
                             IsEnabled="{Binding CanSaveReport}"
@@ -731,7 +736,7 @@
                             Command="{Binding CancelInstallCommand}"
                             Visibility="{Binding IsInstallingOnPs2, Converter={StaticResource VisibleWhenTrue}}" />
                     <Button Margin="8,0,0,0"
-                            Content="S_kip the check"
+                            Content="Skip the c_heck"
                             ToolTip="Stops reading the game back and keeps it on the PS2, installed but not checked. Cancel install removes it instead."
                             Command="{Binding SkipCheckCommand}"
                             Visibility="{Binding CanSkipCheck, Converter={StaticResource VisibleWhenTrue}}" />
@@ -742,9 +747,13 @@
                               c:TableColumns.Fill="name"
                               ItemsSource="{Binding Backups}"
                               SelectedItem="{Binding SelectedBackup}"
-                              SelectionMode="Single"
+                              SelectionMode="Extended"
+                              SelectionChanged="BackupList_OnSelectionChanged"
                               Loaded="GameList_Loaded"
                               Visibility="{Binding HasBackups, Converter={StaticResource VisibleWhenTrue}}">
+                        <ListView.InputBindings>
+                            <KeyBinding Key="Delete" Command="{Binding DeleteCommand}" />
+                        </ListView.InputBindings>
                         <ListView.View>
                             <GridView>
                                 <GridViewColumn Header="Name"

@@ -100,6 +100,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private readonly InstallViewModel _installer;
     private readonly List<Ps2Install> _ps2 = [];
     private readonly Func<Question, bool> _confirm;
+    private readonly Func<Question, int?> _choose;
+
+    // The copies picked in the list: Delete takes them all, the other buttons need exactly one.
+    private IReadOnlyList<BackupRow> _picked = [];
+
+    // The earlier copy that Back up again replaces once the new one is complete; null to keep both.
+    private DiscBackup? _replacing;
     private readonly Func<IReadOnlyCollection<string>> _installedDiscIds;
     private readonly DispatcherTimer _poll;
     private readonly DispatcherTimer _tick;
@@ -148,6 +155,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         RedumpDatCache redump,
         InstallViewModel installer,
         Func<Question, bool> confirm,
+        Func<Question, int?> choose,
         Func<IReadOnlyCollection<string>> installedDiscIds,
         InstallTicks ticks)
     {
@@ -159,12 +167,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _redump = redump ?? throw new ArgumentNullException(nameof(redump));
         _installer = installer ?? throw new ArgumentNullException(nameof(installer));
         _confirm = confirm ?? throw new ArgumentNullException(nameof(confirm));
+        _choose = choose ?? throw new ArgumentNullException(nameof(choose));
         _installedDiscIds = installedDiscIds ?? throw new ArgumentNullException(nameof(installedDiscIds));
         BackUpCommand = new AsyncRelayCommand(BackUpAsync, Fail);
         BackUpAgainCommand = new AsyncRelayCommand(() => BackUpAsync(again: true), Fail);
         StopCommand = new RelayCommand(Stop);
         PauseToCleanCommand = new RelayCommand(PauseToClean);
         OpenFolderCommand = new RelayCommand(OpenFolder);
+        DeleteCommand = new RelayCommand(DeletePicked);
         ShowReportCommand = new RelayCommand(ShowReport);
         InstallBackupCommand = new RelayCommand(InstallSelected);
         DetailsCommand = new RelayCommand(ShowDetails);
@@ -241,7 +251,16 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     public ICommand SaveReportCommand { get; }
 
     /// <summary>A backup is picked in the list, so its report can be shown or saved.</summary>
-    public bool CanSaveReport => _selectedBackup is not null;
+    public bool CanSaveReport => Single is not null;
+
+    /// <summary>Sends the copies picked in the list to the Recycle Bin, after one question.</summary>
+    public ICommand DeleteCommand { get; }
+
+    /// <summary>One copy or more is picked in the list, so Delete has something to take.</summary>
+    public bool CanDelete => _picked.Count > 0;
+
+    // The one copy picked in the list, or null when none or several are.
+    private BackupRow? Single => _picked.Count == 1 ? _picked[0] : null;
 
     /// <summary>Installs the backup picked in the list on the PS2 now, with this page's ticks.</summary>
     public ICommand InstallBackupCommand { get; }
@@ -253,7 +272,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     public ICommand CancelInstallCommand { get; }
 
     /// <summary>The backup picked in the list is complete, so it can go to the PS2.</summary>
-    public bool CanInstallBackup => _selectedBackup is { Result: not DiscBackupResult.Incomplete };
+    public bool CanInstallBackup => Single is { Result: not DiscBackupResult.Incomplete };
 
     /// <summary>An install on the PS2 that this page started is under way, or waits for its turn.</summary>
     public bool IsInstallingOnPs2 => _ps2.Count > 0;
@@ -479,9 +498,112 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         UpdateSameDisc();
     }
 
+    // Back up again's Replace, once the new copy is complete: the earlier copy goes to the Recycle Bin and the new one
+    // takes its name. An earlier copy that matches Redump stays when the new one doesn't. Returns a sentence for the status.
+    private string Replace(ref DiscBackup backup)
+    {
+        if (_replacing is not { } old || string.Equals(old.Files.Name, backup.Files.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            _replacing = null;
+            return string.Empty;
+        }
+
+        _replacing = null;
+        if (old.Result == DiscBackupResult.MatchesRedump && backup.Result != DiscBackupResult.MatchesRedump)
+        {
+            _log.Add($"Kept {old.Files.Name}, which matches Redump, beside the new copy {backup.Files.Name}, which doesn't.");
+            return $" {old.Files.Name} matches Redump and this copy doesn't, so both are kept.";
+        }
+
+        try
+        {
+            BackupRecycler.Recycle(old.Files);
+            backup = backup with { Files = backup.Files.RenameTo(old.Files.Name) };
+            _log.Add($"Replaced the earlier copy {old.Files.Name}: it is in the Recycle Bin.");
+            return " It replaced the earlier copy, which is in the Recycle Bin.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            _log.Add($"The earlier copy {old.Files.Name} could not be replaced: {ex.Message}");
+            return $" The earlier copy could not be replaced ({ex.Message}), so both are kept.";
+        }
+    }
+
+    private static string ResultWords(DiscBackupResult result) => result switch
+    {
+        DiscBackupResult.MatchesRedump => "it matches Redump",
+        DiscBackupResult.DoesNotMatchRedump => "it doesn't match Redump",
+        DiscBackupResult.NotInRedump => "Redump doesn't list it",
+        DiscBackupResult.Incomplete => "incomplete",
+        _ => "not checked against Redump yet",
+    };
+
+    /// <summary>The copies picked in the list, as the list says each time its picking changes.</summary>
+    public void SetPicked(IReadOnlyList<BackupRow> picked)
+    {
+        _picked = picked ?? [];
+        OnPropertyChanged(nameof(CanSaveReport));
+        OnPropertyChanged(nameof(CanInstallBackup));
+        OnPropertyChanged(nameof(CanDelete));
+    }
+
+    // Delete: one question for all the picked copies, then their files go to the Recycle Bin. The copy being made is left.
+    private void DeletePicked()
+    {
+        var rows = _picked.ToList();
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var busy = _working && _current is { } current
+            ? rows.FirstOrDefault(r => string.Equals(r.Name, current.Files.Name, StringComparison.OrdinalIgnoreCase))
+            : null;
+        if (busy is not null)
+        {
+            Status = PageStatus.Warn(busy.Name + " is being backed up", "Stop the copy first to delete it.");
+            return;
+        }
+
+        var size = Size(rows.Sum(r => r.Backup.Bytes));
+        var one = rows.Count == 1;
+        if (!_confirm(new Question(
+            one ? "Delete " + rows[0].Name + "?" : string.Create(CultureInfo.CurrentCulture, $"Delete {rows.Count} copies?"),
+            (one ? $"This {size} copy and its report, hashes and map go" : string.Create(CultureInfo.CurrentCulture, $"These {rows.Count} copies ({size}) and their reports, hashes and maps go"))
+                + " to the Recycle Bin, where you can restore them. Games on the PS2 are not touched.",
+            "_Delete",
+            "Cancel",
+            QuestionKind.Warn,
+            Destructive: true,
+            Items: one ? null : [.. rows.Select(r => r.Name)])))
+        {
+            return;
+        }
+
+        var failed = new List<string>();
+        foreach (var row in rows)
+        {
+            try
+            {
+                BackupRecycler.Recycle(row.Backup.Files);
+                _log.Add($"Deleted the backup {row.Name}: it is in the Recycle Bin.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+            {
+                failed.Add(row.Name + ": " + ex.Message);
+                _log.Add($"The backup {row.Name} could not be deleted: {ex.Message}");
+            }
+        }
+
+        RefreshList();
+        Status = failed.Count == 0
+            ? PageStatus.Ok(one ? "Deleted " + rows[0].Name : string.Create(CultureInfo.CurrentCulture, $"Deleted {rows.Count} copies"), "In the Recycle Bin, if you want them back.")
+            : PageStatus.Error(failed.Count == rows.Count ? "Nothing was deleted" : "Some copies were not deleted", string.Join(" ", failed));
+    }
+
     // The copy that just ended is picked in the list, so its buttons (Show report, Install on PS2) act on it.
     private void SelectCopy(DiscBackupFiles files) =>
-        SelectedBackup = Backups.FirstOrDefault(b => string.Equals(b.Backup.Files.Image, files.Image, StringComparison.OrdinalIgnoreCase))
+        SelectedBackup = Backups.FirstOrDefault(b => string.Equals(b.Name, files.Name, StringComparison.OrdinalIgnoreCase))
             ?? SelectedBackup;
 
     private void Fail(Exception ex)
@@ -632,7 +754,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             { Result: DiscBackupResult.Incomplete } same => PageStatus.Idle(
                 "This disc's backup is not complete",
                 $"{what}. {Percent(same)} of it is copied; Resume this disc goes on from there."),
-            { } same => PageStatus.Ok("This disc is backed up", $"{what}, as {same.Files.Name}. Back up again makes a second copy."),
+            { } same => PageStatus.Ok("This disc is backed up", $"{what}, as {same.Files.Name}. Back up again makes another copy, beside it or in its place."),
             _ => PageStatus.Idle("Ready to back up", what + "."),
         };
         if (_sameDisc is { } shown && (Map.Sectors == 0 || !_working))
@@ -690,13 +812,23 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (again && _sameDisc is { } first && !_confirm(new Question(
-            "Back up this disc again?",
-            $"{chosen.Title} is backed up as {first.Files.Name}. A second copy is made beside it; the first one stays.",
-            "_Back up again",
-            "Cancel")))
+        _replacing = null;
+        if (again && _sameDisc is { } first)
         {
-            return;
+            var choice = _choose(new Question(
+                "Back up this disc again?",
+                $"{chosen.Title} is backed up as {first.Files.Name} ({ResultWords(first.Result)}). The new copy can go beside it, or replace it. "
+                    + "The earlier copy is only replaced once the new one is complete, and goes to the Recycle Bin.",
+                "_Back up again",
+                "Cancel",
+                Items: ["Keep both copies", "Replace " + first.Files.Name],
+                ChooseItem: true));
+            if (choice is not { } picked)
+            {
+                return;
+            }
+
+            _replacing = picked == 1 ? first : null;
         }
 
         var files = resume?.Files ?? DiscBackupFiles.Unused(folder, DiscBackupFiles.NameFor(chosen.Title, identity.DiscId), isCd: chosen.Disc.Media == DiscMedia.Cd);
@@ -747,6 +879,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             Status = PageStatus.Error("The backup stopped", ex.Message);
             _log.Add($"Backing up {chosen.Title} stopped: {ex.Message}");
             WriteReport(files, chosen, started, "Stopped: " + ex.Message);
+            _replacing = null;
             RefreshList();
             SelectCopy(files);
             SetDetails(files.Report);
@@ -789,6 +922,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             StatusLine = string.Empty;
             _log.Add(string.Create(CultureInfo.CurrentCulture, $"Stopped backing up {chosen.Title} at {done:0.0}%."));
             WriteReport(files, chosen, started, string.Create(CultureInfo.InvariantCulture, $"Stopped at {done:0.0}%."));
+            _replacing = null;
             RefreshList();
             SelectCopy(files);
             SetDetails(files.Report);
@@ -859,12 +993,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         var bytes = (double)chosen.Disc.Sectors * (files.IsCd ? 2352 : DiscSectors.Size);
         var hashing = new Progress<long>(read => Status = PageStatus.Busy("Checking the copy", "Reading it back for its hashes…", read / bytes * 100));
         var backup = await DiscBackupLibrary.FinishAsync(files, list.Dat, hashing, CancellationToken.None).ConfigureAwait(true);
+        var replaced = Replace(ref backup);
         IsWorking = false;
         var name = backup.Files.Name;
         (Status, var line) = backup.Result switch
         {
             DiscBackupResult.MatchesRedump => (
-                PageStatus.Ok("Backed up " + name, "It matches Redump: the copy is exact. Saved in " + backup.Files.Folder + "."),
+                PageStatus.Ok("Backed up " + name, "It matches Redump: the copy is exact. Saved in " + backup.Files.Folder + "." + replaced),
                 "matches Redump"),
             DiscBackupResult.DoesNotMatchRedump => (
                 PageStatus.Warn("Backed up " + chosen.Title + ", but it doesn't match Redump", "Another printing of the game, or a read error the drive did not notice. Back up again reads it once more: two equal copies point to another printing."),
@@ -1293,7 +1428,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private void InstallSelected()
     {
-        if (_selectedBackup is { Result: not DiscBackupResult.Incomplete } row)
+        if (Single is { Result: not DiscBackupResult.Incomplete } row)
         {
             _log.Add($"Installing {row.Name} on the PS2 from its backup.");
             _ = InstallFinishedAsync(row.Backup, byTick: false);
@@ -1465,7 +1600,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private void OpenFolder()
     {
         var folder = _settings.BackupFolder;
-        if (_selectedBackup is { } row && File.Exists(row.Backup.Files.Image))
+        if (Single is { } row && File.Exists(row.Backup.Files.Image))
         {
             Process.Start("explorer.exe", "/select,\"" + row.Backup.Files.Image + "\"");
         }
@@ -1485,7 +1620,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private void SaveReport()
     {
-        if (_selectedBackup is not { } row)
+        if (Single is not { } row)
         {
             return;
         }
@@ -1521,11 +1656,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private void ShowReport()
     {
-        if (_selectedBackup is { } row && File.Exists(row.Backup.Files.Report))
+        if (Single is { } row && File.Exists(row.Backup.Files.Report))
         {
             Process.Start(new ProcessStartInfo(row.Backup.Files.Report) { UseShellExecute = true });
         }
-        else if (_selectedBackup is { } other)
+        else if (Single is { } other)
         {
             Status = PageStatus.Idle("No report for " + other.Name, "It was made before reports were kept, or its report was removed.");
         }
