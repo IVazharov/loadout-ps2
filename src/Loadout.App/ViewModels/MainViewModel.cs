@@ -163,6 +163,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// What closing Loadout would stop: a backup, an install on the PS2, or both, said for the question the window asks
+    /// before it closes; null when nothing runs.
+    /// </summary>
+    public string? CloseWarning()
+    {
+        var install = Install.IsInstalling || Backup.IsInstallingOnPs2
+            ? "An install on the PS2 is running. Closing cancels it, and Loadout Bay removes what it has received of the game; a game it is already checking stays if the check passes."
+            : null;
+        var parts = new[] { Backup.RunningBackup, install }.Where(part => part is not null).ToList();
+        return parts.Count == 0 ? null : string.Join(" ", parts);
+    }
+
     /// <summary>Disposes the page view models. The window calls this when it closes.</summary>
     public void Dispose()
     {

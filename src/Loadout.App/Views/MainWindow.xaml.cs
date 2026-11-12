@@ -41,6 +41,9 @@ public partial class MainWindow : LoadoutWindow
     // The game lists whose empty space already unselects; a list is loaded again each time its page shows.
     private readonly HashSet<ListView> _clearOnEmptyClick = [];
 
+    // Set when Windows ends the session or an update restarts Loadout: no question before closing then.
+    private bool _closeWithoutAsking;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -68,6 +71,9 @@ public partial class MainWindow : LoadoutWindow
         var notifier = new DesktopNotifier(this, () => viewModel.ShowBackupCommand.Execute(null));
         viewModel.Backup.Notice += (_, notice) => notifier.Show(notice.Title, notice.Text, needsUser: notice.Kind != BackupNoticeKind.BackedUp);
         Closed += (_, _) => notifier.Dispose();
+
+        // Windows signing out or shutting down closes Loadout without the question.
+        Application.Current.SessionEnding += (_, _) => _closeWithoutAsking = true;
         for (var i = 0; i < viewModel.Pages.Count; i++)
         {
             var page = viewModel.Pages[i];
@@ -194,6 +200,7 @@ public partial class MainWindow : LoadoutWindow
                 QuestionKind.Warn));
         }
 
+        _closeWithoutAsking = true;
         Application.Current.Shutdown();
     }
 
@@ -241,6 +248,19 @@ public partial class MainWindow : LoadoutWindow
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        // A backup or an install under way: closing stops it, so Loadout asks first.
+        if (!_closeWithoutAsking && DataContext is MainViewModel model && model.CloseWarning() is { } warning
+            && !QuestionDialog.Ask(this, new Question(
+                "Close Loadout?",
+                warning,
+                "_Close anyway",
+                "_Keep Loadout open",
+                QuestionKind.Warn,
+                Destructive: true)))
+        {
+            e.Cancel = true;
+        }
+
         base.OnClosing(e);
         var bounds = e.Cancel ? null : WindowPlacement.Read(this);
         if (bounds is null)

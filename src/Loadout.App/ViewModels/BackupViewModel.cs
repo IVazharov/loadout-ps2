@@ -277,6 +277,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     /// <summary>An install on the PS2 that this page started is under way, or waits for its turn.</summary>
     public bool IsInstallingOnPs2 => _ps2.Count > 0;
 
+    /// <summary>The backup that closing Loadout would stop, said for the question before it closes; null when none runs.</summary>
+    public string? RunningBackup =>
+        _working && _current is { } current
+            ? $"A backup of {current.Disc.Title} is running. Closing stops it, and Resume this disc goes on from there next time."
+            : _cleaning is { } cleaning
+                ? $"The backup of {cleaning.Title} waits for the cleaned disc. Closing stops it, and Resume this disc goes on from there next time."
+                : null;
+
     /// <summary>
     /// When on, each disc is installed on the PS2 as it is copied, with the Install page's options; when the copy meets a
     /// weak area, that install is cancelled and the finished copy is installed instead. Off at each start of Loadout, and
@@ -1195,7 +1203,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                 ? string.Create(CultureInfo.CurrentCulture, $"The drive needs a short rest after a failed read ({left:0} s)…")
                 : "The drive needs a short rest after a failed read; trying it again…",
             DiscCopyPhase.FirstPass => status.BytesPerSecond > 0
-                ? $"Reading normally{DriveNow(status.Sector)} · {speed} · about {Left(status.UntriedSectors * (_selected?.Disc.Media == DiscMedia.Cd ? 2352 : DiscSectors.Size) / status.BytesPerSecond)} left"
+                ? $"Reading normally{SpeedAsX(status.BytesPerSecond)} · {speed} · about {Left(status.UntriedSectors * (_selected?.Disc.Media == DiscMedia.Cd ? 2352 : DiscSectors.Size) / status.BytesPerSecond)} left"
                 : "Reading normally",
             DiscCopyPhase.Sweep when status.PieceSectors < 128 => $"Weak area at {at}: reading it in small pieces",
             DiscCopyPhase.Sweep when status.Backwards => $"Pass {status.Sweep + 1}: going back over {Size(status.MissingSectors * DiscSectors.Size)} from the end",
@@ -1204,16 +1212,24 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         };
     }
 
-    // The drive's own nominal speed where it reads now, from the curve it gave for this disc, such as " · drive 17x of 24x".
-    private string DriveNow(long sector)
+    // The speed Loadout measures, as the drive's x, and the drive's top speed for this disc, such as " · 3.8x of 8x". The
+    // drive's own curve isn't used here: it can claim less than it reads (2.8x while reading 5.3 MB/s, a 3.8x).
+    private string SpeedAsX(double bytesPerSecond)
     {
-        if (_selected?.Disc is not { Speeds: { } speeds } disc || speeds.KbPerSecondAt(sector, disc.Layer0Sectors) is not { } now)
+        if (_selected?.Disc is not { } disc || bytesPerSecond <= 0)
         {
             return string.Empty;
         }
 
-        var max = speeds.MaxKbPerSecond > 0 ? speeds.MaxKbPerSecond : speeds.Stretches.Max(s => Math.Max(s.StartKbPerSecond, s.EndKbPerSecond));
-        return $" · drive {speeds.X(now, CultureInfo.CurrentCulture)} of {speeds.X(max, CultureInfo.CurrentCulture)}";
+        var oneX = 1000 * (disc.Speeds?.OneX ?? (disc.Media == DiscMedia.Cd ? 176.4 : 1385.0));
+        var now = string.Create(CultureInfo.CurrentCulture, $" · {bytesPerSecond / oneX:0.0}x");
+        if (disc.Speeds is not { } speeds)
+        {
+            return now;
+        }
+
+        var max = speeds.MaxKbPerSecond > 0 ? speeds.MaxKbPerSecond : speeds.Stretches.Select(s => Math.Max(s.StartKbPerSecond, s.EndKbPerSecond)).DefaultIfEmpty(0).Max();
+        return max > 0 ? now + " of " + speeds.X(max, CultureInfo.CurrentCulture) : now;
     }
 
     private static string Left(double seconds) => seconds switch
