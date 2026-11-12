@@ -148,8 +148,10 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         RedumpDatCache redump,
         InstallViewModel installer,
         Func<Question, bool> confirm,
-        Func<IReadOnlyCollection<string>> installedDiscIds)
+        Func<IReadOnlyCollection<string>> installedDiscIds,
+        InstallTicks ticks)
     {
+        Ticks = ticks ?? throw new ArgumentNullException(nameof(ticks));
         _drives = drives ?? throw new ArgumentNullException(nameof(drives));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -168,6 +170,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         DetailsCommand = new RelayCommand(ShowDetails);
         SaveReportCommand = new RelayCommand(SaveReport);
         CancelInstallCommand = new RelayCommand(CancelInstalls);
+        SkipCheckCommand = new RelayCommand(() => _installer.SkipCheck());
         Describe = DescribeSectors;
         _poll = new DispatcherTimer(DispatcherPriority.Background) { Interval = PollEvery };
         _poll.Tick += (_, _) => _ = PollAsync();
@@ -240,8 +243,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     /// <summary>A backup is picked in the list, so its report can be shown or saved.</summary>
     public bool CanSaveReport => _selectedBackup is not null;
 
-    /// <summary>Installs the backup picked in the list on the PS2 now, with the Install page's options.</summary>
+    /// <summary>Installs the backup picked in the list on the PS2 now, with this page's ticks.</summary>
     public ICommand InstallBackupCommand { get; }
+
+    /// <summary>This page's own install ticks (artwork, memory cards, the check), for every install it starts.</summary>
+    public InstallTicks Ticks { get; }
 
     /// <summary>Cancels the installs on the PS2 this page started; Loadout Bay removes what it had of them.</summary>
     public ICommand CancelInstallCommand { get; }
@@ -1077,6 +1083,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private static string Left(double seconds) => seconds switch
     {
+        < 55 => string.Create(CultureInfo.CurrentCulture, $"{Math.Max(5, Math.Ceiling(seconds / 5) * 5)} s"),
         < 90 => "1 min",
         < 3600 => string.Create(CultureInfo.CurrentCulture, $"{Math.Round(seconds / 60)} min"),
         _ => string.Create(CultureInfo.CurrentCulture, $"{seconds / 3600:0.0} h"),
@@ -1084,7 +1091,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     private void SetMap(IReadOnlyList<DiscMapRange> ranges, long sectors, DiscMedia media, long layer0, long current, IReadOnlyList<double>? cleanedRingsMm = null)
     {
-        Map = new DiscMapView(ranges, sectors, media, layer0, current) { CleanedRingsMm = cleanedRingsMm ?? [], InstallSector = MarkerSector() };
+        var (install, check) = MarkerSectors();
+        Map = new DiscMapView(ranges, sectors, media, layer0, current) { CleanedRingsMm = cleanedRingsMm ?? [], InstallSector = install, CheckSector = check };
         MapShown();
         var totals = DiscMapShades.Totals(ranges);
         var notRead = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("AppTrack");
@@ -1320,12 +1328,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         string? notStarted;
         try
         {
-            (result, notStarted) = await _installer.InstallNowAsync(item, open, status => ShowInstall(install, status), install.Stop.Token).ConfigureAwait(true);
+            (result, notStarted) = await _installer.InstallNowAsync(item, open, status => ShowInstall(install, status), Ticks.Options, install.Stop.Token).ConfigureAwait(true);
         }
         finally
         {
             _ps2.Remove(install);
             OnPropertyChanged(nameof(IsInstallingOnPs2));
+            OnPropertyChanged(nameof(CanSkipCheck));
             install.Dispose();
             RefreshMarker();
         }
@@ -1345,7 +1354,8 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             : result?.Outcome switch
             {
                 null => null,
-                BayInstallOutcome.Installed => $"{title} is installed on the PS2{(result.PartitionName is { } name ? " as " + name : string.Empty)}.",
+                BayInstallOutcome.Installed => $"{title} is installed on the PS2{(result.PartitionName is { } name ? " as " + name : string.Empty)}."
+                    + (result.CheckSkipped ? " It was not checked: its check was skipped." : string.Empty),
                 BayInstallOutcome.AlreadyOnPs2 => $"{title} is already on the PS2.",
                 BayInstallOutcome.Cancelled when install.Superseded => null,
                 BayInstallOutcome.Cancelled when install.CopyStopped => $"The install of {title} on the PS2 stopped with the copy.{removed}",
@@ -1378,10 +1388,32 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // The last report after a check is not more sending; the result line follows it.
+        if (!status.Checking && install.SawCheck)
+        {
+            return;
+        }
+
         if (status.Checking)
         {
-            InstallLine = "On the PS2: all sent; Loadout Bay reads it back to check it…";
+            install.SawCheck = true;
             install.Sector = (long)(status.TotalBytes / DiscSectors.Size);
+            if (status.CheckedBytes is { } checkedBytes)
+            {
+                // Loadout Bay 0.11.0 and later say how far the check is: the CHECK marker walks the bar meanwhile.
+                var now = DateTime.UtcNow;
+                install.FirstChecked ??= (now, checkedBytes);
+                var first = install.FirstChecked.Value;
+                var seconds = (now - first.At).TotalSeconds;
+                var pace = seconds >= 2 ? (checkedBytes - first.Bytes) / seconds : 0;
+                InstallLine = $"On the PS2: checking {Size((long)checkedBytes)} of {Size((long)status.TotalBytes)}"
+                    + (pace > 0 ? string.Create(CultureInfo.CurrentCulture, $" · {pace / 1_000_000:0.0} MB/s · about {Left((status.TotalBytes - checkedBytes) / pace)} left") : string.Empty);
+                install.CheckSector = (long)(checkedBytes / DiscSectors.Size);
+            }
+            else
+            {
+                InstallLine = "On the PS2: all sent; Loadout Bay reads it back to check it…";
+            }
         }
         else
         {
@@ -1397,26 +1429,36 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
                 : 0;
             InstallLine = $"On the PS2: {Size((long)written)} of {Size((long)status.TotalBytes)}{(rate > 0 ? string.Create(CultureInfo.CurrentCulture, $" · {rate:0.0} MB/s") : string.Empty)}";
             install.Sector = (long)(written / DiscSectors.Size);
+            install.CheckSector = -1;
         }
 
+        OnPropertyChanged(nameof(CanSkipCheck));
         RefreshMarker();
     }
 
-    // Where the install that follows the disc on the map has got, for the bar's second marker; -1 when none follows it.
-    private long MarkerSector()
+    /// <summary>The install this page started is being checked, and Loadout Bay says how far: the check can be skipped.</summary>
+    public bool CanSkipCheck => _ps2.FirstOrDefault() is { CheckSector: >= 0 };
+
+    /// <summary>Skips the rest of that check: the game stays on the PS2, not checked.</summary>
+    public ICommand SkipCheckCommand { get; }
+
+    // The bar's markers for the install that follows the disc on the map: how far it has got (PS2), or while it is
+    // checked, how far its check has got (CHECK), which then takes the PS2 marker's place; -1 when none shows.
+    private (long Install, long Check) MarkerSectors()
     {
         var shown = _selected?.Disc.Identity;
-        return shown is null
-            ? -1
-            : _ps2.FirstOrDefault(i => i.Feed is not null && i.Identity is { } id && id.IsSameDisc(shown))?.Sector ?? -1;
+        var install = shown is null ? null : _ps2.FirstOrDefault(i => i.Feed is not null && i.Identity is { } id && id.IsSameDisc(shown));
+        return install is null ? (-1, -1)
+            : install.CheckSector >= 0 ? (-1, install.CheckSector)
+            : (install.Sector, -1);
     }
 
     private void RefreshMarker()
     {
-        var sector = MarkerSector();
-        if (_map.Sectors > 0 && _map.InstallSector != sector)
+        var (sector, check) = MarkerSectors();
+        if (_map.Sectors > 0 && (_map.InstallSector != sector || _map.CheckSector != check))
         {
-            Map = _map with { InstallSector = sector };
+            Map = _map with { InstallSector = sector, CheckSector = check };
         }
     }
 
@@ -1512,7 +1554,15 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
         public long Sector { get; set; } = -1;
 
+        /// <summary>While Loadout Bay checks it and says how far: the sector its check has reached; -1 otherwise.</summary>
+        public long CheckSector { get; set; } = -1;
+
         public (DateTime At, ulong Bytes)? FirstWritten { get; set; }
+
+        public (DateTime At, ulong Bytes)? FirstChecked { get; set; }
+
+        /// <summary>Everything was sent and Loadout Bay checks it, or did.</summary>
+        public bool SawCheck { get; set; }
 
         public void Dispose()
         {

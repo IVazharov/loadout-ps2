@@ -10,7 +10,9 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - A CD is backed up as Redump keeps it: its raw sectors in a .bin, with a .cue, so the copy can be checked against Redump and installed from the Install page like any bin and cue.
 - Pause to clean the disc, while a backup runs, stops the copy, opens the tray and shows where the disc has trouble, circled on a picture of it. Put the disc back cleaned and the copy goes on by itself; a small cloth then marks each cleaned ring, and its hover text says what came back there. While a backup runs, Windows doesn't open AutoPlay or Explorer for a disc put in that drive.
 - Back up discs shows the drive's own read speed for the disc in it, such as 10x–24x for a CD, and where it reads now while copying.
-- Also install on PS2, on Back up discs, installs each disc on the PS2 as it is copied, with the Install page's options. If the copy meets a weak area, that install is cancelled and the finished copy is installed instead. The disc map's markers say which is which: DRIVE over it where the drive reads, PS2 under it where the install has got.
+- Also install on PS2, on Back up discs, installs each disc on the PS2 as it is copied. If the copy meets a weak area, that install is cancelled and the finished copy is installed instead. The disc map's markers say which is which: DRIVE over it where the drive reads, PS2 under it where the install has got, and a green CHECK in its place while Loadout Bay checks it.
+- Back up discs has its own install ticks, under Installs from this page: each game's artwork, a memory card for each game with its size, and the check. They are kept apart from the Install page's, and both pages remember theirs.
+- While Loadout Bay checks a game, Loadout shows how far it has read the game back, its speed and the time left. Skip the check keeps the game on the PS2 without the rest of its check, and Cancel install removes it. This needs this release's Loadout Bay; an older one checks as before.
 - Install on PS2, on Back up discs, installs the copy picked in the list. When a copy ends, it is the one picked, so Show report and Install on PS2 act on it.
 - While Loadout is behind other windows, Back up discs tells you in a Windows notification when a disc is backed up, when it needs cleaning to go on, and when a copy stops on an error; the taskbar button shows the copy's progress, turns yellow when it needs you and red when it stopped, and flashes until you come back.
 - After a copy, Details opens its report: every pass, failed read, rest and cleaning. Save report… keeps a copy of a backup's report where you choose, and the Logs page has one line per disc, such as "99.3% on the first pass, 2 weak areas, 2 cleanings, matches Redump".
@@ -22,8 +24,13 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 ### Changed
 
 - A click on a list's empty space, under its rows, unselects everything, as in Explorer.
+- Check each game after installing moved from Settings to the Install page, beside its artwork and memory card ticks. A check you had turned off stays off, on both pages. The Install page also remembers its artwork and memory card ticks now.
 - The Windows download holds only `LoadoutPS2.exe` and its readme: every licence text, the fonts' and the chd reader's included, is on the About page. Loadout Bay's download keeps its licence files.
 - Backup is the third page, after Install, so Artwork, Settings, Logs and About are now Ctrl+4 to Ctrl+7.
+
+### Fixed
+
+- Cancel, during an install's check, did nothing: the game was installed once the check ended. With this release's Loadout Bay, it now cancels the install, and Loadout Bay removes the game.
 
 ## 0.10.0 - 2026-11-11
 

@@ -20,7 +20,7 @@ Put an original PS2 disc, DVD or CD, in your PC's drive. Loadout copies it, chec
 
 ### Send games from your PC
 
-Queue iso, bin and cue, or chd files. Loadout sends them over your network, with their artwork, and checks each game after installing it. A chd is read as it's sent, with no converted copy on your disk.
+Queue iso, bin and cue, or chd files. Loadout sends them over your network, with their artwork, and checks each game after installing it, showing how far the check has got. A chd is read as it's sent, with no converted copy on your disk.
 
 ### See what's on the PS2
 

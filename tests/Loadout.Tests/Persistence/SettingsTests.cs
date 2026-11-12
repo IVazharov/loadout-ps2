@@ -55,11 +55,11 @@ public sealed class SettingsTests : IDisposable
     public void TheInstallCheckIsOnByDefaultAndKeptOnceChosen()
     {
         var store = new AppSettingsStore(Database);
-        Assert.True(store.Load().CheckInstalls);
+        Assert.True(store.Load().InstallPage.Check);
 
-        store.Save(AppSettings.Defaults with { CheckInstalls = false });
+        store.Save(AppSettings.Defaults with { InstallPage = InstallOptions.Defaults with { Check = false } });
 
-        Assert.False(new AppSettingsStore(Database).Load().CheckInstalls);
+        Assert.False(new AppSettingsStore(Database).Load().InstallPage.Check);
     }
 
     [Fact]
@@ -69,8 +69,55 @@ public sealed class SettingsTests : IDisposable
         var loaded = new AppSettingsStore(Database).Load();
 
         Assert.Equal("10.0.0.55", loaded.Ps2Host);
-        Assert.True(loaded.CheckInstalls);
+        Assert.True(loaded.InstallPage.Check);
+        Assert.True(loaded.BackupPage.Check);
         Assert.True(loaded.CheckForUpdates);
+    }
+
+    [Fact]
+    public void EachPageKeepsItsOwnInstallOptions()
+    {
+        var store = new AppSettingsStore(Database);
+        Assert.Equal(InstallOptions.Defaults, store.Load().InstallPage);
+        Assert.Equal(InstallOptions.Defaults, store.Load().BackupPage);
+
+        store.Save(AppSettings.Defaults with
+        {
+            InstallPage = new InstallOptions(SendArtwork: false, MemoryCards: true, MemoryCardSize: 16, Check: true),
+            BackupPage = new InstallOptions(SendArtwork: true, MemoryCards: false, MemoryCardSize: 32, Check: false),
+        });
+
+        var loaded = new AppSettingsStore(Database).Load();
+        Assert.Equal(new InstallOptions(false, true, 16, true), loaded.InstallPage);
+        Assert.Equal(new InstallOptions(true, false, 32, false), loaded.BackupPage);
+    }
+
+    [Fact]
+    public void AnInstallCheckTurnedOffBefore0110StaysOffOnBothPages()
+    {
+        // As Loadout 0.10.0 left the row: the check in check_installs, and no page options yet.
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + Database))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                CREATE TABLE app_settings (
+                    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1), ps2_host TEXT NOT NULL, chdman_path TEXT NOT NULL,
+                    cache_directory TEXT NOT NULL, dark_mode INTEGER NOT NULL, check_installs INTEGER NOT NULL DEFAULT 1,
+                    theme TEXT NULL, check_updates INTEGER NOT NULL DEFAULT 1, backup_folder TEXT NOT NULL DEFAULT '');
+                INSERT INTO app_settings VALUES (1, '10.0.0.55', '', '', 1, 0, 'Dark', 1, '');
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        var loaded = new AppSettingsStore(Database).Load();
+
+        Assert.False(loaded.InstallPage.Check);
+        Assert.False(loaded.BackupPage.Check);
+        Assert.True(loaded.BackupPage.SendArtwork);
+        Assert.False(loaded.InstallPage.MemoryCards);
     }
 
     [Fact]
@@ -83,7 +130,7 @@ public sealed class SettingsTests : IDisposable
 
         var loaded = new AppSettingsStore(Database).Load();
         Assert.False(loaded.CheckForUpdates);
-        Assert.True(loaded.CheckInstalls);
+        Assert.True(loaded.InstallPage.Check);
     }
 
     [Theory]
@@ -95,7 +142,7 @@ public sealed class SettingsTests : IDisposable
         var store = new AppSettingsStore(Database);
 
         Assert.Equal(expected, store.Load().Theme);
-        store.Save(store.Load() with { CheckInstalls = true });
+        store.Save(store.Load() with { CheckForUpdates = true });
         Assert.Equal(expected, new AppSettingsStore(Database).Load().Theme);
     }
 

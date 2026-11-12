@@ -65,6 +65,21 @@ public static class BayWire
 
     public const uint CommandRemoveIncomplete = 8;
 
+    /// <summary>
+    /// As INSTALL_END, but a check runs after the reply, between requests, so Loadout can follow it, skip it or
+    /// cancel the install. New in 0.11.0 without a new protocol version: an older Loadout Bay answers
+    /// <see cref="StatusNotImplemented"/>, and the install ends with INSTALL_END.
+    /// </summary>
+    public const uint CommandInstallFinish = 24;
+
+    /// <summary>How far the check INSTALL_FINISH started has got, or how it ended.</summary>
+    public const uint CommandCheckStatus = 25;
+
+    /// <summary>Stops that check: keeps the game without the rest of it (a u32 1), or cancels the install (0).</summary>
+    public const uint CommandCheckStop = 26;
+
+    public const int CheckStatusReplyBytes = 40;
+
     /// <summary>Reads sectors of a game partition back, for finding out what the disk holds.</summary>
     public const uint CommandReadSectors = 9;
 
@@ -191,6 +206,9 @@ public static class BayWire
     public const int StatusProtocol = -71;
     public const int StatusNotImplemented = -88;
     public const int StatusProtocolMismatch = -123;
+
+    /// <summary>An install cancelled during its check (<c>ECANCELED</c>).</summary>
+    public const int StatusCancelled = -140;
 
     /// <summary>Writes a request header for <paramref name="command"/> with a payload of <paramref name="payloadBytes"/>.</summary>
     public static void WriteHeader(Span<byte> header, uint command, int payloadBytes)
@@ -342,6 +360,23 @@ public static class BayWire
         return new BayInstallStart(
             Encoding.UTF8.GetString(end >= 0 ? name[..end] : name),
             (int)Math.Min(BinaryPrimitives.ReadUInt32LittleEndian(payload[EntryNameBytes..]), int.MaxValue));
+    }
+
+    public static BayCheckStatus ReadCheckStatus(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length != CheckStatusReplyBytes)
+        {
+            throw new InvalidDataException("Loadout Bay's check status has the wrong size.");
+        }
+
+        return new BayCheckStatus(
+            BinaryPrimitives.ReadUInt64LittleEndian(payload),
+            BinaryPrimitives.ReadUInt64LittleEndian(payload[8..]),
+            BinaryPrimitives.ReadUInt32LittleEndian(payload[16..]) != 0,
+            BinaryPrimitives.ReadInt32LittleEndian(payload[20..]),
+            BinaryPrimitives.ReadUInt32LittleEndian(payload[24..]),
+            BinaryPrimitives.ReadUInt32LittleEndian(payload[28..]) != 0,
+            BinaryPrimitives.ReadUInt32LittleEndian(payload[32..]) != 0);
     }
 
     public static BayInstallStatus ReadInstallStatus(ReadOnlySpan<byte> payload)
@@ -501,13 +536,31 @@ public sealed record BayGameEdit(string Title, byte CompatibilityModeFlags, byte
 }
 
 /// <summary>Loadout Bay's answer to INSTALL_BEGIN: the new partition and how many parts it has.</summary>
-public sealed record BayInstallStart(string PartitionName, int Parts);
+public sealed record BayInstallStart(string PartitionName, int Parts)
+{
+    /// <summary>The check was skipped on request, so the game is installed without the rest of it.</summary>
+    public bool CheckSkipped { get; init; }
+}
 
 /// <summary>
 /// How far an install is: the game's size, the bytes Loadout Bay received, and the bytes on its
 /// disk. <see cref="Checking"/> is set once every byte is sent and Loadout Bay is reading the game back.
 /// </summary>
-public sealed record BayInstallStatus(ulong TotalBytes, ulong ReceivedBytes, ulong WrittenBytes, bool Checking = false);
+public sealed record BayInstallStatus(ulong TotalBytes, ulong ReceivedBytes, ulong WrittenBytes, bool Checking = false)
+{
+    /// <summary>
+    /// While checking, the bytes Loadout Bay has read back, or null when it doesn't say (one older than 0.11.0);
+    /// only then can the check be skipped.
+    /// </summary>
+    public ulong? CheckedBytes { get; init; }
+}
+
+/// <summary>
+/// Loadout Bay's answer to CHECK_STATUS and CHECK_STOP: the game's size, the bytes checked, and once
+/// <see cref="Ended"/>, how the install ended: INSTALL_END's status, the first MiB that differs, whether a
+/// failed install was removed, and whether the check was skipped.
+/// </summary>
+public sealed record BayCheckStatus(ulong TotalBytes, ulong CheckedBytes, bool Ended, int Result, uint BadBlock, bool Removed, bool Skipped);
 
 /// <summary>Loadout Bay's answer to HELLO.</summary>
 /// <param name="RunTag">The tag Loadout started this copy with over ELF_RUN, or empty when a launcher started it.</param>

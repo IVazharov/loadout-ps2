@@ -130,6 +130,101 @@ public sealed class BayInstallTests
     }
 
     [Fact]
+    public async Task ACheckSaysHowFarItHasGot()
+    {
+        LoadoutBayClient.CheckPollInterval = TimeSpan.FromMilliseconds(10);
+        using var bay = new FakeLoadoutBay(disk: Disk) { CheckRunningReplies = 2 };
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+        var reports = new List<BayInstallStatus>();
+
+        var start = await client.InstallAsync(MoonWars with { Layer0Sectors = 3 * 512, CheckCopy = true }, new MemoryStream(Sectors(3 * 512)), new Recorder(reports), bay.DataPort);
+
+        Assert.False(start.CheckSkipped);
+        Assert.Equal(1, bay.Checked);
+        Assert.Contains(BayWire.CommandInstallFinish, bay.Commands);
+        Assert.DoesNotContain(BayWire.CommandInstallEnd, bay.Commands);
+        var total = 3UL * 512 * 2048;
+        Assert.Equal([total / 3, total * 2 / 3], reports.Where(r => r.CheckedBytes is not null).Select(r => r.CheckedBytes!.Value));
+        Assert.False(reports[^1].Checking);
+        // The control connection is still in step after the check.
+        Assert.Equal(Disk, await client.GetFreeSpaceAsync());
+    }
+
+    [Fact]
+    public async Task AnOlderBayChecksBeforeItAnswersInstallEnd()
+    {
+        using var bay = new FakeLoadoutBay(disk: Disk) { KnowsInstallFinish = false };
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+        var reports = new List<BayInstallStatus>();
+
+        await client.InstallAsync(MoonWars with { Layer0Sectors = 3 * 512, CheckCopy = true }, new MemoryStream(Sectors(3 * 512)), new Recorder(reports), bay.DataPort);
+
+        Assert.Equal(1, bay.Checked);
+        Assert.Equal(BayWire.CommandInstallEnd, bay.Commands[^1]);
+        Assert.Contains(reports, report => report.Checking);
+        Assert.DoesNotContain(reports, report => report.CheckedBytes is not null);
+    }
+
+    [Fact]
+    public async Task SkippingTheCheckKeepsTheGameWithoutTheRestOfIt()
+    {
+        LoadoutBayClient.CheckPollInterval = TimeSpan.FromMilliseconds(10);
+        using var bay = new FakeLoadoutBay(disk: Disk) { CheckRunningReplies = 1000 };
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+        using var skip = new CancellationTokenSource();
+
+        var start = await client.InstallAsync(
+            MoonWars with { Layer0Sectors = 3 * 512, CheckCopy = true },
+            new MemoryStream(Sectors(3 * 512)),
+            new OnCheck(skip),
+            bay.DataPort,
+            skipCheck: skip.Token);
+
+        Assert.True(start.CheckSkipped);
+        Assert.Equal([true], bay.CheckStops);
+        Assert.Equal(0, bay.Checked);
+        Assert.Equal(0, bay.RemovedInstalls);
+        Assert.Equal(Disk, await client.GetFreeSpaceAsync());
+    }
+
+    [Fact]
+    public async Task CancellingDuringTheCheckRemovesTheGame()
+    {
+        LoadoutBayClient.CheckPollInterval = TimeSpan.FromMilliseconds(10);
+        using var bay = new FakeLoadoutBay(disk: Disk) { CheckRunningReplies = 1000 };
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+        using var cancel = new CancellationTokenSource();
+
+        var error = await Assert.ThrowsAsync<BayInstallCancelledException>(
+            () => client.InstallAsync(
+                MoonWars with { Layer0Sectors = 3 * 512, CheckCopy = true },
+                new MemoryStream(Sectors(3 * 512)),
+                new OnCheck(cancel),
+                bay.DataPort,
+                cancel.Token));
+
+        Assert.True(error.PartialCopyRemoved);
+        Assert.Equal([false], bay.CheckStops);
+        Assert.Equal(1, bay.RemovedInstalls);
+        Assert.Equal(Disk, await client.GetFreeSpaceAsync());
+    }
+
+    [Fact]
+    public async Task AFollowedCheckThatFindsADifferenceSaysWhere()
+    {
+        LoadoutBayClient.CheckPollInterval = TimeSpan.FromMilliseconds(10);
+        using var bay = new FakeLoadoutBay(disk: Disk) { CheckRunningReplies = 1, CorruptByteAt = (2 * 1024 * 1024) + 100 };
+        using var client = await LoadoutBayClient.ConnectAsync("127.0.0.1", bay.Port);
+
+        var error = await Assert.ThrowsAsync<LoadoutBayException>(
+            () => client.InstallAsync(MoonWars with { Layer0Sectors = 3 * 512, CheckCopy = true }, new MemoryStream(Sectors(3 * 512)), dataPort: bay.DataPort));
+
+        Assert.Equal(BayWire.StatusCopyDiffers, error.Status);
+        Assert.Contains("at 2 MiB", error.Message, StringComparison.Ordinal);
+        Assert.Contains("was removed", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WithoutTheCheckNoChecksumsAreSent()
     {
         using var bay = new FakeLoadoutBay(disk: Disk) { CorruptByteAt = 100 };
@@ -171,6 +266,18 @@ public sealed class BayInstallTests
             lock (reports)
             {
                 reports.Add(value);
+            }
+        }
+    }
+
+    // Cancels its source once the check says how far it has got, as a click on Skip the check or Cancel install would.
+    private sealed class OnCheck(CancellationTokenSource source) : IProgress<BayInstallStatus>
+    {
+        public void Report(BayInstallStatus value)
+        {
+            if (value.CheckedBytes is not null)
+            {
+                source.Cancel();
             }
         }
     }

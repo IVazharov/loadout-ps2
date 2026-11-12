@@ -45,6 +45,9 @@ public sealed class LoadoutBayClient : IDisposable
 
     private static readonly TimeSpan ReplyTimeout = TimeSpan.FromSeconds(30);
 
+    // How often a running check is asked how far it is. Tests make it shorter.
+    internal static TimeSpan CheckPollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
     private static readonly TimeSpan StatusInterval = TimeSpan.FromSeconds(1);
 
     private const int SendBufferBytes = 1024 * 1024;
@@ -462,13 +465,17 @@ public sealed class LoadoutBayClient : IDisposable
     /// With <see cref="BayInstallRequest.CheckCopy"/>, a CRC-32C of each MiB follows the data, and
     /// Loadout Bay reads the game back and compares them before it writes the header.
     /// <paramref name="sectors"/> must hold the game's 2048-byte sectors from the first.
+    /// From 0.11.0, Loadout Bay checks after INSTALL_FINISH's reply and reports how far it is, and
+    /// <paramref name="skipCheck"/> then keeps the game without the rest of its check
+    /// (<see cref="BayInstallStart.CheckSkipped"/>); an older one checks before INSTALL_END's reply.
     /// </summary>
     public async Task<BayInstallStart> InstallAsync(
         BayInstallRequest game,
         Stream sectors,
         IProgress<BayInstallStatus>? progress = null,
         int dataPort = BayWire.DataPort,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CancellationToken skipCheck = default)
     {
         ArgumentNullException.ThrowIfNull(game);
         ArgumentNullException.ThrowIfNull(sectors);
@@ -540,6 +547,13 @@ public sealed class LoadoutBayClient : IDisposable
         if (checking)
         {
             progress?.Report(new BayInstallStatus((ulong)game.TotalBytes, (ulong)game.TotalBytes, (ulong)game.TotalBytes, Checking: true));
+
+            // From 0.11.0, Loadout Bay checks between requests, so the check can be followed, skipped or cancelled.
+            var (finishStatus, finishPayload) = await ExchangeAsync(_stream, BayWire.CommandInstallFinish, [], CancellationToken.None).ConfigureAwait(false);
+            if (finishStatus != BayWire.StatusNotImplemented)
+            {
+                return await FollowCheckAsync(game, start, finishStatus, finishPayload, progress, skipCheck, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         var endWait = checking ? ReplyTimeout + TimeSpan.FromSeconds(game.TotalBytes / (double)BayWire.CheckBlockBytes) : ReplyTimeout;
@@ -571,23 +585,112 @@ public sealed class LoadoutBayClient : IDisposable
             throw new LoadoutBayException("The data connection to Loadout Bay was lost, so the game was not installed." + leftover, endStatus, dataFailure) { PartialCopyLeft = !removed };
         }
 
-        if (endStatus == BayWire.StatusCopyDiffers && endPayload.Length == BayWire.InstallEndFailureBytes)
-        {
-            var block = BinaryPrimitives.ReadUInt32LittleEndian(endPayload);
-            throw new LoadoutBayException(
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"The check found that the copy on the PS2 differs from the image at {block} MiB, so the game was not installed.{leftover}"),
-                endStatus) { PartialCopyLeft = !removed };
-        }
-
         if (endStatus != 0)
         {
-            throw new LoadoutBayException(BayWire.DescribeStatus(endStatus) + leftover, endStatus) { PartialCopyLeft = !removed };
+            var block = endPayload.Length == BayWire.InstallEndFailureBytes ? BinaryPrimitives.ReadUInt32LittleEndian(endPayload) : 0;
+            throw EndFailure(endStatus, block, removed);
         }
 
         progress?.Report(new BayInstallStatus((ulong)game.TotalBytes, (ulong)game.TotalBytes, (ulong)game.TotalBytes));
         return start;
+    }
+
+    // The install failed at its end: its check found a MiB that differs, or something else went wrong.
+    private static LoadoutBayException EndFailure(int status, uint badBlock, bool removed)
+    {
+        var leftover = removed ? " Its partial copy was removed from the PS2."
+            : " Its partial copy could not be removed from the PS2. The next install of this game replaces it.";
+        var message = status == BayWire.StatusCopyDiffers
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"The check found that the copy on the PS2 differs from the image at {badBlock} MiB, so the game was not installed.{leftover}")
+            : BayWire.DescribeStatus(status) + leftover;
+        return new LoadoutBayException(message, status) { PartialCopyLeft = !removed };
+    }
+
+    // The check INSTALL_FINISH started, followed about once a second until it ends: skipCheck keeps the game
+    // without the rest of it, cancellationToken cancels the install, and Loadout Bay removes the game.
+    private async Task<BayInstallStart> FollowCheckAsync(
+        BayInstallRequest game,
+        BayInstallStart start,
+        int finishStatus,
+        byte[] finishPayload,
+        IProgress<BayInstallStatus>? progress,
+        CancellationToken skipCheck,
+        CancellationToken cancellationToken)
+    {
+        var total = (ulong)game.TotalBytes;
+        if (finishStatus != 0)
+        {
+            // It failed before the check began, and answered as INSTALL_END.
+            var failed = finishPayload.Length == BayWire.InstallEndFailureBytes;
+            throw EndFailure(finishStatus, 0, failed && BinaryPrimitives.ReadUInt32LittleEndian(finishPayload.AsSpan(4)) != 0);
+        }
+
+        if (finishPayload.Length != 4)
+        {
+            throw new LoadoutBayException("Loadout Bay's answer to the end of the install has the wrong size.", BayWire.StatusProtocol);
+        }
+
+        if (BinaryPrimitives.ReadUInt32LittleEndian(finishPayload) == 0)
+        {
+            progress?.Report(new BayInstallStatus(total, total, total));
+            return start;
+        }
+
+        BayCheckStatus check;
+        while (true)
+        {
+            // Not cancellable either: the reply keeps the control connection in step.
+            var stop = cancellationToken.IsCancellationRequested ? 0u : skipCheck.IsCancellationRequested ? 1u : (uint?)null;
+            var request = new byte[4];
+            if (stop is { } keep)
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(request, keep);
+            }
+
+            var (status, payload) = stop is null
+                ? await ExchangeAsync(_stream, BayWire.CommandCheckStatus, [], CancellationToken.None).ConfigureAwait(false)
+                : await ExchangeAsync(_stream, BayWire.CommandCheckStop, request, CancellationToken.None).ConfigureAwait(false);
+            ThrowIfFailed(status);
+            try
+            {
+                check = BayWire.ReadCheckStatus(payload);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new LoadoutBayException(ex.Message, BayWire.StatusProtocol, ex);
+            }
+
+            if (check.Ended)
+            {
+                break;
+            }
+
+            progress?.Report(new BayInstallStatus(total, total, total, Checking: true) { CheckedBytes = check.CheckedBytes });
+            using var wake = CancellationTokenSource.CreateLinkedTokenSource(skipCheck, cancellationToken);
+            try
+            {
+                await Task.Delay(CheckPollInterval, wake.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Asked to skip or cancel: the next request says so.
+            }
+        }
+
+        if (check.Result == BayWire.StatusCancelled)
+        {
+            throw new BayInstallCancelledException(check.Removed, cancellationToken);
+        }
+
+        if (check.Result != 0)
+        {
+            throw EndFailure(check.Result, check.BadBlock, check.Removed);
+        }
+
+        progress?.Report(new BayInstallStatus(total, total, total));
+        return start with { CheckSkipped = check.Skipped };
     }
 
     public void Dispose()

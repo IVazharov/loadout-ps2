@@ -36,7 +36,6 @@ public sealed class SettingsViewModel : ObservableObject
     private const string EnterAddress = "Enter the PS2's address, or Find Bay.";
 
     private readonly AppSettingsStore _store;
-    private readonly InstallViewModel _install;
     private readonly OperationLog _log;
     private string _host;
     private string _addressNote;
@@ -50,11 +49,10 @@ public sealed class SettingsViewModel : ObservableObject
     private CancellationTokenSource? _findRun;
     private bool _windowsDark = AppTheme.WindowsIsDark();
 
-    public SettingsViewModel(AppSettingsStore store, AppSettings stored, InstallViewModel install, OperationLog log)
+    public SettingsViewModel(AppSettingsStore store, AppSettings stored, OperationLog log)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         ArgumentNullException.ThrowIfNull(stored);
-        _install = install ?? throw new ArgumentNullException(nameof(install));
         _log = log ?? throw new ArgumentNullException(nameof(log));
 
         // A host name saved by an older Loadout can't go in the editor; the editor starts empty.
@@ -83,8 +81,6 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     public SettingsSection Ps2 { get; } = new("PS2");
-
-    public SettingsSection InstallSection { get; } = new("Install");
 
     public SettingsSection Appearance { get; } = new("Appearance");
 
@@ -272,19 +268,26 @@ public sealed class SettingsViewModel : ObservableObject
 
     private string HelpNote => _host.Length == 0 ? EnterAddress : AddressHelp;
 
-    public bool CheckInstalls
+    /// <summary>
+    /// Keeps a page's install ticks (Install, Back up discs) as they are changed there; a failure goes to the Logs
+    /// page, as the page has no Saved mark of its own.
+    /// </summary>
+    public void SaveInstallOptions(Func<AppSettings, AppSettings> change)
     {
-        get => _install.CheckInstalls;
-        set
+        ArgumentNullException.ThrowIfNull(change);
+        try
         {
-            if (value == _install.CheckInstalls)
+            var stored = _store.Load();
+            if (!Ipv4Text.IsValid(stored.Ps2Host))
             {
-                return;
+                stored = stored with { Ps2Host = _host };
             }
 
-            _install.CheckInstalls = value;
-            OnPropertyChanged();
-            Save(InstallSection, settings => settings with { CheckInstalls = value });
+            _store.Save(change(stored));
+        }
+        catch (Exception ex) when (ex is ArgumentException or SqliteException or IOException or UnauthorizedAccessException)
+        {
+            _log.Add("Couldn't save the install options: " + ex.Message);
         }
     }
 

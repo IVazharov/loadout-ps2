@@ -68,6 +68,9 @@ public sealed record DiscMapView(IReadOnlyList<DiscMapRange> Ranges, long Sector
     /// <summary>How far an install on the PS2 that follows the copy has got, as a sector; -1 when none follows it.</summary>
     public long InstallSector { get; init; } = -1;
 
+    /// <summary>While Loadout Bay checks that install: how far the check has got, as a sector; -1 otherwise.</summary>
+    public long CheckSector { get; init; } = -1;
+
     public static DiscMapView Empty { get; } = new([], 0, DiscMedia.Dvd, 0, -1);
 }
 
@@ -76,7 +79,7 @@ public abstract class DiscMapElement : FrameworkElement
 {
     public static readonly DependencyProperty ViewProperty = DependencyProperty.Register(
         nameof(View), typeof(DiscMapView), typeof(DiscMapElement),
-        new FrameworkPropertyMetadata(DiscMapView.Empty, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(DiscMapView.Empty, FrameworkPropertyMetadataOptions.AffectsRender, (d, _) => ((DiscMapElement)d).OnViewChanged()));
 
     public static readonly DependencyProperty NotReadBrushProperty = DependencyProperty.Register(
         nameof(NotReadBrush), typeof(Brush), typeof(DiscMapElement),
@@ -154,6 +157,15 @@ public abstract class DiscMapElement : FrameworkElement
         Foreground,
         VisualTreeHelper.GetDpi(this).PixelsPerDip);
 
+    // An open tip follows the copy, so it never shows how a place was before.
+    private void OnViewChanged()
+    {
+        if (_tip.IsOpen)
+        {
+            UpdateTip(Mouse.GetPosition(this));
+        }
+    }
+
     private void UpdateTip(Point point)
     {
         var sectors = SectorsAt(point);
@@ -166,7 +178,8 @@ public abstract class DiscMapElement : FrameworkElement
 /// <summary>
 /// The whole disc as one bar, centre at the left and edge at the right: each pixel shows the worst state of its sectors.
 /// Size marks every half GB under it, "Centre" and "Edge" at its ends, a marker labelled DRIVE over it where the drive
-/// reads now, and one labelled PS2 under it where an install that follows the copy has got.
+/// reads now, and one labelled PS2 under it where an install that follows the copy has got, which a green CHECK
+/// marker replaces while Loadout Bay checks that install.
 /// </summary>
 public sealed class DiscMapBar : DiscMapElement
 {
@@ -182,10 +195,22 @@ public sealed class DiscMapBar : DiscMapElement
 
     private Rect _driveMarker = Rect.Empty;
     private Rect _installMarker = Rect.Empty;
+    private Rect _checkMarker = Rect.Empty;
 
     public static readonly DependencyProperty InstallBrushProperty = DependencyProperty.Register(
         nameof(InstallBrush), typeof(Brush), typeof(DiscMapBar),
         new FrameworkPropertyMetadata(Brushes.White, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty CheckBrushProperty = DependencyProperty.Register(
+        nameof(CheckBrush), typeof(Brush), typeof(DiscMapBar),
+        new FrameworkPropertyMetadata(Brushes.Green, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>The CHECK marker's colour: the theme's green, apart from the disc's shades.</summary>
+    public Brush CheckBrush
+    {
+        get => (Brush)GetValue(CheckBrushProperty);
+        set => SetValue(CheckBrushProperty, value);
+    }
 
     public DiscMapBar()
     {
@@ -217,6 +242,7 @@ public sealed class DiscMapBar : DiscMapElement
     protected override string? MarkerTip(Point point) =>
         _driveMarker.Contains(point) ? "DRIVE: where the drive reads now"
         : _installMarker.Contains(point) ? "PS2: how far the install on the PS2 has got"
+        : _checkMarker.Contains(point) ? "CHECK: how far Loadout Bay has read the game back to check it"
         : null;
 
     protected override void OnRender(DrawingContext drawingContext)
@@ -225,6 +251,7 @@ public sealed class DiscMapBar : DiscMapElement
         var width = (int)Math.Floor(ActualWidth);
         _driveMarker = Rect.Empty;
         _installMarker = Rect.Empty;
+        _checkMarker = Rect.Empty;
         if (width <= 0)
         {
             return;
@@ -288,27 +315,37 @@ public sealed class DiscMapBar : DiscMapElement
                 _driveMarker = Rect.Union(new Rect(at, new Size(label.Width, label.Height)), new Rect(x - 6, LabelRow, 12, MarkerHeight));
             }
 
-            // How far the install on the PS2 has got: a small triangle under the bar, pointing up at it, with PS2 centred
-            // under it.
+            // How far the install on the PS2 has got, and while Loadout Bay checks it, how far the check has got in its
+            // place: a small triangle under the bar, pointing up at it, with PS2 or CHECK centred under it.
             if (view.InstallSector >= 0 && view.InstallSector <= view.Sectors)
             {
-                var x = Math.Min((double)view.InstallSector / view.Sectors * width, width - 1);
-                var marker = new StreamGeometry();
-                using (var context = marker.Open())
-                {
-                    context.BeginFigure(new Point(x, BarTop + BarHeight + 1), isFilled: true, isClosed: true);
-                    context.LineTo(new Point(x + 5, BarTop + BarHeight + InstallBand), isStroked: false, isSmoothJoin: false);
-                    context.LineTo(new Point(x - 5, BarTop + BarHeight + InstallBand), isStroked: false, isSmoothJoin: false);
-                }
+                _installMarker = DrawUnderBar(drawingContext, view.InstallSector, view.Sectors, width, InstallBrush, "PS2");
+            }
 
-                marker.Freeze();
-                drawingContext.DrawGeometry(InstallBrush, null, marker);
-                var label = MarkerLabel("PS2", InstallBrush);
-                var at = new Point(Math.Clamp(x - (label.Width / 2), 0, width - label.Width), BarTop + BarHeight + InstallBand);
-                drawingContext.DrawText(label, at);
-                _installMarker = Rect.Union(new Rect(x - 6, BarTop + BarHeight, 12, InstallBand), new Rect(at, new Size(label.Width, label.Height)));
+            if (view.CheckSector >= 0 && view.CheckSector <= view.Sectors)
+            {
+                _checkMarker = DrawUnderBar(drawingContext, view.CheckSector, view.Sectors, width, CheckBrush, "CHECK");
             }
         }
+    }
+
+    private Rect DrawUnderBar(DrawingContext drawingContext, long sector, long sectors, int width, Brush brush, string text)
+    {
+        var x = Math.Min((double)sector / sectors * width, width - 1);
+        var marker = new StreamGeometry();
+        using (var context = marker.Open())
+        {
+            context.BeginFigure(new Point(x, BarTop + BarHeight + 1), isFilled: true, isClosed: true);
+            context.LineTo(new Point(x + 5, BarTop + BarHeight + InstallBand), isStroked: false, isSmoothJoin: false);
+            context.LineTo(new Point(x - 5, BarTop + BarHeight + InstallBand), isStroked: false, isSmoothJoin: false);
+        }
+
+        marker.Freeze();
+        drawingContext.DrawGeometry(brush, null, marker);
+        var label = MarkerLabel(text, brush);
+        var at = new Point(Math.Clamp(x - (label.Width / 2), 0, width - label.Width), BarTop + BarHeight + InstallBand);
+        drawingContext.DrawText(label, at);
+        return Rect.Union(new Rect(x - 6, BarTop + BarHeight, 12, InstallBand), new Rect(at, new Size(label.Width, label.Height)));
     }
 
     // The markers' labels: the page's small capitals, smaller than the size marks, in the marker's colour.

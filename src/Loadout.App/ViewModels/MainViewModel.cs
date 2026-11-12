@@ -31,6 +31,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(artworkCache);
         _log = log ?? throw new ArgumentNullException(nameof(log));
         var stored = settingsStore.Load();
+        Settings = new SettingsViewModel(settingsStore, stored, log);
+
         // After an install, the list read from the PS2 goes to Installed Games and is saved, as after Connect.
         Install = new InstallViewModel(
             log,
@@ -39,11 +41,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             titles,
             confirm,
             artworkCache,
-            artworkDownloader)
-        {
-            CheckInstalls = stored.CheckInstalls,
-        };
-        Settings = new SettingsViewModel(settingsStore, stored, Install, log);
+            artworkDownloader,
+            new InstallTicks(stored.InstallPage, options => Settings.SaveInstallOptions(settings => settings with { InstallPage = options })));
         Installed = new InstalledGamesViewModel(
             artworkCache,
             () => Settings.Host,
@@ -66,7 +65,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             redump,
             Install,
             confirm,
-            () => [.. Installed.Games.Select(g => g.DiscId)]);
+            () => [.. Installed.Games.Select(g => g.DiscId)],
+            new InstallTicks(stored.BackupPage, options => Settings.SaveInstallOptions(settings => settings with { BackupPage = options })));
         Pages =
         [
             new NavPage { Title = "Installed Games", Content = Installed, Number = 1 },

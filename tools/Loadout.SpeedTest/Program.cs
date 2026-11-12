@@ -76,13 +76,16 @@ const string Usage =
     part's first data sector on the disk (512 bytes).
 
            Loadout.SpeedTest <ps2-address> install <image> [--title <title>] [--check] [--cancel-after <MB>]
+                             [--skip-check-after <MB>] [--cancel-check-after <MB>]
 
     Installs a game image (iso, chd, or a cue sheet with its bin) on the PS2's hard disk through Loadout Bay.
     The title defaults to the OPL database's title for the disc ID, as on the Install page, or else the
     one read from the image. --check makes Loadout Bay read the game back
     and compare every MiB before it writes the header. --spoil-checksum <MiB> checks too, but sends that
     MiB's checksum wrong, to test that the check refuses the copy. --cancel-after <MB> cancels the
-    install once that much is on the disk, as Cancel on the Install page does.
+    install once that much is on the disk, as Cancel on the Install page does. --skip-check-after <MB>
+    and --cancel-check-after <MB> check too, and once Loadout Bay (0.11.0 and later) has read that much
+    back, skip the rest of the check (the game stays installed) or cancel the install (it is removed).
 
            Loadout.SpeedTest <ps2-address> read-sectors <partition-name> <part> <first-sector> <count> <file>
 
@@ -390,6 +393,8 @@ if (args[1] == "install")
     var check = false;
     int? spoil = null;
     long? cancelAfter = null;
+    long? skipCheckAfter = null;
+    long? cancelCheckAfter = null;
     for (var i = 3; i < args.Length; i++)
     {
         if (args[i] == "--title" && i + 1 < args.Length)
@@ -408,6 +413,16 @@ if (args[1] == "install")
         else if (args[i] == "--cancel-after" && i + 1 < args.Length)
         {
             cancelAfter = long.Parse(args[++i], CultureInfo.InvariantCulture) * 1024 * 1024;
+        }
+        else if (args[i] == "--skip-check-after" && i + 1 < args.Length)
+        {
+            check = true;
+            skipCheckAfter = long.Parse(args[++i], CultureInfo.InvariantCulture) * 1024 * 1024;
+        }
+        else if (args[i] == "--cancel-check-after" && i + 1 < args.Length)
+        {
+            check = true;
+            cancelCheckAfter = long.Parse(args[++i], CultureInfo.InvariantCulture) * 1024 * 1024;
         }
         else
         {
@@ -431,9 +446,12 @@ if (args[1] == "install")
         bay.SpoilChecksumAt = spoil;
         using var sectors = game.Open();
         using var cancel = new CancellationTokenSource();
+        using var skip = new CancellationTokenSource();
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        // One line per tenth of the game, so a log of the run stays short.
+        var checkClock = new System.Diagnostics.Stopwatch();
+        // One line per tenth of the game, and per tenth of its check, so a log of the run stays short.
         var shown = -1;
+        var checkShown = -1;
         var progress = new Progress<BayInstallStatus>(status =>
         {
             lock (clock)
@@ -444,6 +462,32 @@ if (args[1] == "install")
                     cancel.Cancel();
                 }
 
+                if (status.CheckedBytes is { } done)
+                {
+                    if (skipCheckAfter is { } skipAt && (long)done >= skipAt && !skip.IsCancellationRequested)
+                    {
+                        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  skipping the check at {done / SpeedTestWire.BytesPerMegabyte:0} MB read back..."));
+                        skip.Cancel();
+                    }
+
+                    if (cancelCheckAfter is { } cancelAt && (long)done >= cancelAt && !cancel.IsCancellationRequested)
+                    {
+                        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  cancelling in the check at {done / SpeedTestWire.BytesPerMegabyte:0} MB read back..."));
+                        cancel.Cancel();
+                    }
+
+                    var checkTenth = (int)(done * 10 / Math.Max(status.TotalBytes, 1));
+                    if (checkTenth > checkShown)
+                    {
+                        checkShown = checkTenth;
+                        Console.WriteLine(string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"  {done / SpeedTestWire.BytesPerMegabyte:0} of {status.TotalBytes / SpeedTestWire.BytesPerMegabyte:0} MB read back, {done / SpeedTestWire.BytesPerMegabyte / Math.Max(checkClock.Elapsed.TotalSeconds, 0.001):0.00} MB/s"));
+                    }
+
+                    return;
+                }
+
                 var tenth = status.Checking ? 10 : (int)(status.WrittenBytes * 10 / Math.Max(status.TotalBytes, 1));
                 if (tenth <= shown)
                 {
@@ -451,15 +495,23 @@ if (args[1] == "install")
                 }
 
                 shown = tenth;
+                if (status.Checking)
+                {
+                    checkClock.Start();
+                }
+
                 Console.WriteLine(status.Checking ? "  all sent; Loadout Bay is reading it back to check it..." : string.Create(
                     CultureInfo.InvariantCulture,
                     $"  {status.WrittenBytes / SpeedTestWire.BytesPerMegabyte:0} of {status.TotalBytes / SpeedTestWire.BytesPerMegabyte:0} MB on the disk, {status.WrittenBytes / SpeedTestWire.BytesPerMegabyte / Math.Max(clock.Elapsed.TotalSeconds, 0.001):0.00} MB/s"));
             }
         });
-        var started = await bay.InstallAsync(request, sectors, progress, cancellationToken: cancel.Token);
+        var started = await bay.InstallAsync(request, sectors, progress, cancellationToken: cancel.Token, skipCheck: skip.Token);
+        var checkNote = started.CheckSkipped ? "; the check was skipped."
+            : checkClock.IsRunning ? string.Create(CultureInfo.InvariantCulture, $"; checked in {checkClock.Elapsed.TotalSeconds:0.0} s.")
+            : ".";
         Console.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
-            $"Installed as {started.PartitionName} in {started.Parts} part(s), {clock.Elapsed.TotalSeconds:0.0} s, {request.TotalBytes / SpeedTestWire.BytesPerMegabyte / clock.Elapsed.TotalSeconds:0.00} MB/s."));
+            $"Installed as {started.PartitionName} in {started.Parts} part(s), {clock.Elapsed.TotalSeconds:0.0} s, {request.TotalBytes / SpeedTestWire.BytesPerMegabyte / clock.Elapsed.TotalSeconds:0.00} MB/s{checkNote}"));
         return 0;
     }
     catch (BayInstallCancelledException ex)

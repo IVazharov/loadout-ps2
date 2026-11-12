@@ -327,6 +327,12 @@
                             Content="Cancel"
                             Command="{Binding CancelCommand}"
                             Visibility="{Binding IsWorking, Converter={StaticResource VisibleWhenTrue}}" />
+                    <Button DockPanel.Dock="Right"
+                            Margin="0,0,8,0"
+                            Content="S_kip the check"
+                            ToolTip="Stops reading the game back and keeps it on the PS2, installed but not checked. Cancel removes it instead."
+                            Command="{Binding SkipCheckCommand}"
+                            Visibility="{Binding CanSkipCheck, Converter={StaticResource VisibleWhenTrue}}" />
                     <Button Content="Add _files…"
                             ToolTip="Adds disc images: iso, bin, cue or chd."
                             Command="{Binding AddFilesCommand}" />
@@ -351,7 +357,7 @@
                 <StackPanel DockPanel.Dock="Top" Height="32" Margin="0,8,0,0" Orientation="Horizontal">
                     <CheckBox VerticalAlignment="Center"
                               Content="Send each game's artwork"
-                              IsChecked="{Binding SendArtwork}" />
+                              IsChecked="{Binding Ticks.SendArtwork}" />
                     <c:InfoTip Margin="8,0,0,0"
                                AutomationProperties.Name="More about sending artwork"
                                ToolTip="Downloads each game's cover, icon, background and screenshots before the install, and sends them to OPL's ART folder once the game is on the PS2. Files already there are kept. A game without artwork still installs, and the Logs page says so." />
@@ -359,18 +365,26 @@
                 <StackPanel DockPanel.Dock="Top" Height="32" Orientation="Horizontal">
                     <CheckBox VerticalAlignment="Center"
                               Content="Give each game a memory card in OPL"
-                              IsChecked="{Binding CreateMemoryCards}" />
+                              IsChecked="{Binding Ticks.CreateMemoryCards}" />
                     <ComboBox Margin="12,0,0,0"
                               Width="80"
                               VerticalAlignment="Center"
                               AutomationProperties.Name="Memory card size"
-                              ItemsSource="{Binding MemoryCardSizes}"
+                              ItemsSource="{Binding Ticks.MemoryCardSizes}"
                               ItemStringFormat="{}{0} MB"
-                              SelectedItem="{Binding MemoryCardSize}"
-                              IsEnabled="{Binding CreateMemoryCards}" />
+                              SelectedItem="{Binding Ticks.MemoryCardSize}"
+                              IsEnabled="{Binding Ticks.CreateMemoryCards}" />
                     <c:InfoTip Margin="8,0,0,0"
                                AutomationProperties.Name="More about memory cards"
                                ToolTip="Each game installed gets a virtual memory card in OPL's VMC folder, named as OPL names it, and set in slot 1 of its OPL settings. 8 MB is the size of Sony's cards and holds any game's saves; larger cards only help games that share one, and some games accept only 8 MB. A card that is already on the PS2 is kept with its saves unless you choose to replace it." />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Top" Height="32" Orientation="Horizontal">
+                    <CheckBox VerticalAlignment="Center"
+                              Content="Check each game after installing"
+                              IsChecked="{Binding Ticks.CheckInstalls}" />
+                    <c:InfoTip Margin="8,0,0,0"
+                               AutomationProperties.Name="More about checking games"
+                               ToolTip="Loadout Bay reads the whole game back from the PS2's disk and compares every MiB with the image before the game counts as installed, and removes a copy that differs. This adds the time it takes to read the game back. While it runs, Skip the check keeps the game without the rest of it." />
                 </StackPanel>
                 <c:StatusPanel DockPanel.Dock="Top" Margin="0,12,0,0" Status="{Binding Status}" />
                 <Grid Margin="0,12,0,0">
@@ -560,10 +574,50 @@
                     <c:InfoTip Margin="8,0,0,0"
                                VerticalAlignment="Center"
                                AutomationProperties.Name="More about also install on PS2"
-                               ToolTip="Installs each disc on the PS2 as it is copied, with the Install page's options: artwork, memory cards and the install check. If the copy meets a weak area, that install is cancelled, Loadout Bay removes what it had, and the finished copy is installed instead." />
+                               ToolTip="Installs each disc on the PS2 as it is copied, with the ticks under Installs from this page: artwork, memory cards and the install check. If the copy meets a weak area, that install is cancelled, Loadout Bay removes what it had, and the finished copy is installed instead." />
                 </DockPanel>
+                <!-- This page's own install ticks, kept apart from the Install page's. -->
+                <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
+                    <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="INSTALLS FROM THIS PAGE" />
+                    <WrapPanel ItemHeight="32">
+                        <CheckBox VerticalAlignment="Center"
+                                  Content="Send each game's artwork"
+                                  IsChecked="{Binding Ticks.SendArtwork}" />
+                        <CheckBox Margin="24,0,0,0"
+                                  VerticalAlignment="Center"
+                                  Content="Give each game a memory card in OPL"
+                                  IsChecked="{Binding Ticks.CreateMemoryCards}" />
+                        <ComboBox Margin="12,0,0,0"
+                                  Width="80"
+                                  VerticalAlignment="Center"
+                                  AutomationProperties.Name="Memory card size for installs from this page"
+                                  ItemsSource="{Binding Ticks.MemoryCardSizes}"
+                                  ItemStringFormat="{}{0} MB"
+                                  SelectedItem="{Binding Ticks.MemoryCardSize}"
+                                  IsEnabled="{Binding Ticks.CreateMemoryCards}" />
+                        <CheckBox Margin="24,0,0,0"
+                                  VerticalAlignment="Center"
+                                  Content="Check each game after installing"
+                                  IsChecked="{Binding Ticks.CheckInstalls}" />
+                        <c:InfoTip Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   AutomationProperties.Name="More about installs from this page"
+                                   ToolTip="Also install on PS2 and Install on PS2 use these ticks, which are kept apart from the Install page's. Artwork and memory cards work as on the Install page. The check reads each game back from the PS2 and compares it before it counts as installed; Skip the check keeps a game without the rest of it." />
+                    </WrapPanel>
+                </StackPanel>
                 <Grid DockPanel.Dock="Top" Margin="0,12,0,0">
-                    <c:StatusPanel Status="{Binding Status}" />
+                    <c:StatusPanel Status="{Binding Status}">
+                        <c:StatusPanel.Style>
+                            <Style TargetType="c:StatusPanel" BasedOn="{StaticResource {x:Type c:StatusPanel}}">
+                                <Style.Triggers>
+                                    <!-- The text stops short of the Details link laid over the panel. -->
+                                    <DataTrigger Binding="{Binding HasDetails}" Value="True">
+                                        <Setter Property="EndSpace" Value="100" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </c:StatusPanel.Style>
+                    </c:StatusPanel>
                     <!-- After a copy ends: its report, every pass, failed read, rest and cleaning. -->
                     <TextBlock Margin="0,0,24,0"
                                HorizontalAlignment="Right"
@@ -607,6 +661,7 @@
                                           AutomationProperties.Name="Disc map from the centre to the edge"
                                           Visibility="{Binding HasMap, Converter={StaticResource VisibleWhenTrue}}"
                                           InstallBrush="{DynamicResource AppText}"
+                                          CheckBrush="{DynamicResource AppOk}"
                                           View="{Binding Map}"
                                           Describe="{Binding Describe}"
                                           NotReadBrush="{DynamicResource AppTrack}"
@@ -672,9 +727,14 @@
                             Command="{Binding InstallBackupCommand}" />
                     <Button Margin="8,0,0,0"
                             Content="Cancel ins_tall"
-                            ToolTip="Cancels the installs on the PS2 that this page started. Loadout Bay removes what it had of them."
+                            ToolTip="Cancels the installs on the PS2 that this page started. Loadout Bay removes what it had of them, during the check too."
                             Command="{Binding CancelInstallCommand}"
                             Visibility="{Binding IsInstallingOnPs2, Converter={StaticResource VisibleWhenTrue}}" />
+                    <Button Margin="8,0,0,0"
+                            Content="S_kip the check"
+                            ToolTip="Stops reading the game back and keeps it on the PS2, installed but not checked. Cancel install removes it instead."
+                            Command="{Binding SkipCheckCommand}"
+                            Visibility="{Binding CanSkipCheck, Converter={StaticResource VisibleWhenTrue}}" />
                 </DockPanel>
                 <Grid Margin="0,12,0,0">
                     <ListView AutomationProperties.Name="Backed-up discs"
@@ -1006,22 +1066,6 @@
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
-
-                            <ContentControl Content="{Binding InstallSection}" ContentTemplate="{StaticResource SettingsHeading}" Focusable="False" />
-                            <Grid Style="{StaticResource SettingsRow}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="180" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Style="{StaticResource FieldLabel}" Text="Check games" />
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <CheckBox Content="Check each game after installing" IsChecked="{Binding CheckInstalls}" />
-                                    <c:InfoTip Margin="8,0,0,0"
-                                               AutomationProperties.Name="More about checking games"
-                                               ToolTip="Loadout Bay reads the whole game back from the PS2's disk and compares every MiB with the image before the game counts as installed. Loadout Bay removes a copy that differs. This adds the time it takes to read the game back." />
-                                </StackPanel>
-                            </Grid>
-                            <TextBlock Style="{StaticResource SettingsNote}" Text="Reads the game back from the PS2 and compares it. Slower." />
 
                             <ContentControl Content="{Binding Backups}" ContentTemplate="{StaticResource SettingsHeading}" Focusable="False" />
                             <Grid Style="{StaticResource SettingsRow}">

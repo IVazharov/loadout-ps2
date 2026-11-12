@@ -9,6 +9,7 @@ using Loadout.Core;
 using Loadout.Images;
 using Loadout.Library;
 using Loadout.Metadata;
+using Loadout.Persistence;
 using Loadout.Vmc;
 
 namespace Loadout.App;
@@ -33,10 +34,9 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     private readonly ArtworkCache _artworkCache;
     private readonly ArtworkDownloader _artworkDownloader;
     private QueuePreviewItem[] _selection = [];
-    private bool _sendArtwork = true;
-    private bool _createMemoryCards;
-    private int _memoryCardSize = VmcImage.DefaultSize;
     private CancellationTokenSource? _install;
+    private BayCheckSkip? _checkSkip;
+    private bool _canSkipCheck;
     private CancellationTokenSource? _scan;
     private int _scansRunning;
     private int _generation;
@@ -52,8 +52,10 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         IDiscTitleCatalog titles,
         Func<Question, bool> confirm,
         ArtworkCache artworkCache,
-        ArtworkDownloader artworkDownloader)
+        ArtworkDownloader artworkDownloader,
+        InstallTicks ticks)
     {
+        Ticks = ticks ?? throw new ArgumentNullException(nameof(ticks));
         _artworkCache = artworkCache ?? throw new ArgumentNullException(nameof(artworkCache));
         _artworkDownloader = artworkDownloader ?? throw new ArgumentNullException(nameof(artworkDownloader));
         _titles = titles ?? throw new ArgumentNullException(nameof(titles));
@@ -66,6 +68,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         AddFolderCommand = new AsyncRelayCommand(() => AddFolderAsync(recursive: false), OnScanFailed);
         AddFolderRecursiveCommand = new AsyncRelayCommand(() => AddFolderAsync(recursive: true), OnScanFailed);
         CancelCommand = new RelayCommand(Cancel, () => _install is not null || _scansRunning > 0);
+        SkipCheckCommand = new RelayCommand(SkipCheck);
         RemoveCommand = new RelayCommand(RemoveSelected);
         InstallCommand = new AsyncRelayCommand(InstallAsync, OnInstallFailed);
         _status = QueueStatus();
@@ -80,6 +83,19 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand AddFolderRecursiveCommand { get; }
 
     public RelayCommand CancelCommand { get; }
+
+    /// <summary>Skips the rest of the running check: the game stays installed on the PS2, not checked.</summary>
+    public ICommand SkipCheckCommand { get; }
+
+    /// <summary>
+    /// True while Loadout Bay checks a game it says how far it has got with (0.11.0 and later), so the check can be
+    /// skipped. Cancel then cancels that game's install, and Loadout Bay removes it.
+    /// </summary>
+    public bool CanSkipCheck
+    {
+        get => _canSkipCheck;
+        private set => SetField(ref _canSkipCheck, value);
+    }
 
     public ICommand RemoveCommand { get; }
 
@@ -102,33 +118,8 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
 
     public bool HasSelection => _selection.Length > 0;
 
-    /// <summary>
-    /// When set, Loadout Bay reads each game back from its disk and compares it with what was sent
-    /// before the game counts as installed. Slower, and can be turned off in Settings.
-    /// </summary>
-    public bool CheckInstalls { get; set; }
-
-    /// <summary>When set, each game's artwork is downloaded first and sent once the game is installed. A game without any still installs.</summary>
-    public bool SendArtwork
-    {
-        get => _sendArtwork;
-        set => SetField(ref _sendArtwork, value);
-    }
-
-    /// <summary>When set, each game installed gets a virtual memory card in slot 1.</summary>
-    public bool CreateMemoryCards
-    {
-        get => _createMemoryCards;
-        set => SetField(ref _createMemoryCards, value);
-    }
-
-    public IReadOnlyList<int> MemoryCardSizes { get; } = VmcImage.Sizes;
-
-    public int MemoryCardSize
-    {
-        get => _memoryCardSize;
-        set => SetField(ref _memoryCardSize, value);
-    }
+    /// <summary>The page's ticks: artwork, memory cards and the check, which its installs use.</summary>
+    public InstallTicks Ticks { get; }
 
     public PageStatus Status
     {
@@ -385,23 +376,25 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await RunInstallAsync(host, queue, open: null, follow: null, CancellationToken.None);
+        await RunInstallAsync(host, queue, Ticks.Options, open: null, follow: null, CancellationToken.None);
     }
 
     /// <summary>
-    /// Installs one game for Back up discs, with this page's options (artwork, memory cards, the install check), as a row
-    /// of its queue. It waits for an install under way to end first, as Loadout Bay serves one connection at a time.
-    /// <paramref name="open"/>, when given, gives the game's sectors instead of its file: a disc copy still being read.
-    /// <paramref name="follow"/> gets its progress. Returns its result, or why it did not start.
+    /// Installs one game for Back up discs, with that page's own <paramref name="options"/> (artwork, memory cards, the
+    /// install check), as a row of this queue. It waits for an install under way to end first, as Loadout Bay serves one
+    /// connection at a time. <paramref name="open"/>, when given, gives the game's sectors instead of its file: a disc
+    /// copy still being read. <paramref name="follow"/> gets its progress. Returns its result, or why it did not start.
     /// </summary>
     public async Task<(BayQueueResult? Result, string? NotStarted)> InstallNowAsync(
         QueuePreviewItem item,
         Func<QueuePreviewItem, Stream>? open,
         Action<BayInstallStatus?> follow,
+        InstallOptions options,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(follow);
+        ArgumentNullException.ThrowIfNull(options);
         while (_install is not null)
         {
             // Null: waiting for the install under way.
@@ -428,7 +421,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         Publish();
         try
         {
-            var run = await RunInstallAsync(host, [item], open, follow, cancellationToken);
+            var run = await RunInstallAsync(host, [item], options, open, follow, cancellationToken);
             return (run is { Results.Count: > 0 } ? run.Results[0] : null, run is null ? "it could not start" : null);
         }
         catch (Exception ex) when (ex is LoadoutBayException or IOException or OperationCanceledException or System.Net.Sockets.SocketException)
@@ -453,6 +446,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     private async Task<BayQueueRun?> RunInstallAsync(
         string host,
         List<QueuePreviewItem> queue,
+        InstallOptions options,
         Func<QueuePreviewItem, Stream>? open,
         Action<BayInstallStatus?>? follow,
         CancellationToken cancellationToken)
@@ -470,8 +464,10 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         SetWorking();
         Status = PageStatus.Busy("Connecting to Loadout Bay", host);
         var clock = new Stopwatch();
+        var checkClock = new Stopwatch();
         var current = -1;
         var checking = false;
+        _checkSkip = new BayCheckSkip();
         var progress = new Progress<BayQueueProgress>(step =>
         {
             follow?.Invoke(step.Status);
@@ -486,23 +482,30 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
             // The last report after a check is not more sending: it would put the check's time in the speed.
             if (checking && !step.Status.Checking)
             {
+                CanSkipCheck = false;
                 return;
             }
 
+            if (step.Status.Checking && !checking)
+            {
+                checkClock.Restart();
+            }
+
             checking = step.Status.Checking;
-            ShowProgress(step, clock.Elapsed);
+            CanSkipCheck = checking && step.Status.CheckedBytes is not null;
+            ShowProgress(step, checking ? checkClock.Elapsed : clock.Elapsed);
         });
         try
         {
-            var cards = CreateMemoryCards ? await PlanMemoryCardsAsync(host, queue, _install.Token) : null;
-            var artwork = SendArtwork ? _artworkCache : null;
+            var cards = options.MemoryCards ? await PlanMemoryCardsAsync(host, queue, options.MemoryCardSize, _install.Token) : null;
+            var artwork = options.SendArtwork ? _artworkCache : null;
             if (artwork is not null)
             {
                 await DownloadArtworkAsync(queue, _install.Token);
             }
 
             run = await BayQueueInstaller.RunAsync(
-                host, queue, progress, CheckInstalls, memoryCards: cards, artwork: artwork, finished: new Progress<BayQueueResult>(result => ShowResult(result, reading)), open: open, cancellationToken: _install.Token);
+                host, queue, progress, options.Check, memoryCards: cards, artwork: artwork, finished: new Progress<BayQueueResult>(result => ShowResult(result, reading)), open: open, checkSkip: _checkSkip, cancellationToken: _install.Token);
             if (run.Library is not null)
             {
                 await _onLibraryRead(run.Library);
@@ -534,6 +537,9 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
 
             _install.Dispose();
             _install = null;
+            _checkSkip?.Dispose();
+            _checkSkip = null;
+            CanSkipCheck = false;
             OnPropertyChanged(nameof(IsInstalling));
             OnPropertyChanged(nameof(CanInstall));
             SetWorking();
@@ -541,6 +547,16 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
 
         _log.Add(Status.LogLine);
         return run;
+    }
+
+    /// <summary>Skips the rest of the running check, for Skip the check here and on Back up discs.</summary>
+    public void SkipCheck()
+    {
+        if (CanSkipCheck)
+        {
+            _checkSkip?.Skip();
+            _log.Add("Skipped the check of the game being installed: it stays on the PS2, not checked.");
+        }
     }
 
     private void MarkInstalling(QueuePreviewItem item, bool installing)
@@ -603,7 +619,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
 
     // Reads which games already have a card before anything is copied, so the user decides about those
     // once. Keeping them is the answer unless the user chooses Replace and then confirms it.
-    private async Task<MemoryCardRequest> PlanMemoryCardsAsync(string host, IReadOnlyList<QueuePreviewItem> queue, CancellationToken cancellationToken)
+    private async Task<MemoryCardRequest> PlanMemoryCardsAsync(string host, IReadOnlyList<QueuePreviewItem> queue, int size, CancellationToken cancellationToken)
     {
         Status = PageStatus.Busy("Reading the memory cards on the PS2", "So that a card already there keeps its saves unless you choose otherwise.");
         var plans = await BayMemoryCards.PlanAsync(host, queue, cancellationToken: cancellationToken);
@@ -618,7 +634,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
                 : "The install keeps " + Cards(there.Count) + " already on the PS2, with their saves.");
         }
 
-        return new MemoryCardRequest(MemoryCardSize, plans, replace);
+        return new MemoryCardRequest(size, plans, replace);
     }
 
     // Replace is not destructive yet (the next question confirms it), but it leads there, so Keep is the default.
@@ -657,12 +673,25 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     {
         const double Megabyte = 1024 * 1024;
         const double Gigabyte = 1024 * Megabyte;
-        // The PS2 doesn't report how far a check is, only its own screen shows it.
         if (step.Status.Checking)
         {
+            var headline = string.Create(CultureInfo.CurrentCulture, $"Checking {step.Index + 1} of {step.Count}: {step.Item.DetectedTitle}");
+            // A Loadout Bay older than 0.11.0 doesn't say how far its check is; only its own screen shows it.
+            if (step.Status.CheckedBytes is not { } checkedBytes)
+            {
+                Status = PageStatus.Busy(headline, "Loadout Bay reads it back; the PS2 shows how far.");
+                return;
+            }
+
+            var size = Math.Max((double)step.Status.TotalBytes, 1);
+            var pace = InstallBatchMeter.SettledMegabytesPerSecond(checkedBytes, elapsed);
+            var left = pace > 0
+                ? string.Create(CultureInfo.CurrentCulture, $" · {pace:0.0} MB/s · ") + Remaining(TimeSpan.FromSeconds((size - checkedBytes) / Megabyte / pace.Value)) + " left"
+                : "";
             Status = PageStatus.Busy(
-                string.Create(CultureInfo.CurrentCulture, $"Checking {step.Index + 1} of {step.Count}: {step.Item.DetectedTitle}"),
-                "Loadout Bay reads it back; the PS2 shows how far.");
+                headline,
+                string.Create(CultureInfo.CurrentCulture, $"Loadout Bay reads it back: {checkedBytes / Gigabyte:0.00} of {size / Gigabyte:0.00} GB{left}"),
+                checkedBytes * 100 / size);
             return;
         }
 

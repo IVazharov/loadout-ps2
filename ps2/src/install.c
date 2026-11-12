@@ -80,6 +80,26 @@ static u32 checksums[INSTALL_MAX_CHECKSUMS];
 static u8 read_back[DISK_CHUNK_BYTES] __attribute__((aligned(64)));
 static u32 crc_table[4][256];
 
+#define CHECK_STEP_CHUNKS 16
+
+static struct
+{
+    int running;
+    u32 part, done, block, in_block, crc, reported;
+    u64 read;
+} check;
+
+// How the check INSTALL_FINISH started ended, kept until the next install begins.
+static struct
+{
+    int known;
+    int status;
+    u32 bad_block;
+    int removed;
+    int skipped;
+    u64 read;
+} check_result;
+
 int install_open(void)
 {
     listener = wire_open_socket(SOCK_STREAM, INSTALL_DATA_PORT);
@@ -403,6 +423,7 @@ int install_begin(const struct install_game *game, char *name, u32 *parts)
     }
 
     refuse_waiting_connections();
+    check_result.known = 0;
     total_bytes = bytes;
     checking = (game->flags & INSTALL_FLAG_CHECK) != 0;
     checksum_count = checking ? blocks : 0;
@@ -621,82 +642,110 @@ static u32 crc_update(u32 crc, const u8 *data, u32 length)
     return crc;
 }
 
-// Reads the game back from the disk, part by part as it was written, and
-// compares the CRC-32C of each MiB with the one the PC sent.
-static int check_copy(status_report report, u32 *bad_block)
+// The check reads the game back from the disk, part by part as it was written,
+// and compares the CRC-32C of each MiB with the one the PC sent. It goes a chunk
+// at a time, so the check INSTALL_FINISH starts runs between Loadout's requests:
+// Loadout can ask how far it is, skip it, or cancel the install meanwhile.
+static void check_start(void)
 {
     crc_init();
-    u32 block = 0, in_block = 0, crc = 0xFFFFFFFFu;
-    u64 read = 0;
-    u32 reported = 0xFFFFFFFFu;
-    for (u32 part = 0; part < plan_count; part++)
+    check.running = 1;
+    check.part = 0;
+    check.done = 0;
+    check.block = 0;
+    check.in_block = 0;
+    check.crc = 0xFFFFFFFFu;
+    check.reported = 0xFFFFFFFFu;
+    check.read = 0;
+}
+
+// Checks the next chunk. Returns 0 while there is more, 1 once the whole game
+// matched, or a negative errno (-EILSEQ with *bad_block for a MiB that differs).
+static int check_chunk(status_report report, u32 *bad_block)
+{
+    while (check.part < plan_count && check.done >= plan[check.part].sectors)
     {
-        for (u32 done = 0; done < plan[part].sectors;)
+        check.part++;
+        check.done = 0;
+    }
+
+    if (check.part >= plan_count)
+    {
+        if (check.in_block > 0 && ~check.crc != checksums[check.block])
         {
-            u32 sectors = plan[part].sectors - done;
-            if (sectors > DISK_CHUNK_BYTES / DISK_SECTOR_BYTES)
+            *bad_block = check.block;
+            return -EILSEQ;
+        }
+
+        return 1;
+    }
+
+    u32 sectors = plan[check.part].sectors - check.done;
+    if (sectors > DISK_CHUNK_BYTES / DISK_SECTOR_BYTES)
+    {
+        sectors = DISK_CHUNK_BYTES / DISK_SECTOR_BYTES;
+    }
+
+    int status = disk_read(partition, check.part, plan[check.part].first_sector + check.done, sectors, read_back);
+    if (status < 0)
+    {
+        return status;
+    }
+
+    // A MiB can span two reads, and two parts.
+    u32 bytes = sectors * DISK_SECTOR_BYTES;
+    for (u32 at = 0; at < bytes;)
+    {
+        u32 take = bytes - at < INSTALL_CHECK_BLOCK_BYTES - check.in_block ? bytes - at
+                                                                           : INSTALL_CHECK_BLOCK_BYTES - check.in_block;
+        check.crc = crc_update(check.crc, read_back + at, take);
+        at += take;
+        check.in_block += take;
+        if (check.in_block == INSTALL_CHECK_BLOCK_BYTES)
+        {
+            if (~check.crc != checksums[check.block])
             {
-                sectors = DISK_CHUNK_BYTES / DISK_SECTOR_BYTES;
+                *bad_block = check.block;
+                return -EILSEQ;
             }
 
-            int status = disk_read(partition, part, plan[part].first_sector + done, sectors, read_back);
-            if (status < 0)
-            {
-                return status;
-            }
-
-            // A MiB can span two reads, and two parts.
-            u32 bytes = sectors * DISK_SECTOR_BYTES;
-            for (u32 at = 0; at < bytes;)
-            {
-                u32 take = bytes - at < INSTALL_CHECK_BLOCK_BYTES - in_block ? bytes - at : INSTALL_CHECK_BLOCK_BYTES - in_block;
-                crc = crc_update(crc, read_back + at, take);
-                at += take;
-                in_block += take;
-                if (in_block == INSTALL_CHECK_BLOCK_BYTES)
-                {
-                    if (~crc != checksums[block])
-                    {
-                        *bad_block = block;
-                        return -EILSEQ;
-                    }
-
-                    block++;
-                    in_block = 0;
-                    crc = 0xFFFFFFFFu;
-                }
-            }
-
-            done += sectors;
-            read += bytes;
-            u32 mb = (u32)(read / BYTES_PER_MB);
-            if (mb / 16 != reported)
-            {
-                reported = mb / 16;
-                char detail[48];
-                report(STATUS_CHECKING, format_progress(detail, sizeof(detail), mb, " read back"), permille(mb));
-            }
+            check.block++;
+            check.in_block = 0;
+            check.crc = 0xFFFFFFFFu;
         }
     }
 
-    if (in_block > 0 && ~crc != checksums[block])
+    check.done += sectors;
+    check.read += bytes;
+    u32 mb = (u32)(check.read / BYTES_PER_MB);
+    if (mb / 16 != check.reported)
     {
-        *bad_block = block;
-        return -EILSEQ;
+        check.reported = mb / 16;
+        char detail[48];
+        report(STATUS_CHECKING, format_progress(detail, sizeof(detail), mb, " read back"), permille(mb));
     }
 
     return 0;
 }
 
-int install_end(status_report report, u32 *bad_block, int *removed)
+// The whole check at once, for INSTALL_END.
+static int check_copy(status_report report, u32 *bad_block)
 {
-    *removed = 0;
-    if (!active)
+    check_start();
+    int status;
+    while ((status = check_chunk(report, bad_block)) == 0)
     {
-        return -ENOENT;
     }
 
-    // The PC sends INSTALL_END after its last byte, which may still be on its way.
+    check.running = 0;
+    return status > 0 ? 0 : status;
+}
+
+// After the PC's last byte: waits for what is still on its way, stops the
+// writer, and sees that the whole game and its checksums arrived.
+static int finish_data(status_report report)
+{
+    // The PC sends INSTALL_END (or INSTALL_FINISH) after its last byte, which may still be on its way.
     while (client >= 0)
     {
         fd_set readable;
@@ -731,11 +780,14 @@ int install_end(status_report report, u32 *bad_block, int *removed)
         status = -EPIPE;
     }
 
-    if (status == 0 && checking)
-    {
-        status = check_copy(report, bad_block);
-    }
+    return status;
+}
 
+// Ends the install: a game that got this far whole gets its header, which makes
+// it a game OPL lists; any other is removed. Reports the result on the screen.
+static int complete_install(int status, int skipped, status_report report, int *removed)
+{
+    *removed = 0;
     if (status == 0)
     {
         status = write_header_area(partition, header);
@@ -754,9 +806,144 @@ int install_end(status_report report, u32 *bad_block, int *removed)
         *removed = remove_partition(partition_name) >= 0;
     }
 
-    report(status == 0 ? STATUS_INSTALLED : status == -EILSEQ ? STATUS_CHECK_FAILED : STATUS_INSTALL_FAILED, NULL,
+    const char *detail = status == 0 && skipped ? "Not checked: the check was skipped."
+                         : status == -ECANCELED ? "Cancelled in Loadout. It was removed."
+                                                : NULL;
+    report(status == 0 ? STATUS_INSTALLED : status == -EILSEQ ? STATUS_CHECK_FAILED : STATUS_INSTALL_FAILED, detail,
            STATUS_NO_PROGRESS);
     return status;
+}
+
+int install_end(status_report report, u32 *bad_block, int *removed)
+{
+    *removed = 0;
+    if (!active)
+    {
+        return -ENOENT;
+    }
+
+    if (check.running)
+    {
+        return -EBUSY;
+    }
+
+    int status = finish_data(report);
+    if (status == 0 && checking)
+    {
+        status = check_copy(report, bad_block);
+    }
+
+    return complete_install(status, 0, report, removed);
+}
+
+int install_finish(status_report report, int *check_started, int *removed)
+{
+    *removed = 0;
+    *check_started = 0;
+    if (!active)
+    {
+        return -ENOENT;
+    }
+
+    if (check.running)
+    {
+        return -EBUSY;
+    }
+
+    int status = finish_data(report);
+    if (status == 0 && checking)
+    {
+        check_start();
+        check_result.known = 0;
+        *check_started = 1;
+        return 0;
+    }
+
+    return complete_install(status, 0, report, removed);
+}
+
+int install_checking(void)
+{
+    return check.running;
+}
+
+static void end_check(int status, u32 bad_block, int skipped, status_report report)
+{
+    check.running = 0;
+    check_result.read = check.read;
+    check_result.bad_block = bad_block;
+    check_result.skipped = skipped;
+    check_result.status = complete_install(status, skipped, report, &check_result.removed);
+    check_result.known = 1;
+}
+
+int install_check_step(status_report report)
+{
+    if (!check.running)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < CHECK_STEP_CHUNKS; i++)
+    {
+        u32 bad_block = 0;
+        int status = check_chunk(report, &bad_block);
+        if (status != 0)
+        {
+            end_check(status > 0 ? 0 : status, bad_block, 0, report);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+int install_check_status(struct install_check *out)
+{
+    if (check.running)
+    {
+        out->total = total_bytes;
+        out->checked = check.read;
+        out->ended = 0;
+        out->status = 0;
+        out->bad_block = 0;
+        out->removed = 0;
+        out->skipped = 0;
+        return 0;
+    }
+
+    if (!check_result.known)
+    {
+        return -ENOENT;
+    }
+
+    out->total = total_bytes;
+    out->checked = check_result.read;
+    out->ended = 1;
+    out->status = check_result.status;
+    out->bad_block = check_result.bad_block;
+    out->removed = check_result.removed;
+    out->skipped = check_result.skipped;
+    return 0;
+}
+
+int install_check_stop(int keep, status_report report)
+{
+    if (!check.running)
+    {
+        // It ended before the request came: its status says how.
+        return check_result.known ? 0 : -ENOENT;
+    }
+
+    end_check(keep ? 0 : -ECANCELED, 0, keep, report);
+    return 0;
+}
+
+void install_check_finish(status_report report)
+{
+    while (install_check_step(report) == 0 && check.running)
+    {
+    }
 }
 
 int install_busy(void)

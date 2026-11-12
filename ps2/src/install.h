@@ -75,11 +75,50 @@ int install_status(u64 *total, u64 *received, u64 *written);
 // when that worked.
 int install_end(status_report report, u32 *bad_block, int *removed);
 
+// As install_end, but a check doesn't run here: with INSTALL_FLAG_CHECK and the
+// whole game on the disk, it starts (check_started is then 1) and runs in
+// install_check_step between requests, the install staying open until it ends.
+// Without a check, the install ends here as with install_end.
+int install_finish(status_report report, int *check_started, int *removed);
+
+// True while a check install_finish started is running.
+int install_checking(void);
+
+// Checks a few chunks more of the running check, which ends the install once
+// the check ends, as install_end would. Returns 1 when it ended in this step.
+int install_check_step(status_report report);
+
+// Runs the check that install_finish started to its end, as when Loadout
+// disconnects during it: a game that checks out is installed.
+void install_check_finish(status_report report);
+
+struct install_check
+{
+    u64 total;
+    u64 checked;
+    int ended;
+    int status;
+    u32 bad_block;
+    int removed;
+    int skipped;
+};
+
+// How far the check install_finish started has got, or how it ended (status as
+// install_end's, skipped when Loadout skipped it). -ENOENT when there was none
+// since the last install began.
+int install_check_status(struct install_check *out);
+
+// Stops the running check: keep writes the header, so the game is installed
+// without the rest of its check; otherwise the install is cancelled and its
+// partitions removed. A check that already ended is left as it ended. Returns
+// 0, or -ENOENT when there was no check.
+int install_check_stop(int keep, status_report report);
+
 // Closes an open install without writing the header and removes its
 // partitions, as when Loadout disconnects.
 void install_abort(void);
 
-// True while an install is open, writing to the disk.
+// True while an install is open, writing to the disk or checking it.
 int install_busy(void);
 
 // Removes an incomplete install: a game partition named PP.<disc ID>.HDL.<title>

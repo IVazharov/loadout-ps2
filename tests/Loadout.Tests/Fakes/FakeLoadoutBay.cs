@@ -59,7 +59,19 @@ public sealed class FakeLoadoutBay : IDisposable
     /// <summary>How many failed or abandoned installs the fake removed.</summary>
     public int RemovedInstalls { get; private set; }
 
+    /// <summary>False answers INSTALL_FINISH as a Loadout Bay before 0.11.0: it doesn't know it.</summary>
+    public bool KnowsInstallFinish { get; set; } = true;
+
+    /// <summary>How many CHECK_STATUS answers a check that INSTALL_FINISH started stays running for.</summary>
+    public int CheckRunningReplies { get; set; }
+
+    /// <summary>The CHECK_STOP requests: true to keep the game, false to cancel its install.</summary>
+    public List<bool> CheckStops { get; } = [];
+
     private readonly MemoryStream _installed = new();
+    private bool _checkRunning;
+    private int _checkRepliesLeft;
+    private (int Status, uint BadBlock, bool Removed, bool Skipped)? _checkEnd;
     private bool _checking;
     private byte[] _checksums = [];
     private Task? _dataTask;
@@ -189,6 +201,9 @@ public sealed class FakeLoadoutBay : IDisposable
                 BayWire.CommandInstallBegin => InstallBegin(request),
                 BayWire.CommandInstallStatus => InstallStatus(),
                 BayWire.CommandInstallEnd => await InstallEndAsync(),
+                BayWire.CommandInstallFinish => await InstallFinishAsync(),
+                BayWire.CommandCheckStatus => CheckStatus(),
+                BayWire.CommandCheckStop => request.Length == 4 ? CheckStop(request) : (BayWire.StatusInvalid, []),
                 BayWire.CommandRemoveIncomplete => RemoveIncomplete(request),
                 BayWire.CommandDeleteGame => DeleteGame(request),
                 BayWire.CommandUpdateGame => UpdateGame(request),
@@ -681,17 +696,7 @@ public sealed class FakeLoadoutBay : IDisposable
             return (BayWire.StatusNotFound, []);
         }
 
-        try
-        {
-            await _dataTask.WaitAsync(TimeSpan.FromSeconds(10));
-        }
-        catch (Exception ex) when (ex is IOException or SocketException or TimeoutException or EndOfStreamException)
-        {
-            // The data connection broke or never came: the copy is short, as checked below.
-        }
-
-        _dataTask = null;
-        if (_installed.Length != _installTotal)
+        if (!await DataArrivedAsync())
         {
             return (BayWire.StatusBrokenPipe, Failure(0));
         }
@@ -701,7 +706,29 @@ public sealed class FakeLoadoutBay : IDisposable
             return (0, []);
         }
 
-        // Checked the way Loadout Bay reads the game back: one CRC-32C per MiB of what it holds.
+        var (status, badBlock) = CheckCopy();
+        return status == 0 ? (0, []) : (status, Failure(badBlock));
+    }
+
+    // Waits for the data connection to end; false when the copy came short.
+    private async Task<bool> DataArrivedAsync()
+    {
+        try
+        {
+            await _dataTask!.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or TimeoutException or EndOfStreamException)
+        {
+            // The data connection broke or never came: the copy is short, as checked below.
+        }
+
+        _dataTask = null;
+        return _installed.Length == _installTotal;
+    }
+
+    // Checked the way Loadout Bay reads the game back: one CRC-32C per MiB of what it holds.
+    private (int Status, uint BadBlock) CheckCopy()
+    {
         var held = _installed.ToArray();
         if (CorruptByteAt is long at)
         {
@@ -714,12 +741,98 @@ public sealed class FakeLoadoutBay : IDisposable
             var sum = Crc32C.Of(held.AsSpan(start, (int)Math.Min(BayWire.CheckBlockBytes, held.Length - start)));
             if (sum != BinaryPrimitives.ReadUInt32LittleEndian(_checksums.AsSpan(block * 4)))
             {
-                return (BayWire.StatusCopyDiffers, Failure((uint)block));
+                return (BayWire.StatusCopyDiffers, (uint)block);
             }
         }
 
         Checked++;
-        return (0, []);
+        return (0, 0);
+    }
+
+    // As Loadout Bay 0.11.0: with a check, the reply comes before it, and CHECK_STATUS follows it.
+    private async Task<(int Status, byte[] Payload)> InstallFinishAsync()
+    {
+        if (!KnowsInstallFinish)
+        {
+            return (BayWire.StatusNotImplemented, []);
+        }
+
+        if (_dataTask is null)
+        {
+            return (BayWire.StatusNotFound, []);
+        }
+
+        if (!await DataArrivedAsync())
+        {
+            return (BayWire.StatusBrokenPipe, Failure(0));
+        }
+
+        var payload = new byte[4];
+        if (_checking)
+        {
+            _checkRunning = true;
+            _checkEnd = null;
+            _checkRepliesLeft = CheckRunningReplies;
+            BinaryPrimitives.WriteUInt32LittleEndian(payload, 1);
+        }
+
+        return (0, payload);
+    }
+
+    // The check runs for CheckRunningReplies answers, each a step further, and ends at the next.
+    private (int Status, byte[] Payload) CheckStatus()
+    {
+        if (_checkRunning && _checkRepliesLeft-- <= 0)
+        {
+            var (status, badBlock) = CheckCopy();
+            EndCheck(status, badBlock, skipped: false);
+        }
+
+        return CheckReply();
+    }
+
+    private (int Status, byte[] Payload) CheckStop(byte[] request)
+    {
+        var keep = BinaryPrimitives.ReadUInt32LittleEndian(request) != 0;
+        CheckStops.Add(keep);
+        if (_checkRunning)
+        {
+            EndCheck(keep ? 0 : BayWire.StatusCancelled, 0, skipped: keep);
+        }
+
+        return CheckReply();
+    }
+
+    private void EndCheck(int status, uint badBlock, bool skipped)
+    {
+        _checkRunning = false;
+        var removed = status != 0 && RemovesFailedInstalls;
+        RemovedInstalls += removed ? 1 : 0;
+        _checkEnd = (status, badBlock, removed, skipped);
+    }
+
+    private (int Status, byte[] Payload) CheckReply()
+    {
+        if (!_checkRunning && _checkEnd is null)
+        {
+            return (BayWire.StatusNotFound, []);
+        }
+
+        var payload = new byte[BayWire.CheckStatusReplyBytes];
+        var steps = CheckRunningReplies + 1;
+        var done = CheckRunningReplies - Math.Max(_checkRepliesLeft, 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload, (ulong)_installTotal);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(8), _checkRunning ? (ulong)(_installTotal * done / steps) : (ulong)_installTotal);
+        if (_checkEnd is { } end)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(16), 1);
+            BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(20), end.Status);
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(24), end.BadBlock);
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(28), end.Removed ? 1u : 0u);
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(32), end.Skipped ? 1u : 0u);
+        }
+
+        return (0, payload);
     }
 
     // A failed install is removed, and the reply says whether that worked.

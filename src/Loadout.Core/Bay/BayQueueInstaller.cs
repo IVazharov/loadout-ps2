@@ -29,6 +29,44 @@ public sealed record BayQueueResult(QueuePreviewItem Item, BayInstallOutcome Out
 
     /// <summary>True when the install failed and Loadout Bay could not remove its partial copy, which is then an incomplete install.</summary>
     public bool PartialCopyLeft { get; init; }
+
+    /// <summary>True for a game installed without the rest of its check, which was skipped on request.</summary>
+    public bool CheckSkipped { get; init; }
+}
+
+/// <summary>Skips the check of the game being checked now, and only that one: the next game is checked as asked.</summary>
+public sealed class BayCheckSkip : IDisposable
+{
+    private readonly Lock _gate = new();
+    private CancellationTokenSource _current = new();
+
+    /// <summary>Skips the rest of the running check; the game is installed without it.</summary>
+    public void Skip()
+    {
+        lock (_gate)
+        {
+            _current.Cancel();
+        }
+    }
+
+    // A fresh token for the next game's install.
+    internal CancellationToken Next()
+    {
+        lock (_gate)
+        {
+            _current.Dispose();
+            _current = new CancellationTokenSource();
+            return _current.Token;
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _current.Dispose();
+        }
+    }
 }
 
 /// <summary>The game being installed: its place in the queue, and how far its copy is.</summary>
@@ -92,6 +130,7 @@ public static class BayQueueInstaller
         ArtworkCache? artwork = null,
         IProgress<BayQueueResult>? finished = null,
         Func<QueuePreviewItem, Stream>? open = null,
+        BayCheckSkip? checkSkip = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -163,9 +202,10 @@ public static class BayQueueInstaller
             try
             {
                 using var sectors = open?.Invoke(item) ?? IsoUserDataStream.Open(item.DataFile!);
-                var start = await bay.InstallAsync(request, sectors, report, dataPort, cancellationToken).ConfigureAwait(false);
+                var start = await bay.InstallAsync(request, sectors, report, dataPort, cancellationToken, checkSkip?.Next() ?? default).ConfigureAwait(false);
                 onPs2[request.DiscId] = new InstalledGameRow(start.PartitionName, request.Title, request.DiscId, 0, 0, 0, 0, 0);
-                var message = Name(item) + " was installed as " + start.PartitionName + ".";
+                var message = Name(item) + " was installed as " + start.PartitionName + "."
+                    + (start.CheckSkipped ? " It was not checked: its check was skipped." : string.Empty);
                 if (memoryCards?.Plans.FirstOrDefault(plan => plan.DiscId == request.DiscId) is { } plan)
                 {
                     try
@@ -188,7 +228,12 @@ public static class BayQueueInstaller
                     message += " " + note;
                 }
 
-                Add(new BayQueueResult(item, BayInstallOutcome.Installed, message) { ArtworkMissing = artworkMissing, PartitionName = start.PartitionName });
+                Add(new BayQueueResult(item, BayInstallOutcome.Installed, message)
+                {
+                    ArtworkMissing = artworkMissing,
+                    PartitionName = start.PartitionName,
+                    CheckSkipped = start.CheckSkipped,
+                });
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {

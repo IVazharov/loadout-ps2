@@ -1,4 +1,5 @@
 using Loadout.Core;
+using Loadout.Vmc;
 using Microsoft.Data.Sqlite;
 
 namespace Loadout.Persistence;
@@ -18,13 +19,18 @@ public enum ThemeChoice
 public sealed record AppSettings(
     string Ps2Host,
     ThemeChoice Theme,
-    bool CheckInstalls = true,
     bool CheckForUpdates = true,
     string BackupFolder = "")
 {
     public static AppSettings Defaults { get; } = new(
         string.Empty,
         ThemeChoice.System);
+
+    /// <summary>The Install page's ticks for its installs.</summary>
+    public InstallOptions InstallPage { get; init; } = InstallOptions.Defaults;
+
+    /// <summary>Back up discs' own ticks, for Also install on PS2 and Install on PS2 from its list.</summary>
+    public InstallOptions BackupPage { get; init; } = InstallOptions.Defaults;
 
     /// <summary>The address is an IPv4 address or empty (none set yet); host names are not kept.</summary>
     public void EnsureValid()
@@ -34,6 +40,18 @@ public sealed record AppSettings(
             throw new ArgumentException("The PS2 address must be four numbers from 0 to 255, such as 192.168.1.50.");
         }
     }
+}
+
+/// <summary>
+/// What a page's installs bring along: each game's artwork, a memory card of a size for each game, and the check,
+/// in which Loadout Bay reads the game back and compares it before it counts as installed.
+/// </summary>
+public sealed record InstallOptions(bool SendArtwork = true, bool MemoryCards = false, int MemoryCardSize = VmcImage.DefaultSize, bool Check = true)
+{
+    public static InstallOptions Defaults { get; } = new();
+
+    // A size OPL doesn't make is read as the usual one.
+    internal InstallOptions Valid() => VmcImage.Sizes.Contains(MemoryCardSize) ? this : this with { MemoryCardSize = VmcImage.DefaultSize };
 }
 
 public sealed class AppSettingsStore
@@ -68,6 +86,21 @@ public sealed class AppSettingsStore
 
         // Added with disc backups: empty until the first backup asks for a folder.
         SqliteFile.AddColumnIfMissing(connection, "app_settings", "backup_folder", "TEXT NOT NULL DEFAULT ''");
+
+        // Added in 0.11.0, when each page got its own ticks and the check left Settings: the Install page's artwork
+        // and memory cards are remembered now, and Back up discs starts with the check as it was set.
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "install_artwork", "INTEGER NOT NULL DEFAULT 1");
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "install_cards", "INTEGER NOT NULL DEFAULT 0");
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "install_card_size", $"INTEGER NOT NULL DEFAULT {VmcImage.DefaultSize}");
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "backup_artwork", "INTEGER NOT NULL DEFAULT 1");
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "backup_cards", "INTEGER NOT NULL DEFAULT 0");
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "backup_card_size", $"INTEGER NOT NULL DEFAULT {VmcImage.DefaultSize}");
+        if (SqliteFile.AddColumnIfMissing(connection, "app_settings", "backup_check", "INTEGER NOT NULL DEFAULT 1"))
+        {
+            using var carry = connection.CreateCommand();
+            carry.CommandText = "UPDATE app_settings SET backup_check = check_installs;";
+            carry.ExecuteNonQuery();
+        }
     }
 
     public AppSettings Load()
@@ -76,7 +109,8 @@ public sealed class AppSettingsStore
         using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT ps2_host, dark_mode, check_installs, theme, check_updates, backup_folder
+            SELECT ps2_host, dark_mode, check_installs, theme, check_updates, backup_folder,
+                   install_artwork, install_cards, install_card_size, backup_artwork, backup_cards, backup_card_size, backup_check
             FROM app_settings
             WHERE id = 1;
             """;
@@ -89,9 +123,12 @@ public sealed class AppSettingsStore
         return new AppSettings(
             reader.GetString(0),
             ReadTheme(reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(1) != 0),
-            reader.GetInt32(2) != 0,
             reader.GetInt32(4) != 0,
-            reader.GetString(5));
+            reader.GetString(5))
+        {
+            InstallPage = new InstallOptions(reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetInt32(8), reader.GetInt32(2) != 0).Valid(),
+            BackupPage = new InstallOptions(reader.GetInt32(9) != 0, reader.GetInt32(10) != 0, reader.GetInt32(11), reader.GetInt32(12) != 0).Valid(),
+        };
     }
 
     public bool HasRow()
@@ -115,23 +152,42 @@ public sealed class AppSettingsStore
                 check_installs = $check,
                 theme = $theme,
                 check_updates = $updates,
-                backup_folder = $backups
+                backup_folder = $backups,
+                install_artwork = $installArtwork,
+                install_cards = $installCards,
+                install_card_size = $installCardSize,
+                backup_artwork = $backupArtwork,
+                backup_cards = $backupCards,
+                backup_card_size = $backupCardSize,
+                backup_check = $backupCheck
             WHERE id = 1;
             """,
             """
             INSERT INTO app_settings (
-                id, ps2_host, chdman_path, cache_directory, dark_mode, check_installs, theme, check_updates, backup_folder)
-            VALUES (1, $host, '', '', $dark, $check, $theme, $updates, $backups);
+                id, ps2_host, chdman_path, cache_directory, dark_mode, check_installs, theme, check_updates, backup_folder,
+                install_artwork, install_cards, install_card_size, backup_artwork, backup_cards, backup_card_size, backup_check)
+            VALUES (1, $host, '', '', $dark, $check, $theme, $updates, $backups,
+                $installArtwork, $installCards, $installCardSize, $backupArtwork, $backupCards, $backupCardSize, $backupCheck);
             """,
             parameters =>
             {
                 parameters.AddWithValue("$host", settings.Ps2Host.Trim());
                 // Kept for an older Loadout opening the same file.
                 parameters.AddWithValue("$dark", settings.Theme == ThemeChoice.Light ? 0 : 1);
-                parameters.AddWithValue("$check", settings.CheckInstalls ? 1 : 0);
+                // The Install page's check, where Settings kept it before 0.11.0.
+                parameters.AddWithValue("$check", settings.InstallPage.Check ? 1 : 0);
                 parameters.AddWithValue("$theme", settings.Theme.ToString());
                 parameters.AddWithValue("$updates", settings.CheckForUpdates ? 1 : 0);
                 parameters.AddWithValue("$backups", settings.BackupFolder.Trim());
+                var install = settings.InstallPage.Valid();
+                var backup = settings.BackupPage.Valid();
+                parameters.AddWithValue("$installArtwork", install.SendArtwork ? 1 : 0);
+                parameters.AddWithValue("$installCards", install.MemoryCards ? 1 : 0);
+                parameters.AddWithValue("$installCardSize", install.MemoryCardSize);
+                parameters.AddWithValue("$backupArtwork", backup.SendArtwork ? 1 : 0);
+                parameters.AddWithValue("$backupCards", backup.MemoryCards ? 1 : 0);
+                parameters.AddWithValue("$backupCardSize", backup.MemoryCardSize);
+                parameters.AddWithValue("$backupCheck", backup.Check ? 1 : 0);
             });
     }
 

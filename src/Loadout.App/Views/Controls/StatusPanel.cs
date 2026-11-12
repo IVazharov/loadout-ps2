@@ -44,6 +44,9 @@ public sealed class StatusPanel : Control
 
     public static readonly DependencyProperty PercentTextProperty = PercentTextKey.DependencyProperty;
 
+    public static readonly DependencyProperty EndSpaceProperty = DependencyProperty.Register(
+        nameof(EndSpace), typeof(double), typeof(StatusPanel), new PropertyMetadata(0.0, (d, _) => ((StatusPanel)d).ApplyEndSpace()));
+
     private TextBlock? _headline;
     private TextBlock? _detail;
 
@@ -76,11 +79,39 @@ public sealed class StatusPanel : Control
     /// <summary>"62%", or empty while how far is not known.</summary>
     public string PercentText => (string)GetValue(PercentTextProperty);
 
+    /// <summary>Room the text leaves free at the panel's right end for something laid over it, such as a link; 0 for none.</summary>
+    public double EndSpace
+    {
+        get => (double)GetValue(EndSpaceProperty);
+        set => SetValue(EndSpaceProperty, value);
+    }
+
     public override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
         _headline = GetTemplateChild("PART_Headline") as TextBlock;
         _detail = GetTemplateChild("PART_Detail") as TextBlock;
+        ApplyEndSpace();
+        UpdateToolTip();
+    }
+
+    private void ApplyEndSpace()
+    {
+        foreach (var text in new[] { _headline, _detail })
+        {
+            if (text is null)
+            {
+                continue;
+            }
+
+            text.ClearValue(MarginProperty);
+            if (EndSpace > 0)
+            {
+                var margin = text.Margin;
+                text.Margin = new Thickness(margin.Left, margin.Top, Math.Max(margin.Right, EndSpace), margin.Bottom);
+            }
+        }
+
         UpdateToolTip();
     }
 

@@ -45,6 +45,12 @@ _Static_assert(MAX_REPLY_BYTES >= FILES_CHUNK_MAX && MAX_REPLY_BYTES >= 8 + FILE
 #define COMMAND_ELF_SAVE 21
 #define COMMAND_FILE_RUNS 22
 #define COMMAND_FILE_SPACE 23
+// New in 0.11.0, without a new protocol version: an older Loadout Bay answers
+// them -ENOSYS, and Loadout then ends the install with INSTALL_END.
+#define COMMAND_INSTALL_FINISH 24
+#define COMMAND_CHECK_STATUS 25
+#define COMMAND_CHECK_STOP 26
+#define CHECK_STATUS_REPLY_BYTES 40
 
 #define HELLO_REPLY_BYTES (24 + UPGRADE_TAG_BYTES)
 #define HELLO_FLAG_DISK 0x1u
@@ -484,9 +490,67 @@ static int install_end_request(u8 *out, u32 *out_length, status_report report)
     return status;
 }
 
+// As INSTALL_END, but with a check the reply comes at once (a u32 1: the check
+// is running; CHECK_STATUS says how it goes). A failure answers as INSTALL_END.
+static int install_finish_request(u8 *out, u32 *out_length, status_report report)
+{
+    int removed = 0;
+    int check_started = 0;
+    int status = install_finish(report, &check_started, &removed);
+    if (status != 0)
+    {
+        wire_write_u32(out, 0);
+        wire_write_u32(out + 4, (u32)removed);
+        *out_length = 8;
+        return status;
+    }
+
+    wire_write_u32(out, (u32)check_started);
+    *out_length = 4;
+    return 0;
+}
+
+// The game's size, the bytes checked, 1 once the check ended, then how it ended:
+// INSTALL_END's status, the first MiB that differs, whether a failed install was
+// removed, and whether Loadout skipped the rest of the check.
+static int write_check_status(u8 *out, u32 *out_length)
+{
+    struct install_check check;
+    int status = install_check_status(&check);
+    if (status != 0)
+    {
+        return status;
+    }
+
+    memset(out, 0, CHECK_STATUS_REPLY_BYTES);
+    wire_write_u64(out, check.total);
+    wire_write_u64(out + 8, check.checked);
+    wire_write_u32(out + 16, (u32)check.ended);
+    wire_write_u32(out + 20, (u32)check.status);
+    wire_write_u32(out + 24, check.bad_block);
+    wire_write_u32(out + 28, (u32)check.removed);
+    wire_write_u32(out + 32, (u32)check.skipped);
+    *out_length = CHECK_STATUS_REPLY_BYTES;
+    return 0;
+}
+
+// A u32: 1 keeps the game without the rest of its check, 0 cancels the install.
+// Answers as CHECK_STATUS, with how the install ended.
+static int check_stop_request(u32 length, u8 *out, u32 *out_length, status_report report)
+{
+    if (length != 4)
+    {
+        return -EINVAL;
+    }
+
+    int status = install_check_stop(wire_read_u32(request) != 0, report);
+    return status != 0 ? status : write_check_status(out, out_length);
+}
+
 // Serves requests until the PC disconnects, sends something that is not this
 // protocol, or stays idle. Returns the status line to show afterwards. While a
-// game is installed, its data connection is served in the same wait.
+// game is installed, its data connection is served in the same wait, and while
+// it is checked, the check goes on between requests.
 static const char *serve_requests(int fd, status_report report)
 {
     int greeted = 0;
@@ -497,10 +561,22 @@ static const char *serve_requests(int fd, status_report report)
         FD_ZERO(&readable);
         FD_SET(fd, &readable);
         int data = install_add_fds(&readable);
-        struct timeval wait = {IDLE_SECONDS, 0};
-        if (lwip_select((data > fd ? data : fd) + 1, &readable, NULL, NULL, &wait) <= 0)
+        int checking = install_checking();
+        struct timeval wait = {checking ? 0 : IDLE_SECONDS, 0};
+        int ready = lwip_select((data > fd ? data : fd) + 1, &readable, NULL, NULL, &wait);
+        if (ready < 0 || (ready == 0 && !checking))
         {
             return "Loadout was idle, so the connection was closed.";
+        }
+
+        if (ready == 0)
+        {
+            if (install_check_step(report))
+            {
+                disk_show_free();
+            }
+
+            continue;
         }
 
         install_serve_ready(&readable, report);
@@ -564,6 +640,15 @@ static const char *serve_requests(int fd, status_report report)
             case COMMAND_INSTALL_END:
                 status = length == 0 ? install_end_request(out, &out_length, report) : -EINVAL;
                 break;
+            case COMMAND_INSTALL_FINISH:
+                status = length == 0 ? install_finish_request(out, &out_length, report) : -EINVAL;
+                break;
+            case COMMAND_CHECK_STATUS:
+                status = length == 0 ? write_check_status(out, &out_length) : -EINVAL;
+                break;
+            case COMMAND_CHECK_STOP:
+                status = check_stop_request(length, out, &out_length, report);
+                break;
             case COMMAND_REMOVE_INCOMPLETE:
                 status = remove_incomplete(length);
                 break;
@@ -619,7 +704,8 @@ static const char *serve_requests(int fd, status_report report)
 
             // Before the reply: once it has an install's answer, Loadout starts sending and the disk is busy.
             if (command == COMMAND_INSTALL_BEGIN || command == COMMAND_INSTALL_END || command == COMMAND_REMOVE_INCOMPLETE
-                || command == COMMAND_DELETE_GAME)
+                || command == COMMAND_DELETE_GAME || command == COMMAND_CHECK_STOP
+                || (command == COMMAND_INSTALL_FINISH && !install_checking()))
             {
                 disk_show_free();
             }
@@ -641,10 +727,18 @@ static const char *serve_requests(int fd, status_report report)
 }
 
 // An install that Loadout leaves open is removed, and OPL's
-// partition is unmounted, so its files are all on the disk.
+// partition is unmounted, so its files are all on the disk. A game
+// left during its check is whole, so its check runs to the end, as
+// it did when the check answered INSTALL_END.
 static const char *serve_session(int fd, status_report report)
 {
     const char *result = serve_requests(fd, report);
+    if (install_checking())
+    {
+        install_check_finish(report);
+        disk_show_free();
+    }
+
     if (install_busy())
     {
         install_abort();
