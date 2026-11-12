@@ -41,6 +41,8 @@ A test name says what happens, in PascalCase, for example `ARefusedInstallSendsN
 
 Back up discs can be tried without a scratched disc: start Loadout with `--simulate-disc <image.iso>` and it offers a simulated drive S: holding that image, with two dirty stretches that need two cleanings (`--simulate-dirt 568320-568720,1482880-1483280` places them). It reads at about 40 MB/s, fails and rests as a real drive does but in seconds, and its tray closes by itself 8 s after Pause to clean the disc opens it. With an image that matches Redump, the copy ends matching it.
 
+For the other paths: `--simulate-disc "<a.iso>|<b.iso>"` gives a drive that holds the images in turn, the next one in it each time its tray closes (Keep going with a pile of discs; a cleaning then brings the next disc too). Each further `--simulate-disc` adds a drive, T: and so on. `--simulate-spinup <seconds>` makes the drives refuse to read for that long after a disc goes in and when Loadout starts, which shows "The drive can't read the disc yet". `--simulate-dirt 999999990-999999999` gives discs with no dirt.
+
 ## Writes to the PS2's hard disk
 
 A wrong write can corrupt the PS2's hard disk, so:

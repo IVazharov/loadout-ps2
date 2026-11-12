@@ -17,12 +17,22 @@ public sealed record StartOptions(string? UpdatedFrom, int? WaitFor, bool Reconn
     public const string ReconnectSwitch = "--reconnect";
     public const string SimulateDiscSwitch = "--simulate-disc";
     public const string SimulateDirtSwitch = "--simulate-dirt";
+    public const string SimulateSpinUpSwitch = "--simulate-spinup";
 
     /// <summary>A disc image for a simulated drive on Back up discs, for testing; null for the PC's own drives.</summary>
     public string? SimulatedDisc { get; init; }
 
     /// <summary>The simulated disc's dirty sectors, such as "568320-568720,1482880-1483280"; null for two default stretches.</summary>
     public string? SimulatedDirt { get; init; }
+
+    /// <summary>
+    /// Every --simulate-disc given: each is a simulated drive (S:, T:, ...), and one that names several images with |
+    /// between them holds them in turn, the next disc in it each time its tray closes.
+    /// </summary>
+    public IReadOnlyList<string> SimulatedDiscs { get; init; } = [];
+
+    /// <summary>--simulate-spinup: seconds a simulated drive refuses to read after a disc goes in; 0 for none.</summary>
+    public double SimulatedSpinUpSeconds { get; init; }
 
     public static StartOptions Current { get; private set; } = new(null, null, false);
 
@@ -34,6 +44,8 @@ public sealed record StartOptions(string? UpdatedFrom, int? WaitFor, bool Reconn
         var reconnect = false;
         string? simulated = null;
         string? dirt = null;
+        var discs = new List<string>();
+        double spinUp = 0;
         for (var i = 0; i < args.Count; i++)
         {
             if (args[i] == UpdatedFromSwitch && i + 1 < args.Count)
@@ -51,7 +63,13 @@ public sealed record StartOptions(string? UpdatedFrom, int? WaitFor, bool Reconn
             }
             else if (args[i] == SimulateDiscSwitch && i + 1 < args.Count)
             {
-                simulated = args[++i];
+                simulated ??= args[i + 1];
+                discs.Add(args[++i]);
+            }
+            else if (args[i] == SimulateSpinUpSwitch && i + 1 < args.Count
+                && double.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
+            {
+                spinUp = seconds;
             }
             else if (args[i] == SimulateDirtSwitch && i + 1 < args.Count)
             {
@@ -59,7 +77,7 @@ public sealed record StartOptions(string? UpdatedFrom, int? WaitFor, bool Reconn
             }
         }
 
-        return new StartOptions(from, waitFor, reconnect) { SimulatedDisc = simulated, SimulatedDirt = dirt };
+        return new StartOptions(from, waitFor, reconnect) { SimulatedDisc = simulated, SimulatedDirt = dirt, SimulatedDiscs = discs, SimulatedSpinUpSeconds = spinUp };
     }
 
     /// <summary>Reads this process's command line, and waits up to 20 s for the Loadout it replaced to close.</summary>

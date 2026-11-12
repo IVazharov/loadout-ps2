@@ -104,18 +104,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private static IDiscDrives Drives(OperationLog log)
     {
         var options = StartOptions.Current;
-        if (options.SimulatedDisc is not { } image)
+        if (options.SimulatedDiscs.Count == 0)
         {
             return new WindowsDiscDrives();
         }
 
         try
         {
-            var sectors = new System.IO.FileInfo(image).Length / DiscSectors.Size;
-            var dirt = options.SimulatedDirt is { } text ? SimulatedDiscDrives.ParseDirt(text) : SimulatedDiscDrives.DefaultDirt(sectors);
-            var drives = new SimulatedDiscDrives(image, dirt);
-            log.Add($"Back up discs uses a simulated drive {SimulatedDiscDrives.DriveName} for testing: {image}, dirty at sectors {string.Join(", ", dirt.Select(d => $"{d.From}-{d.To}"))}.");
-            return drives;
+            // One simulated drive for each --simulate-disc, S: first; one naming several images holds them in turn.
+            var drives = new List<IDiscDrives>();
+            for (var i = 0; i < options.SimulatedDiscs.Count; i++)
+            {
+                var images = options.SimulatedDiscs[i].Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var sectors = new System.IO.FileInfo(images[0]).Length / DiscSectors.Size;
+                var dirt = options.SimulatedDirt is { } text ? SimulatedDiscDrives.ParseDirt(text) : SimulatedDiscDrives.DefaultDirt(sectors);
+                var name = (char)('S' + i) + ":";
+                drives.Add(new SimulatedDiscDrives(images, dirt, name) { SpinUp = TimeSpan.FromSeconds(options.SimulatedSpinUpSeconds) });
+                log.Add($"Back up discs uses a simulated drive {name} for testing: {string.Join(" then ", images)}, dirty at sectors {string.Join(", ", dirt.Select(d => $"{d.From}-{d.To}"))}.");
+            }
+
+            return drives.Count == 1 ? drives[0] : new CombinedDiscDrives(drives);
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.IO.InvalidDataException or FormatException)
         {

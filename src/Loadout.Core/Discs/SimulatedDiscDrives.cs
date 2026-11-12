@@ -4,19 +4,25 @@ using System.Globalization;
 namespace Loadout.Discs;
 
 /// <summary>
-/// One simulated disc drive, S:, for trying Back up discs without a scratched disc: it reads a disc image (2048-byte
+/// One simulated disc drive, S: unless named otherwise, for trying Back up discs without a scratched disc: it reads a
+/// disc image (2048-byte
 /// sectors, such as a copy that matches Redump) the way the drive the copy was built on reads a scratched disc, only
 /// faster. A dirty stretch fails every read, slowly, and the drive then refuses to read for a moment; around it a weak
 /// band fails once and then reads. A cleaning clears the outer quarters of each dirty stretch, a second one the rest, so
 /// a copy needs two cleanings to complete. Eject opens the tray, which closes by itself a few seconds later with the
-/// disc cleaned.
+/// disc cleaned. Given several images, the drive holds them in turn: each time the tray closes, the next disc is in it
+/// (uncleaned), as when a pile of discs is backed up with Keep going. With <see cref="SpinUp"/>, the drive refuses to
+/// read for that long after a disc goes in, as a real drive does while it spins the disc up.
 /// </summary>
 public sealed class SimulatedDiscDrives : IDiscDrives
 {
     public const string DriveName = "S:";
 
     private readonly object _gate = new();
-    private readonly string _image;
+    private readonly IReadOnlyList<string> _images;
+    private readonly long[] _sizes;
+    private int _disc;
+    private TimeSpan _spinUpFrom;
     private readonly List<(long From, long To)> _dirty;
     private readonly HashSet<long> _weakBlocksFailed = [];
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -27,21 +33,68 @@ public sealed class SimulatedDiscDrives : IDiscDrives
     /// <param name="image">The disc image, 2048-byte sectors.</param>
     /// <param name="dirty">Stretches of sectors [From, To) that fail until cleaned.</param>
     public SimulatedDiscDrives(string image, IReadOnlyList<(long From, long To)> dirty)
+        : this([image], dirty)
     {
-        ArgumentException.ThrowIfNullOrEmpty(image);
-        ArgumentNullException.ThrowIfNull(dirty);
-        var length = new FileInfo(image).Length;
-        if (length == 0 || length % DiscSectors.Size != 0)
-        {
-            throw new InvalidDataException($"{image} is not a disc image of 2048-byte sectors.");
-        }
-
-        _image = image;
-        Sectors = length / DiscSectors.Size;
-        _dirty = [.. dirty.Where(d => d.From >= 0 && d.To > d.From && d.To <= Sectors).OrderBy(d => d.From)];
     }
 
-    public long Sectors { get; }
+    /// <param name="images">The discs the drive holds in turn, the first one in it now.</param>
+    /// <param name="dirty">Stretches of sectors [From, To) that fail until cleaned, on every disc.</param>
+    /// <param name="drive">The drive's name, such as S:.</param>
+    public SimulatedDiscDrives(IReadOnlyList<string> images, IReadOnlyList<(long From, long To)> dirty, string drive = DriveName)
+    {
+        ArgumentNullException.ThrowIfNull(images);
+        ArgumentNullException.ThrowIfNull(dirty);
+        ArgumentException.ThrowIfNullOrEmpty(drive);
+        if (images.Count == 0)
+        {
+            throw new ArgumentException("A simulated drive needs a disc image.", nameof(images));
+        }
+
+        _sizes = new long[images.Count];
+        for (var i = 0; i < images.Count; i++)
+        {
+            var length = new FileInfo(images[i]).Length;
+            if (length == 0 || length % DiscSectors.Size != 0)
+            {
+                throw new InvalidDataException($"{images[i]} is not a disc image of 2048-byte sectors.");
+            }
+
+            _sizes[i] = length / DiscSectors.Size;
+        }
+
+        _images = [.. images];
+        Drive = drive.TrimEnd('\\').ToUpperInvariant();
+        _dirty = [.. dirty.Where(d => d.From >= 0 && d.To > d.From && d.To <= _sizes.Max()).OrderBy(d => d.From)];
+    }
+
+    /// <summary>The drive's name, such as S:.</summary>
+    public string Drive { get; }
+
+    /// <summary>The disc in the drive now: its size in sectors.</summary>
+    public long Sectors
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _sizes[_disc];
+            }
+        }
+    }
+
+    /// <summary>How long the drive refuses to read after a disc goes in, and when Loadout starts; none by default.</summary>
+    public TimeSpan SpinUp { get; init; }
+
+    private string CurrentImage
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _images[_disc];
+            }
+        }
+    }
 
     /// <summary>Sectors either side of each dirty stretch that fail once.</summary>
     public int WeakBand { get; init; } = 2048;
@@ -108,14 +161,14 @@ public sealed class SimulatedDiscDrives : IDiscDrives
         return dirt;
     }
 
-    public IReadOnlyList<string> List() => [DriveName];
+    public IReadOnlyList<string> List() => [Drive];
 
     public string Fingerprint(string drive)
     {
         lock (_gate)
         {
             CloseTrayIfDue();
-            return !IsThis(drive) || _trayClosesAt is not null ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"simulated|{Sectors}|{_inserted}");
+            return !IsThis(drive) || _trayClosesAt is not null ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"simulated|{Drive}|{_disc}|{Sectors}|{_inserted}");
         }
     }
 
@@ -124,7 +177,7 @@ public sealed class SimulatedDiscDrives : IDiscDrives
         try
         {
             using var reader = Open(drive);
-            return new DiscInDrive(DriveName, DiscMedia.Dvd, Sectors, 1, 0, null, DiscIdentity.Read(reader));
+            return new DiscInDrive(Drive, DiscMedia.Dvd, reader.Sectors, 1, 0, null, DiscIdentity.Read(reader));
         }
         catch (IOException)
         {
@@ -165,7 +218,7 @@ public sealed class SimulatedDiscDrives : IDiscDrives
     {
         lock (_gate)
         {
-            if (_clock.Elapsed < _refuseUntil)
+            if (_clock.Elapsed < _refuseUntil || _clock.Elapsed < _spinUpFrom + SpinUp)
             {
                 failure = "The device is not ready.";
                 return true;
@@ -212,27 +265,39 @@ public sealed class SimulatedDiscDrives : IDiscDrives
         return true;
     }
 
-    private static bool IsThis(string drive) => string.Equals(drive.TrimEnd('\\'), DriveName, StringComparison.OrdinalIgnoreCase);
+    private bool IsThis(string drive) => string.Equals(drive.TrimEnd('\\'), Drive, StringComparison.OrdinalIgnoreCase);
 
-    // The tray closes by itself, the disc cleaned.
+    // The tray closes by itself: with the disc cleaned, or with the next disc in it when the drive holds several.
     private void CloseTrayIfDue()
     {
         if (_trayClosesAt is { } at && _clock.Elapsed >= at)
         {
             _trayClosesAt = null;
-            Cleanings++;
+            if (_images.Count > 1)
+            {
+                _disc = (_disc + 1) % _images.Count;
+                Cleanings = 0;
+                _weakBlocksFailed.Clear();
+            }
+            else
+            {
+                Cleanings++;
+            }
+
             _inserted++;
             _refuseUntil = TimeSpan.Zero;
+            _spinUpFrom = _clock.Elapsed;
         }
     }
 
     private sealed class Reader(SimulatedDiscDrives drives) : IDiscReader
     {
-        private readonly FileStream _file = new(drives._image, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
+        private readonly FileStream _file = new(drives.CurrentImage, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
+        private readonly long _sectors = drives.Sectors;
 
-        public string Name => DriveName;
+        public string Name => drives.Drive;
 
-        public long Sectors => drives.Sectors;
+        public long Sectors => _sectors;
 
         public DiscMedia Media => DiscMedia.Dvd;
 
@@ -247,7 +312,7 @@ public sealed class SimulatedDiscDrives : IDiscDrives
         public bool TryRead(long sector, Span<byte> destination, out string? failure)
         {
             var count = destination.Length / DiscSectors.Size;
-            if (sector < 0 || sector + count > drives.Sectors)
+            if (sector < 0 || sector + count > _sectors)
             {
                 failure = "The sector is past the end of the disc.";
                 return false;

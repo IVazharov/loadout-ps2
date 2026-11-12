@@ -135,6 +135,64 @@ public sealed class SimulatedDiscDrivesTests : IDisposable
         Assert.All(dirt, d => Assert.Equal(0, d.From % 16));
     }
 
+    [Fact]
+    public void ADriveGivenSeveralDiscsHasTheNextOneInItEachTimeItsTrayCloses()
+    {
+        var second = Path.Combine(_folder, "second.iso");
+        var other = new byte[2000 * DiscSectors.Size];
+        new Random(2000).NextBytes(other);
+        File.WriteAllBytes(second, other);
+        var drives = new SimulatedDiscDrives([_image, second], [], "T:") { BytesPerSecond = 0, TrayOpenFor = TimeSpan.Zero };
+        var buffer = new byte[DiscSectors.Size];
+
+        Assert.Equal(["T:"], drives.List());
+        Assert.Equal(Sectors, drives.Look("T:")!.Sectors);
+        var first = drives.Fingerprint("T:");
+        Assert.True(drives.TryEject("T:"));
+
+        Assert.NotEqual(first, drives.Fingerprint("T:"));
+        Assert.Equal(2000, drives.Look("T:")!.Sectors);
+        using (var reader = drives.Open("T:"))
+        {
+            Assert.Equal("T:", reader.Name);
+            Assert.True(reader.TryRead(5, buffer, out _));
+            Assert.Equal(other.AsSpan(5 * DiscSectors.Size, DiscSectors.Size).ToArray(), buffer);
+        }
+
+        Assert.True(drives.TryEject("T:"));
+        Assert.Equal(Sectors, drives.Look("T:")!.Sectors);
+        Assert.Equal(0, drives.Cleanings);
+    }
+
+    [Fact]
+    public void WhileTheDiscSpinsUpTheDriveRefusesToRead()
+    {
+        var drives = new SimulatedDiscDrives(_image, []) { BytesPerSecond = 0, SpinUp = TimeSpan.FromMinutes(5) };
+        using var reader = drives.Open("S:");
+        var buffer = new byte[DiscSectors.Size];
+
+        Assert.False(reader.TryRead(16, buffer, out var failure));
+        Assert.Equal("The device is not ready.", failure);
+        Assert.NotNull(drives.Look("S:"));
+        Assert.Null(drives.Look("S:")!.Identity);
+    }
+
+    [Fact]
+    public void CombinedDrivesSendEachCallToTheDriveNamed()
+    {
+        var s = new SimulatedDiscDrives(_image, []) { BytesPerSecond = 0, TrayOpenFor = TimeSpan.FromMinutes(5) };
+        var t = new SimulatedDiscDrives([_image], [], "T:") { BytesPerSecond = 0, TrayOpenFor = TimeSpan.FromMinutes(5) };
+        var both = new CombinedDiscDrives([s, t]);
+
+        Assert.Equal(["S:", "T:"], both.List());
+        Assert.True(both.IsSimulated);
+        Assert.True(both.TryEject("T:"));
+        Assert.NotEmpty(both.Fingerprint("S:"));
+        Assert.Empty(both.Fingerprint("T:"));
+        Assert.False(both.TryEject("E:"));
+        Assert.Throws<IOException>(() => both.Open("E:"));
+    }
+
     private SimulatedDiscDrives Drives(IReadOnlyList<(long From, long To)> dirt) =>
         new(_image, dirt) { FailureCost = TimeSpan.Zero, Lockout = TimeSpan.Zero, BytesPerSecond = 0, TrayOpenFor = TimeSpan.Zero, WeakBand = 64 };
 

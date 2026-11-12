@@ -19,6 +19,9 @@ namespace Loadout.App;
 public sealed record DriveDisc(DiscInDrive Disc, string Title)
 {
     public string Label => $"{Title} ({Disc.Identity?.DiscId?.Canonical}) in {Disc.Drive}";
+
+    // What a screen reader says for the item in the disc chooser, which shows the label too.
+    public override string ToString() => Label;
 }
 
 /// <summary>One item of the disc map's legend. Its amount changes in place, so the legend doesn't move as it counts.</summary>
@@ -617,10 +620,33 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private void Fail(Exception ex)
     {
         IsWorking = false;
-        Status = PageStatus.Error("The backup stopped", ex.Message);
-        _log.Add("Back up discs: " + ex.Message);
+        var why = StoppedBecause(ex);
+        Status = PageStatus.Error("The backup stopped", why);
+        _log.Add($"Back up discs: {why} ({UserFacingText.FirstLine(ex.Message)})");
         TaskbarState = TaskbarItemProgressState.Error;
-        Notify(BackupNoticeKind.Stopped, "The backup stopped", ex.Message);
+        Notify(BackupNoticeKind.Stopped, "The backup stopped", why);
+    }
+
+    // Why a copy stopped, in plain words, for the page and the notification; the log and the report keep Windows' own
+    // message too. What was read is kept, so each one ends with how to go on.
+    private string StoppedBecause(Exception ex)
+    {
+        const int DiskFull = unchecked((int)0x80070070);
+        const int HandleDiskFull = unchecked((int)0x80070027);
+        const int SharingViolation = unchecked((int)0x80070020);
+        const int LockViolation = unchecked((int)0x80070021);
+        const int NotReady = unchecked((int)0x80070015);
+        const int NotConnected = unchecked((int)0x8007048F);
+        const string GoOn = " What was read is kept: Resume this disc goes on from there.";
+        var folder = _settings.BackupFolder;
+        return ex switch
+        {
+            UnauthorizedAccessException => $"Loadout may not write in the backup folder, {folder}. Check the folder's permissions, or choose another one in Settings.{GoOn}",
+            IOException { HResult: DiskFull or HandleDiskFull } => $"The drive of the backup folder, {folder}, is full. Make room on it, or choose another folder in Settings.{GoOn}",
+            IOException { HResult: SharingViolation or LockViolation } => $"Another program has a file of this copy open. Close it.{GoOn}",
+            IOException { HResult: NotReady or NotConnected } => $"The disc drive stopped answering: was it unplugged? Plug it in again.{GoOn}",
+            _ => UserFacingText.Describe(ex.Message) + GoOn,
+        };
     }
 
     private void Notify(BackupNoticeKind kind, string title, string text) => Notice?.Invoke(this, new BackupNotice(kind, title, text));
@@ -731,7 +757,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             {
                 { Identity: null } => PageStatus.Idle(
                     "The drive can't read the disc yet",
-                    $"The drive in {drive} may still be resting after a failed read. Loadout tries the disc again in half a minute."),
+                    $"The drive in {drive} may still be spinning the disc up, or resting after a failed read. Loadout tries the disc again in half a minute."),
                 { IsPs2Game: false } => PageStatus.Idle("This is not a PS2 game disc", $"The disc in {drive} has no PS2 game on it."),
                 _ => PageStatus.Idle("Insert a PS2 disc", "Into a disc drive on this PC. Back up this disc copies it to a file here."),
             };
@@ -884,15 +910,16 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             follow?.Feed?.Break();
             _tick.Stop();
             IsWorking = false;
-            Status = PageStatus.Error("The backup stopped", ex.Message);
-            _log.Add($"Backing up {chosen.Title} stopped: {ex.Message}");
-            WriteReport(files, chosen, started, "Stopped: " + ex.Message);
+            var why = StoppedBecause(ex);
+            Status = PageStatus.Error("The backup stopped", why);
+            _log.Add($"Backing up {chosen.Title} stopped: {why} ({UserFacingText.FirstLine(ex.Message)})");
+            WriteReport(files, chosen, started, $"Stopped: {why} Windows said: {UserFacingText.FirstLine(ex.Message)}");
             _replacing = null;
             RefreshList();
             SelectCopy(files);
             SetDetails(files.Report);
             TaskbarState = TaskbarItemProgressState.Error;
-            Notify(BackupNoticeKind.Stopped, $"Backing up {chosen.Title} stopped", ex.Message);
+            Notify(BackupNoticeKind.Stopped, $"Backing up {chosen.Title} stopped", why);
             return;
         }
         finally
