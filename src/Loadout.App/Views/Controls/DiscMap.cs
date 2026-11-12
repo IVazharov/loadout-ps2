@@ -136,6 +136,9 @@ public abstract class DiscMapElement : FrameworkElement
     /// <summary>The sectors under a point, or null where there is no data.</summary>
     protected abstract (long From, long To)? SectorsAt(Point point);
 
+    /// <summary>The hover text for a marker under a point, which comes before the sectors' text; null where none is.</summary>
+    protected virtual string? MarkerTip(Point point) => null;
+
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
@@ -154,7 +157,7 @@ public abstract class DiscMapElement : FrameworkElement
     private void UpdateTip(Point point)
     {
         var sectors = SectorsAt(point);
-        var text = sectors is { } s && Describe is { } describe ? describe(s.From, s.To) : null;
+        var text = MarkerTip(point) ?? (sectors is { } s && Describe is { } describe ? describe(s.From, s.To) : null);
         _tip.Content = text;
         _tip.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
     }
@@ -162,15 +165,23 @@ public abstract class DiscMapElement : FrameworkElement
 
 /// <summary>
 /// The whole disc as one bar, centre at the left and edge at the right: each pixel shows the worst state of its sectors.
-/// Size marks every half GB under it, "Centre" and "Edge" at its ends, and a marker where the drive reads now.
+/// Size marks every half GB under it, "Centre" and "Edge" at its ends, a marker labelled DRIVE over it where the drive
+/// reads now, and one labelled PS2 under it where an install that follows the copy has got.
 /// </summary>
 public sealed class DiscMapBar : DiscMapElement
 {
-    private const double BarTop = 10;
+    // Over the bar: the drive's label, then its marker. The rows stay when no marker shows, so the page doesn't move.
+    private const double LabelRow = 12;
+    private const double LabelSize = 10;
+    private const double MarkerHeight = 10;
+    private const double BarTop = LabelRow + MarkerHeight;
     private const double BarHeight = 24;
 
-    // Under the bar: room for the PS2's marker, which the size labels sit below.
+    // Under the bar: room for the PS2's marker and its label, which the size labels sit below.
     private const double InstallBand = 10;
+
+    private Rect _driveMarker = Rect.Empty;
+    private Rect _installMarker = Rect.Empty;
 
     public static readonly DependencyProperty InstallBrushProperty = DependencyProperty.Register(
         nameof(InstallBrush), typeof(Brush), typeof(DiscMapBar),
@@ -178,7 +189,7 @@ public sealed class DiscMapBar : DiscMapElement
 
     public DiscMapBar()
     {
-        Height = BarTop + BarHeight + InstallBand + 17;
+        Height = BarTop + BarHeight + InstallBand + LabelRow + 17;
         SnapsToDevicePixels = true;
     }
 
@@ -203,10 +214,17 @@ public sealed class DiscMapBar : DiscMapElement
         return (from, Math.Min(to, view.Sectors));
     }
 
+    protected override string? MarkerTip(Point point) =>
+        _driveMarker.Contains(point) ? "DRIVE: where the drive reads now"
+        : _installMarker.Contains(point) ? "PS2: how far the install on the PS2 has got"
+        : null;
+
     protected override void OnRender(DrawingContext drawingContext)
     {
         var view = View;
         var width = (int)Math.Floor(ActualWidth);
+        _driveMarker = Rect.Empty;
+        _installMarker = Rect.Empty;
         if (width <= 0)
         {
             return;
@@ -247,26 +265,31 @@ public sealed class DiscMapBar : DiscMapElement
                         : (at / 1_000_000_000.0).ToString("0.#", CultureInfo.CurrentCulture) + " GB",
                     11);
                 var left = Math.Clamp(x - (label.Width / 2), 0, width - label.Width);
-                drawingContext.DrawText(label, new Point(left, BarTop + BarHeight + InstallBand));
+                drawingContext.DrawText(label, new Point(left, BarTop + BarHeight + InstallBand + LabelRow));
             }
 
-            // Where the drive reads now: a small amber triangle over the bar.
+            // Where the drive reads now: a small triangle over the bar, with DRIVE centred over it.
             if (view.CurrentSector >= 0 && view.CurrentSector < view.Sectors)
             {
                 var x = (double)view.CurrentSector / view.Sectors * width;
                 var marker = new StreamGeometry();
                 using (var context = marker.Open())
                 {
-                    context.BeginFigure(new Point(x - 5, 0), isFilled: true, isClosed: true);
-                    context.LineTo(new Point(x + 5, 0), isStroked: false, isSmoothJoin: false);
+                    context.BeginFigure(new Point(x - 5, LabelRow), isFilled: true, isClosed: true);
+                    context.LineTo(new Point(x + 5, LabelRow), isStroked: false, isSmoothJoin: false);
                     context.LineTo(new Point(x, BarTop - 1), isStroked: false, isSmoothJoin: false);
                 }
 
                 marker.Freeze();
                 drawingContext.DrawGeometry(MarkerBrush, null, marker);
+                var label = MarkerLabel("DRIVE", MarkerBrush);
+                var at = new Point(Math.Clamp(x - (label.Width / 2), 0, width - label.Width), LabelRow - label.Height);
+                drawingContext.DrawText(label, at);
+                _driveMarker = Rect.Union(new Rect(at, new Size(label.Width, label.Height)), new Rect(x - 6, LabelRow, 12, MarkerHeight));
             }
 
-            // How far the install on the PS2 has got: a small triangle under the bar, pointing up at it.
+            // How far the install on the PS2 has got: a small triangle under the bar, pointing up at it, with PS2 centred
+            // under it.
             if (view.InstallSector >= 0 && view.InstallSector <= view.Sectors)
             {
                 var x = Math.Min((double)view.InstallSector / view.Sectors * width, width - 1);
@@ -280,9 +303,27 @@ public sealed class DiscMapBar : DiscMapElement
 
                 marker.Freeze();
                 drawingContext.DrawGeometry(InstallBrush, null, marker);
+                var label = MarkerLabel("PS2", InstallBrush);
+                var at = new Point(Math.Clamp(x - (label.Width / 2), 0, width - label.Width), BarTop + BarHeight + InstallBand);
+                drawingContext.DrawText(label, at);
+                _installMarker = Rect.Union(new Rect(x - 6, BarTop + BarHeight, 12, InstallBand), new Rect(at, new Size(label.Width, label.Height)));
             }
         }
     }
+
+    // The markers' labels: the page's small capitals, smaller than the size marks, in the marker's colour.
+    private FormattedText MarkerLabel(string text, Brush brush) => new(
+        text,
+        CultureInfo.CurrentCulture,
+        FlowDirection.LeftToRight,
+        new Typeface(
+            (TryFindResource("FontCaps") as FontFamily) ?? new FontFamily("Segoe UI"),
+            FontStyles.Normal,
+            FontWeights.SemiBold,
+            FontStretches.Condensed),
+        LabelSize,
+        brush,
+        VisualTreeHelper.GetDpi(this).PixelsPerDip);
 }
 
 /// <summary>

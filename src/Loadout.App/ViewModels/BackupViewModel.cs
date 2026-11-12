@@ -237,7 +237,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     /// <summary>Saves a copy of the picked backup's report where the user chooses, for a problem report.</summary>
     public ICommand SaveReportCommand { get; }
 
-    /// <summary>A backup is picked in the list, so its report can be saved.</summary>
+    /// <summary>A backup is picked in the list, so its report can be shown or saved.</summary>
     public bool CanSaveReport => _selectedBackup is not null;
 
     /// <summary>Installs the backup picked in the list on the PS2 now, with the Install page's options.</summary>
@@ -472,6 +472,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasBackups));
         UpdateSameDisc();
     }
+
+    // The copy that just ended is picked in the list, so its buttons (Show report, Install on PS2) act on it.
+    private void SelectCopy(DiscBackupFiles files) =>
+        SelectedBackup = Backups.FirstOrDefault(b => string.Equals(b.Backup.Files.Image, files.Image, StringComparison.OrdinalIgnoreCase))
+            ?? SelectedBackup;
 
     private void Fail(Exception ex)
     {
@@ -737,6 +742,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _log.Add($"Backing up {chosen.Title} stopped: {ex.Message}");
             WriteReport(files, chosen, started, "Stopped: " + ex.Message);
             RefreshList();
+            SelectCopy(files);
             SetDetails(files.Report);
             TaskbarState = TaskbarItemProgressState.Error;
             Notify(BackupNoticeKind.Stopped, $"Backing up {chosen.Title} stopped", ex.Message);
@@ -778,6 +784,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _log.Add(string.Create(CultureInfo.CurrentCulture, $"Stopped backing up {chosen.Title} at {done:0.0}%."));
             WriteReport(files, chosen, started, string.Create(CultureInfo.InvariantCulture, $"Stopped at {done:0.0}%."));
             RefreshList();
+            SelectCopy(files);
             SetDetails(files.Report);
             TaskbarState = TaskbarItemProgressState.None;
             return;
@@ -866,6 +873,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _log.Add($"Backed up {name}: {CopySummary(backup.Files)}{line}.");
         WriteReport(backup.Files, chosen, started, "Complete: " + line + ".");
         RefreshList();
+        SelectCopy(backup.Files);
         SetDetails(backup.Files.Report);
         TaskbarState = TaskbarItemProgressState.None;
         if (_keepGoing)

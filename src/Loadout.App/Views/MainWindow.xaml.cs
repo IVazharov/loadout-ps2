@@ -38,6 +38,9 @@ public partial class MainWindow : LoadoutWindow
     // Where the window was last time, when that place is on a monitor that is still plugged in.
     private readonly WindowBounds? _lastBounds;
 
+    // The game lists whose empty space already unselects; a list is loaded again each time its page shows.
+    private readonly HashSet<ListView> _clearOnEmptyClick = [];
+
     public MainWindow()
     {
         InitializeComponent();
@@ -479,6 +482,30 @@ public partial class MainWindow : LoadoutWindow
         if (sender is ListView list)
         {
             GameColumnSort.Enable(list);
+            if (_clearOnEmptyClick.Add(list))
+            {
+                list.PreviewMouseLeftButtonDown += GameList_PreviewMouseLeftButtonDown;
+            }
         }
+    }
+
+    // A click on a list's empty space, under its rows, unselects everything, as in Explorer.
+    private static void GameList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListView list)
+        {
+            return;
+        }
+
+        for (var at = e.OriginalSource as DependencyObject; at is not null && at != list;
+             at = at is Visual ? VisualTreeHelper.GetParent(at) : LogicalTreeHelper.GetParent(at))
+        {
+            if (at is ListViewItem or GridViewColumnHeader or ScrollBar)
+            {
+                return;
+            }
+        }
+
+        list.UnselectAll();
     }
 }

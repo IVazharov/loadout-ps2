@@ -658,6 +658,7 @@
                     <Button Margin="8,0,0,0"
                             Content="Show _report"
                             ToolTip="Opens the selected copy's report: every pass, failed read and rest of its backup."
+                            IsEnabled="{Binding CanSaveReport}"
                             Command="{Binding ShowReportCommand}" />
                     <Button Margin="8,0,0,0"
                             Content="Sa_ve report…"
