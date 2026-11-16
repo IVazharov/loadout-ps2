@@ -17,6 +17,19 @@ public enum DiscBackupResult
     NotInRedump,
 }
 
+/// <summary>How a copy is kept on the PC.</summary>
+public enum DiscBackupFormat
+{
+    /// <summary>A DVD's 2048-byte sectors, as Redump keeps them.</summary>
+    Iso,
+
+    /// <summary>A CD's raw 2352-byte sectors and a cue sheet, as Redump keeps them.</summary>
+    BinCue,
+
+    /// <summary>Compressed as a chd, which reads back as the iso or the bin exactly.</summary>
+    Chd,
+}
+
 /// <summary>One backed-up disc as its files say.</summary>
 public sealed record DiscBackup(
     DiscBackupFiles Files,
@@ -29,6 +42,12 @@ public sealed record DiscBackup(
 {
     /// <summary>The copy's size: 2048 bytes a sector for a DVD, 2352 for a CD kept raw.</summary>
     public long Bytes => Sectors * (Files.IsCd ? 2352 : DiscSectors.Size);
+
+    /// <summary>How the copy is kept: an .iso, a CD's .bin and .cue, or a .chd.</summary>
+    public DiscBackupFormat Format { get; init; } = Files.IsCd ? DiscBackupFormat.BinCue : DiscBackupFormat.Iso;
+
+    /// <summary>What the copy takes on its drive: the chd, or the image (and a CD's cue).</summary>
+    public long BytesOnDisk { get; init; }
 }
 
 /// <summary>
@@ -61,8 +80,9 @@ public static class DiscBackupLibrary
     /// <summary>The backup whose files have this name, or null when its map is missing or can't be read.</summary>
     public static DiscBackup? Read(DiscBackupFiles files)
     {
-        // A CD copy is a .bin with a .cue; the name alone doesn't say which.
-        if (!files.IsCd && !File.Exists(files.Image) && File.Exists((files with { IsCd = true }).Image))
+        // A CD copy is a .bin with a .cue, or a chd that says it is a CD; the name alone doesn't say which.
+        if (!files.IsCd && !File.Exists(files.Image)
+            && (File.Exists((files with { IsCd = true }).Image) || IsCdChd(files.Chd)))
         {
             files = files with { IsCd = true };
         }
@@ -79,14 +99,65 @@ public static class DiscBackupLibrary
 
         var identity = DiscIdentity.TryParse(map.Identity, out var parsed) ? parsed : null;
         var image = new FileInfo(files.Image);
+
+        // A chd is only ever given its name once it reads back the same, so it is the copy even while the image it
+        // replaces waits to be removed.
+        var chd = new FileInfo(files.Chd);
+        var cue = new FileInfo(files.Cue);
         return new DiscBackup(
             files,
             identity,
             map.Sectors,
             map.ReadSectors,
             map.Cleanings,
-            map.IsComplete && image.Exists ? ResultFrom(files.Hashes) : DiscBackupResult.Incomplete,
-            image.Exists ? image.LastWriteTimeUtc : File.GetLastWriteTimeUtc(files.Map));
+            map.IsComplete && (image.Exists || chd.Exists) ? ResultFrom(files.Hashes) : DiscBackupResult.Incomplete,
+            chd.Exists ? chd.LastWriteTimeUtc : image.Exists ? image.LastWriteTimeUtc : File.GetLastWriteTimeUtc(files.Map))
+        {
+            Format = chd.Exists ? DiscBackupFormat.Chd : files.IsCd ? DiscBackupFormat.BinCue : DiscBackupFormat.Iso,
+            BytesOnDisk = chd.Exists ? chd.Length : image.Exists ? image.Length + (files.IsCd && cue.Exists ? cue.Length : 0) : 0,
+        };
+    }
+
+    /// <summary>
+    /// The copies whose compression to a chd was under way when Loadout last closed: each has its image and a mark that it
+    /// is to become a chd. A chd half written is removed; it is written again from the start.
+    /// </summary>
+    public static IReadOnlyList<DiscBackup> PendingCompression(string folder)
+    {
+        if (!Directory.Exists(folder))
+        {
+            return [];
+        }
+
+        var pending = new List<DiscBackup>();
+        foreach (var mark in Directory.EnumerateFiles(folder, "*" + DiscBackupFiles.ChdExtension + ".pending"))
+        {
+            var name = Path.GetFileName(mark)[..^(DiscBackupFiles.ChdExtension + ".pending").Length];
+            if (Read(new DiscBackupFiles(folder, name)) is { } backup)
+            {
+                pending.Add(backup);
+            }
+        }
+
+        return pending;
+    }
+
+    private static bool IsCdChd(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var chd = Images.ChdFile.Open(path);
+            return chd.Kind == Images.ChdImageKind.Cd;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -146,7 +217,7 @@ public static class DiscBackupLibrary
     }
 
     /// <summary>The mode of a raw CD copy's data sectors, from the header of its volume descriptor: 1 or 2 (PS2 CDs).</summary>
-    private static int CdMode(string bin)
+    internal static int CdMode(string bin)
     {
         using var file = File.OpenRead(bin);
         file.Position = (DiscSectors.VolumeDescriptor * 2352) + 15;
@@ -175,7 +246,7 @@ public static class DiscBackupLibrary
         };
     }
 
-    private static DiscImageHashes? ReadHashes(string path)
+    internal static DiscImageHashes? ReadHashes(string path)
     {
         try
         {

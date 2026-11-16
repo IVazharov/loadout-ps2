@@ -443,6 +443,31 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Whether a row being installed reads one of these files: a backup's image waits for it before it goes.</summary>
+    public bool IsReading(IReadOnlyCollection<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return _scanned.Any(row => row.Installing && Reads(row, paths));
+    }
+
+    /// <summary>
+    /// Takes out the rows waiting with one of these files, which are about to go: a backup's image once its chd is made.
+    /// Adding the backup folder again finds the chd.
+    /// </summary>
+    public void ForgetFiles(IReadOnlyCollection<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        if (_scanned.RemoveAll(row => !row.Installing && !row.InstalledFromQueue && Reads(row, paths)) > 0)
+        {
+            Publish();
+        }
+    }
+
+    private static bool Reads(QueuePreviewItem row, IReadOnlyCollection<string> paths) =>
+        new[] { row.SourceFile, row.DataFile }
+            .Concat(row.RelatedFiles)
+            .Any(file => file is not null && paths.Contains(file, StringComparer.OrdinalIgnoreCase));
+
     private async Task<BayQueueRun?> RunInstallAsync(
         string host,
         List<QueuePreviewItem> queue,

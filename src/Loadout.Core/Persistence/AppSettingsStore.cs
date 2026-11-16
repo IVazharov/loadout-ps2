@@ -32,6 +32,9 @@ public sealed record AppSettings(
     /// <summary>Back up discs' own ticks, for Also install on PS2 and Install on PS2 from its list.</summary>
     public InstallOptions BackupPage { get; init; } = InstallOptions.Defaults;
 
+    /// <summary>How Back up discs keeps its copies.</summary>
+    public BackupFormats BackupFormats { get; init; } = BackupFormats.Defaults;
+
     /// <summary>The address is an IPv4 address or empty (none set yet); host names are not kept.</summary>
     public void EnsureValid()
     {
@@ -52,6 +55,15 @@ public sealed record InstallOptions(bool SendArtwork = true, bool MemoryCards = 
 
     // A size OPL doesn't make is read as the usual one.
     internal InstallOptions Valid() => VmcImage.Sizes.Contains(MemoryCardSize) ? this : this with { MemoryCardSize = VmcImage.DefaultSize };
+}
+
+/// <summary>
+/// How Back up discs keeps its copies: a DVD as a chd (from the start) or an iso, a CD as a .bin and .cue (from the
+/// start) or a chd. A copy is an iso or a bin while it is made either way.
+/// </summary>
+public sealed record BackupFormats(bool DvdAsChd = true, bool CdAsChd = false)
+{
+    public static BackupFormats Defaults { get; } = new();
 }
 
 public sealed class AppSettingsStore
@@ -101,6 +113,9 @@ public sealed class AppSettingsStore
             carry.CommandText = "UPDATE app_settings SET backup_check = check_installs;";
             carry.ExecuteNonQuery();
         }
+
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "backup_dvd_chd", "INTEGER NOT NULL DEFAULT 1");
+        SqliteFile.AddColumnIfMissing(connection, "app_settings", "backup_cd_chd", "INTEGER NOT NULL DEFAULT 0");
     }
 
     public AppSettings Load()
@@ -110,7 +125,8 @@ public sealed class AppSettingsStore
         command.CommandText =
             """
             SELECT ps2_host, dark_mode, check_installs, theme, check_updates, backup_folder,
-                   install_artwork, install_cards, install_card_size, backup_artwork, backup_cards, backup_card_size, backup_check
+                   install_artwork, install_cards, install_card_size, backup_artwork, backup_cards, backup_card_size, backup_check,
+                   backup_dvd_chd, backup_cd_chd
             FROM app_settings
             WHERE id = 1;
             """;
@@ -128,6 +144,7 @@ public sealed class AppSettingsStore
         {
             InstallPage = new InstallOptions(reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetInt32(8), reader.GetInt32(2) != 0).Valid(),
             BackupPage = new InstallOptions(reader.GetInt32(9) != 0, reader.GetInt32(10) != 0, reader.GetInt32(11), reader.GetInt32(12) != 0).Valid(),
+            BackupFormats = new BackupFormats(reader.GetInt32(13) != 0, reader.GetInt32(14) != 0),
         };
     }
 
@@ -159,15 +176,19 @@ public sealed class AppSettingsStore
                 backup_artwork = $backupArtwork,
                 backup_cards = $backupCards,
                 backup_card_size = $backupCardSize,
-                backup_check = $backupCheck
+                backup_check = $backupCheck,
+                backup_dvd_chd = $dvdChd,
+                backup_cd_chd = $cdChd
             WHERE id = 1;
             """,
             """
             INSERT INTO app_settings (
                 id, ps2_host, chdman_path, cache_directory, dark_mode, check_installs, theme, check_updates, backup_folder,
-                install_artwork, install_cards, install_card_size, backup_artwork, backup_cards, backup_card_size, backup_check)
+                install_artwork, install_cards, install_card_size, backup_artwork, backup_cards, backup_card_size, backup_check,
+                backup_dvd_chd, backup_cd_chd)
             VALUES (1, $host, '', '', $dark, $check, $theme, $updates, $backups,
-                $installArtwork, $installCards, $installCardSize, $backupArtwork, $backupCards, $backupCardSize, $backupCheck);
+                $installArtwork, $installCards, $installCardSize, $backupArtwork, $backupCards, $backupCardSize, $backupCheck,
+                $dvdChd, $cdChd);
             """,
             parameters =>
             {
@@ -188,6 +209,8 @@ public sealed class AppSettingsStore
                 parameters.AddWithValue("$backupCards", backup.MemoryCards ? 1 : 0);
                 parameters.AddWithValue("$backupCardSize", backup.MemoryCardSize);
                 parameters.AddWithValue("$backupCheck", backup.Check ? 1 : 0);
+                parameters.AddWithValue("$dvdChd", settings.BackupFormats.DvdAsChd ? 1 : 0);
+                parameters.AddWithValue("$cdChd", settings.BackupFormats.CdAsChd ? 1 : 0);
             });
     }
 

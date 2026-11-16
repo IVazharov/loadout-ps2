@@ -37,10 +37,10 @@ public static class DiscBackupInstall
         };
     }
 
-    /// <summary>The file the Install page scans for a finished copy: the cue sheet of a CD, the image of a DVD.</summary>
+    /// <summary>The file the Install page scans for a finished copy: its chd when it has one, else a CD's cue sheet or a DVD's image.</summary>
     public static string ScanPath(DiscBackupFiles files)
     {
         ArgumentNullException.ThrowIfNull(files);
-        return files.IsCd ? files.Cue : files.Image;
+        return File.Exists(files.Chd) ? files.Chd : files.IsCd ? files.Cue : files.Image;
     }
 }

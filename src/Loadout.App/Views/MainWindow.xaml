@@ -576,6 +576,30 @@
                                AutomationProperties.Name="More about also install on PS2"
                                ToolTip="Installs each disc on the PS2 as it is copied, with the ticks under Installs from this page: artwork, memory cards and the install check. If the copy meets a weak area, that install is cancelled, Loadout Bay removes what it had, and the finished copy is installed instead." />
                 </DockPanel>
+                <!-- How this page keeps its copies. -->
+                <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
+                    <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="COPIES" />
+                    <WrapPanel ItemHeight="32">
+                        <TextBlock VerticalAlignment="Center" Style="{StaticResource Text.Body}" Text="Keep a DVD as" />
+                        <ComboBox Margin="8,0,0,0"
+                                  Width="90"
+                                  VerticalAlignment="Center"
+                                  AutomationProperties.Name="Keep a DVD as"
+                                  ItemsSource="{Binding Formats.DvdChoices}"
+                                  SelectedItem="{Binding Formats.DvdFormat}" />
+                        <TextBlock Margin="24,0,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Body}" Text="Keep a CD as" />
+                        <ComboBox Margin="8,0,0,0"
+                                  Width="90"
+                                  VerticalAlignment="Center"
+                                  AutomationProperties.Name="Keep a CD as"
+                                  ItemsSource="{Binding Formats.CdChoices}"
+                                  SelectedItem="{Binding Formats.CdFormat}" />
+                        <c:InfoTip Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   AutomationProperties.Name="More about how copies are kept"
+                                   ToolTip="A disc is always copied to an iso (a CD to a bin and cue), as Redump keeps it, and checked against Redump. Kept as a CHD, the finished copy is then compressed, about 40% smaller for a DVD, and read back to be sure it is the same; the iso or bin is then deleted. Loadout installs a CHD on the PS2 as it does an iso." />
+                    </WrapPanel>
+                </StackPanel>
                 <!-- This page's own install ticks, kept apart from the Install page's. -->
                 <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
                     <TextBlock Style="{StaticResource Text.Label}" Foreground="{DynamicResource AppLabel}" Text="INSTALLS FROM THIS PAGE" />
@@ -726,6 +750,11 @@
                             IsEnabled="{Binding CanSaveReport}"
                             Command="{Binding SaveReportCommand}" />
                     <Button Margin="8,0,0,0"
+                            Content="Convert to _CHD"
+                            ToolTip="Compresses the selected copy to a CHD and reads it back to be sure it is the same; the iso or bin then goes to the Recycle Bin."
+                            IsEnabled="{Binding CanConvert}"
+                            Command="{Binding ConvertCommand}" />
+                    <Button Margin="8,0,0,0"
                             Content="I_nstall on PS2"
                             ToolTip="Installs the selected copy on the PS2 now, with the Install page's options: artwork, memory cards and the install check."
                             IsEnabled="{Binding CanInstallBackup}"
@@ -778,6 +807,11 @@
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
+                                <GridViewColumn Header="Kept as"
+                                                DisplayMemberBinding="{Binding FormatLabel}"
+                                                c:TableColumns.Id="format"
+                                                c:TableColumns.MinWidth="64"
+                                                c:TableColumns.MaxAutoWidth="100" />
                                 <GridViewColumn Header="Date"
                                                 DisplayMemberBinding="{Binding DateLabel}"
                                                 c:TableColumns.Id="date"

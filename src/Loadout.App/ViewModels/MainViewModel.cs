@@ -67,7 +67,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             confirm,
             choose,
             () => [.. Installed.Games.Select(g => g.DiscId)],
-            new InstallTicks(stored.BackupPage, options => Settings.SaveInstallOptions(settings => settings with { BackupPage = options })));
+            new InstallTicks(stored.BackupPage, options => Settings.SaveInstallOptions(settings => settings with { BackupPage = options })),
+            new CopyFormats(stored.BackupFormats, formats => Settings.SaveInstallOptions(settings => settings with { BackupFormats = formats })));
         Pages =
         [
             new NavPage { Title = "Installed Games", Content = Installed, Number = 1 },

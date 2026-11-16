@@ -269,8 +269,8 @@ public sealed class SettingsViewModel : ObservableObject
     private string HelpNote => _host.Length == 0 ? EnterAddress : AddressHelp;
 
     /// <summary>
-    /// Keeps a page's install ticks (Install, Back up discs) as they are changed there; a failure goes to the Logs
-    /// page, as the page has no Saved mark of its own.
+    /// Keeps a page's own choices as they are changed there: the install ticks (Install, Back up discs) and how Back up
+    /// discs keeps its copies. A failure goes to the Logs page, as the page has no Saved mark of its own.
     /// </summary>
     public void SaveInstallOptions(Func<AppSettings, AppSettings> change)
     {
@@ -287,7 +287,7 @@ public sealed class SettingsViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is ArgumentException or SqliteException or IOException or UnauthorizedAccessException)
         {
-            _log.Add("Couldn't save the install options: " + ex.Message);
+            _log.Add("Couldn't save the page's options: " + ex.Message);
         }
     }
 

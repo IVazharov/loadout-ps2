@@ -93,6 +93,17 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public void BackupsAreKeptAsChdsForDvdsAndBinsForCdsUntilChosenOtherwise()
+    {
+        var store = new AppSettingsStore(Database);
+        Assert.Equal(new BackupFormats(DvdAsChd: true, CdAsChd: false), store.Load().BackupFormats);
+
+        store.Save(AppSettings.Defaults with { BackupFormats = new BackupFormats(DvdAsChd: false, CdAsChd: true) });
+
+        Assert.Equal(new BackupFormats(false, true), new AppSettingsStore(Database).Load().BackupFormats);
+    }
+
+    [Fact]
     public void AnInstallCheckTurnedOffBefore0110StaysOffOnBothPages()
     {
         // As Loadout 0.10.0 left the row: the check in check_installs, and no page options yet.

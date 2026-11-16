@@ -59,17 +59,45 @@ public enum BackupNoticeKind
 public sealed record BackupNotice(BackupNoticeKind Kind, string Title, string Text);
 
 /// <summary>One backed-up disc in the page's list.</summary>
-public sealed record BackupRow(DiscBackup Backup, bool OnPs2)
+public sealed class BackupRow(DiscBackup backup, bool onPs2) : ObservableObject
 {
+    private string? _activity;
+
+    public DiscBackup Backup { get; } = backup;
+
+    public bool OnPs2 { get; } = onPs2;
+
     public string Name => Backup.Files.Name;
 
-    public string SizeLabel => BackupViewModel.Size(Backup.Bytes);
+    /// <summary>What the copy takes on its drive.</summary>
+    public string SizeLabel => BackupViewModel.Size(Backup.BytesOnDisk > 0 ? Backup.BytesOnDisk : Backup.Bytes);
+
+    /// <summary>How the copy is kept: CHD, ISO or bin/cue.</summary>
+    public string FormatLabel => Backup.Format switch
+    {
+        DiscBackupFormat.Chd => CopyFormats.Chd,
+        DiscBackupFormat.BinCue => CopyFormats.BinCue,
+        _ => CopyFormats.Iso,
+    };
 
     public string DateLabel => Backup.ModifiedUtc.ToLocalTime().ToString("d MMM yyyy", CultureInfo.CurrentCulture);
 
     public DiscBackupResult Result => Backup.Result;
 
-    public string ResultLabel => Backup.Result switch
+    /// <summary>The copy being compressed, or waiting to be: said in place of its result until that is done.</summary>
+    public string? Activity
+    {
+        get => _activity;
+        set
+        {
+            if (SetField(ref _activity, value))
+            {
+                OnPropertyChanged(nameof(ResultLabel));
+            }
+        }
+    }
+
+    public string ResultLabel => _activity ?? Backup.Result switch
     {
         DiscBackupResult.MatchesRedump => "Matches Redump",
         DiscBackupResult.DoesNotMatchRedump => "Doesn't match",
@@ -80,7 +108,7 @@ public sealed record BackupRow(DiscBackup Backup, bool OnPs2)
 
     public string OnPs2Label => OnPs2 ? "Yes" : "";
 
-    public override string ToString() => Name + ", " + ResultLabel;
+    public override string ToString() => Name + ", " + FormatLabel + ", " + ResultLabel;
 }
 
 /// <summary>
@@ -150,6 +178,14 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private bool _stallTold;
     private Ps2Install? _following;
 
+    // Copies in line to become a chd, and the one being compressed: one at a time, beside any copy being made.
+    private readonly List<Compression> _compressions = [];
+    private Compression? _compressing;
+    private string _compressingText = string.Empty;
+    private CancellationTokenSource? _compressStop;
+    private Task? _compressRun;
+    private Task? _compressCore;
+
     public BackupViewModel(
         IDiscDrives drives,
         OperationLog log,
@@ -160,9 +196,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         Func<Question, bool> confirm,
         Func<Question, int?> choose,
         Func<IReadOnlyCollection<string>> installedDiscIds,
-        InstallTicks ticks)
+        InstallTicks ticks,
+        CopyFormats formats)
     {
         Ticks = ticks ?? throw new ArgumentNullException(nameof(ticks));
+        Formats = formats ?? throw new ArgumentNullException(nameof(formats));
         _drives = drives ?? throw new ArgumentNullException(nameof(drives));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -180,6 +218,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         DeleteCommand = new RelayCommand(DeletePicked);
         ShowReportCommand = new RelayCommand(ShowReport);
         InstallBackupCommand = new RelayCommand(InstallSelected);
+        ConvertCommand = new RelayCommand(ConvertSelected);
         DetailsCommand = new RelayCommand(ShowDetails);
         SaveReportCommand = new RelayCommand(SaveReport);
         CancelInstallCommand = new RelayCommand(CancelInstalls);
@@ -194,9 +233,11 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             if (e.PropertyName == nameof(SettingsViewModel.BackupFolder))
             {
                 RefreshList();
+                ResumeCompressions();
             }
         };
         RefreshList();
+        ResumeCompressions();
         _poll.Start();
         _ = PollAsync();
     }
@@ -271,6 +312,18 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     /// <summary>This page's own install ticks (artwork, memory cards, the check), for every install it starts.</summary>
     public InstallTicks Ticks { get; }
 
+    /// <summary>How this page keeps its copies: a DVD as a chd or an iso, a CD as a bin and cue or a chd.</summary>
+    public CopyFormats Formats { get; }
+
+    /// <summary>Compresses the copy picked in the list to a chd; once it reads back the same, its iso or bin goes to the Recycle Bin.</summary>
+    public ICommand ConvertCommand { get; }
+
+    /// <summary>One complete copy that isn't a chd yet is picked, and it isn't being made or compressed.</summary>
+    public bool CanConvert => Single is { Result: not DiscBackupResult.Incomplete } row
+        && row.Backup.Format != DiscBackupFormat.Chd
+        && !IsCompressing(row.Name)
+        && !(_working && _current is { } current && Same(current.Files.Name, row.Name));
+
     /// <summary>Cancels the installs on the PS2 this page started; Loadout Bay removes what it had of them.</summary>
     public ICommand CancelInstallCommand { get; }
 
@@ -281,12 +334,21 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     public bool IsInstallingOnPs2 => _ps2.Count > 0;
 
     /// <summary>The backup that closing Loadout would stop, said for the question before it closes; null when none runs.</summary>
-    public string? RunningBackup =>
-        _working && _current is { } current
-            ? $"A backup of {current.Disc.Title} is running. Closing stops it, and Resume this disc goes on from there next time."
-            : _cleaning is { } cleaning
-                ? $"The backup of {cleaning.Title} waits for the cleaned disc. Closing stops it, and Resume this disc goes on from there next time."
+    public string? RunningBackup
+    {
+        get
+        {
+            var backup = _working && _current is { } current
+                ? $"A backup of {current.Disc.Title} is running. Closing stops it, and Resume this disc goes on from there next time."
+                : _cleaning is { } cleaning
+                    ? $"The backup of {cleaning.Title} waits for the cleaned disc. Closing stops it, and Resume this disc goes on from there next time."
+                    : null;
+            var compressing = _compressing is { } job
+                ? $"{job.Files.Name} is being compressed. Closing stops that{(job.Interim ? ", and it starts again next time." : "; the copy stays as it is.")}"
                 : null;
+            return backup is null ? compressing : compressing is null ? backup : backup + " " + compressing;
+        }
+    }
 
     /// <summary>
     /// When on, each disc is installed on the PS2 as it is copied, with the Install page's options; when the copy meets a
@@ -484,6 +546,16 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
             WriteReport(current.Files, current.Disc, current.Started, "Stopped: Loadout was closed.");
         }
+
+        // The chd half written is removed; an interim one starts again next time, from its mark.
+        _compressStop?.Cancel();
+        try
+        {
+            _compressCore?.Wait(TimeSpan.FromSeconds(10));
+        }
+        catch (AggregateException)
+        {
+        }
     }
 
     /// <summary>Reads the backup folder again: after a copy, or when the folder changed.</summary>
@@ -504,9 +576,10 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         var incomplete = backups.Count(b => b.Result == DiscBackupResult.Incomplete);
         Summary = backups.Count == 0
             ? string.Empty
-            : string.Create(CultureInfo.CurrentCulture, $"{backups.Count} DISC{(backups.Count == 1 ? "" : "S")} · {Size(backups.Sum(b => b.Bytes)).ToUpperInvariant()}{(verified > 0 ? $" · {verified} VERIFIED" : "")}{(incomplete > 0 ? $" · {incomplete} INCOMPLETE" : "")}");
+            : string.Create(CultureInfo.CurrentCulture, $"{backups.Count} DISC{(backups.Count == 1 ? "" : "S")} · {Size(backups.Sum(b => b.BytesOnDisk > 0 ? b.BytesOnDisk : b.Bytes)).ToUpperInvariant()}{(verified > 0 ? $" · {verified} VERIFIED" : "")}{(incomplete > 0 ? $" · {incomplete} INCOMPLETE" : "")}");
         OnPropertyChanged(nameof(HasBackups));
         UpdateSameDisc();
+        ShowCompressing();
     }
 
     // Back up again's Replace, once the new copy is complete: the earlier copy goes to the Recycle Bin and the new one
@@ -520,6 +593,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         }
 
         _replacing = null;
+        _compressions.RemoveAll(c => Same(c.Files.Name, old.Files.Name));
         if (old.Result == DiscBackupResult.MatchesRedump && backup.Result != DiscBackupResult.MatchesRedump)
         {
             _log.Add($"Kept {old.Files.Name}, which matches Redump, beside the new copy {backup.Files.Name}, which doesn't.");
@@ -556,6 +630,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanSaveReport));
         OnPropertyChanged(nameof(CanInstallBackup));
         OnPropertyChanged(nameof(CanDelete));
+        OnPropertyChanged(nameof(CanConvert));
     }
 
     // Delete: one question for all the picked copies, then their files go to the Recycle Bin. The copy being made is left.
@@ -576,6 +651,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
+        var compressing = _compressing is { } job ? rows.FirstOrDefault(r => Same(r.Name, job.Files.Name)) : null;
+        if (compressing is not null)
+        {
+            Status = PageStatus.Warn(compressing.Name + " is being compressed", "It can be deleted once that is done, in a few minutes.");
+            return;
+        }
+
         var size = Size(rows.Sum(r => r.Backup.Bytes));
         var one = rows.Count == 1;
         if (!_confirm(new Question(
@@ -591,6 +673,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return;
         }
 
+        _compressions.RemoveAll(c => rows.Any(r => Same(r.Name, c.Files.Name)));
         var failed = new List<string>();
         foreach (var row in rows)
         {
@@ -865,6 +948,12 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _replacing = picked == 1 ? first : null;
         }
 
+        if (!RoomToCompress(chosen, folder, resume is not null))
+        {
+            _replacing = null;
+            return;
+        }
+
         var files = resume?.Files ?? DiscBackupFiles.Unused(folder, DiscBackupFiles.NameFor(chosen.Title, identity.DiscId), isCd: chosen.Disc.Media == DiscMedia.Cd);
         var follow = _alsoInstall ? StartFollowing(chosen, identity, files, resume) : null;
         _following = follow;
@@ -976,6 +1065,315 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         if (_alsoInstall && (follow is null || (follow.Feed!.IsBroken && !follow.CancelledHere && !follow.CopyStopped)))
         {
             _ = InstallFinishedAsync(backup, byTick: true);
+        }
+
+        if (Formats.ChdFor(backup.Files.IsCd))
+        {
+            Compress(backup, interim: true);
+        }
+    }
+
+    // Before a copy that is to become a chd: its drive needs room for the image and, while it is compressed, for a chd up
+    // to as big beside it. Asks when it may not have that; without the room the copy is kept as an iso or a bin and cue.
+    private bool RoomToCompress(DriveDisc chosen, string folder, bool resume)
+    {
+        var cd = chosen.Disc.Media == DiscMedia.Cd;
+        if (!Formats.ChdFor(cd))
+        {
+            return true;
+        }
+
+        long free;
+        try
+        {
+            free = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+
+        var bytes = chosen.Disc.Sectors * (cd ? 2352L : DiscSectors.Size);
+        if (free >= (resume ? 0 : bytes) + bytes)
+        {
+            return true;
+        }
+
+        return _confirm(new Question(
+            "There may not be room to compress this copy",
+            $"The copy of {chosen.Title} takes {Size(bytes)}, and while it is compressed its chd is made beside it, which can take as much again. "
+                + $"The drive of the backup folder has {Size(free)} free. Without the room, the copy is kept as {(cd ? "a bin and cue" : "an iso")}, and Convert to CHD compresses it later.",
+            "_Back up anyway",
+            "Cancel",
+            QuestionKind.Warn));
+    }
+
+    // Puts a complete copy in line to become a chd. An interim one (kept as an iso or bin only until its chd is made) is
+    // marked, so compressing it starts again after Loadout was closed.
+    private void Compress(DiscBackup backup, bool interim)
+    {
+        var files = backup.Files;
+        if (IsCompressing(files.Name))
+        {
+            return;
+        }
+
+        if (interim)
+        {
+            try
+            {
+                File.WriteAllText(files.ChdPending, string.Empty);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _log.Add($"{files.Name} could not be marked to be compressed: {ex.Message}");
+            }
+        }
+
+        _compressions.Add(new Compression(files, backup.Identity, interim));
+        ShowCompressing();
+        if (_compressRun is null || _compressRun.IsCompleted)
+        {
+            _compressRun = CompressAllAsync();
+        }
+    }
+
+    private bool IsCompressing(string name) =>
+        (_compressing is { } now && Same(now.Files.Name, name)) || _compressions.Any(c => Same(c.Files.Name, name));
+
+    private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    private async Task CompressAllAsync()
+    {
+        try
+        {
+            while (!_closed && _compressions.Count > 0)
+            {
+                var job = _compressions[0];
+                _compressions.RemoveAt(0);
+                _compressing = job;
+                _compressingText = "Compressing…";
+                using var stop = new CancellationTokenSource();
+                _compressStop = stop;
+                ShowCompressing();
+                try
+                {
+                    await CompressOneAsync(job, stop.Token).ConfigureAwait(true);
+                }
+                finally
+                {
+                    _compressStop = null;
+                    _compressing = null;
+                }
+            }
+        }
+        finally
+        {
+            if (!_closed)
+            {
+                RefreshList();
+            }
+        }
+    }
+
+    private async Task CompressOneAsync(Compression job, CancellationToken stop)
+    {
+        var files = job.Files;
+        var kind = files.IsCd ? "bin" : "iso";
+        var keptAs = files.IsCd ? "a bin and cue" : "an iso";
+        var started = DateTime.Now;
+        string result;
+        try
+        {
+            DiscBackupCompression? made = null;
+            if (!File.Exists(files.Chd))
+            {
+                _log.Add($"Compressing {files.Name} to a chd.");
+                var progress = new Progress<double>(share =>
+                {
+                    var text = string.Create(CultureInfo.CurrentCulture, $"Compressing… {share * 100:0}%");
+                    if (text != _compressingText && _compressing is not null)
+                    {
+                        _compressingText = text;
+                        ShowCompressing();
+                    }
+                });
+                var core = DiscBackupCompressor.CompressAsync(files, progress, stop);
+                _compressCore = core;
+                made = await core.ConfigureAwait(true);
+            }
+
+            var removed = await RemoveUncompressedAsync(job, stop).ConfigureAwait(true);
+            result = made is null
+                ? "The chd was made already" + removed
+                : string.Create(CultureInfo.CurrentCulture, $"The chd is {Size(made.ChdBytes)}, {100.0 * made.ChdBytes / made.ImageBytes:0}% of the {kind}, and reads back the same{removed}");
+            _log.Add($"Compressed {files.Name}: {result}");
+            if (!_working && _cleaning is null)
+            {
+                Status = PageStatus.Ok("Compressed " + files.Name, result);
+            }
+        }
+        catch (OperationCanceledException) when (_closed)
+        {
+            // Its mark stays: compressing it starts again when Loadout next starts.
+            return;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException)
+        {
+            const int DiskFull = unchecked((int)0x80070070);
+            const int HandleDiskFull = unchecked((int)0x80070027);
+            result = ex switch
+            {
+                IOException { HResult: DiskFull or HandleDiskFull } =>
+                    $"There was not enough room on its drive to compress it, so it is kept as {keptAs}. Convert to CHD compresses it once there is room.",
+                OperationCanceledException => $"Compressing it stopped, so it is kept as {keptAs}.",
+                InvalidDataException => $"Its chd did not read back the same as the copy, so it is kept as {keptAs}.",
+                _ => $"It could not be compressed ({UserFacingText.FirstLine(ex.Message)}), so it is kept as {keptAs}.",
+            };
+            _log.Add($"{files.Name}: {result}");
+            if (!_working && _cleaning is null)
+            {
+                Status = PageStatus.Warn(files.Name + " was not compressed", result);
+            }
+        }
+        finally
+        {
+            _compressCore = null;
+        }
+
+        TryDelete(files.ChdPending);
+        AppendReport(files, started, "Compressing to " + Path.GetFileName(files.Chd), result);
+    }
+
+    // The image the chd took the place of goes once nothing installs from it: deleted for good when it was only the copy
+    // being made, sent to the Recycle Bin when it was kept as it was. Returns the end of the report's sentence.
+    private async Task<string> RemoveUncompressedAsync(Compression job, CancellationToken stop)
+    {
+        var files = job.Files;
+        var paths = files.Uncompressed.Where(File.Exists).ToList();
+        if (paths.Count == 0)
+        {
+            return ".";
+        }
+
+        while (InUse(job, paths))
+        {
+            if (_compressingText != "Compressed; waits for the install")
+            {
+                _compressingText = "Compressed; waits for the install";
+                ShowCompressing();
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(5), stop).ConfigureAwait(true);
+        }
+
+        _installer.ForgetFiles(paths);
+        var kind = files.IsCd ? "bin and cue" : "iso";
+        try
+        {
+            if (job.Interim)
+            {
+                foreach (var path in paths)
+                {
+                    File.Delete(path);
+                }
+
+                return $": the {kind} it was made from is deleted.";
+            }
+
+            BackupRecycler.Recycle(paths);
+            return $": the {kind} is in the Recycle Bin.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            return $", but the {kind} could not be removed ({UserFacingText.FirstLine(ex.Message)}), so both are kept.";
+        }
+    }
+
+    // An install on the PS2 this page started is of the same disc, or a row of the Install page's queue reads the files.
+    private bool InUse(Compression job, IReadOnlyCollection<string> paths) =>
+        _ps2.Any(install => install.Identity is { } of && job.Identity is { } identity && of.IsSameDisc(identity))
+        || _installer.IsReading(paths);
+
+    // The copy being compressed says how far it is, in place of its result; one waiting says so.
+    private void ShowCompressing()
+    {
+        foreach (var row in Backups)
+        {
+            row.Activity = _compressing is { } now && Same(now.Files.Name, row.Name)
+                ? _compressingText
+                : _compressions.Any(c => Same(c.Files.Name, row.Name)) ? "Waiting to compress" : null;
+        }
+
+        OnPropertyChanged(nameof(CanConvert));
+    }
+
+    private void ConvertSelected()
+    {
+        if (CanConvert && Single is { } row)
+        {
+            _log.Add($"Converting {row.Name} to a chd.");
+            Compress(row.Backup, interim: false);
+        }
+    }
+
+    // Compressing that closing Loadout stopped starts again; any chd half written is removed first.
+    private void ResumeCompressions()
+    {
+        var folder = _settings.BackupFolder;
+        if (folder.Length == 0 || !Directory.Exists(folder))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var part in Directory.EnumerateFiles(folder, "*" + DiscBackupFiles.ChdExtension + ".part"))
+            {
+                var name = Path.GetFileName(part)[..^(DiscBackupFiles.ChdExtension + ".part").Length];
+                if (!IsCompressing(name))
+                {
+                    TryDelete(part);
+                }
+            }
+
+            foreach (var backup in DiscBackupLibrary.PendingCompression(folder))
+            {
+                if (backup.Result == DiscBackupResult.Incomplete)
+                {
+                    TryDelete(backup.Files.ChdPending);
+                    continue;
+                }
+
+                Compress(backup, interim: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Add("Copies left to compress could not be looked for: " + ex.Message);
+        }
+    }
+
+    private void AppendReport(DiscBackupFiles files, DateTime started, string what, string result)
+    {
+        try
+        {
+            File.AppendAllText(files.Report, string.Create(CultureInfo.InvariantCulture, $"== {what}, started {started:yyyy-MM-dd HH:mm:ss}\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {result}\n\n"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Add($"The report of {files.Name} could not be written: {ex.Message}");
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
         }
     }
 
@@ -1710,6 +2108,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>An install on the PS2 this page started: one following a copy (with a feed), or one of a finished copy.</summary>
+    // A copy in line to become a chd. An interim one was only an iso or bin until its chd is made, and that goes for good.
+    private sealed record Compression(DiscBackupFiles Files, DiscIdentity? Identity, bool Interim);
+
     private sealed class Ps2Install(DiscIdentity? identity, DiscCopyFeed? feed, bool byTick) : IDisposable
     {
         public DiscIdentity? Identity { get; } = identity;

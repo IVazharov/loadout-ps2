@@ -5,8 +5,8 @@ namespace Loadout.Discs;
 
 /// <summary>
 /// The files of one backed-up disc, all named after it in one folder: the copy (.iso for a DVD; .bin and .cue for a CD, as
-/// Redump keeps them), its report (.report.txt), its hashes (.hashes.txt), its map for going on (.map) and the map as a
-/// picture (.map.png).
+/// Redump keeps them; or a .chd in their place), its report (.report.txt), its hashes (.hashes.txt), its map for going on
+/// (.map) and the map as a picture (.map.png).
 /// </summary>
 public sealed record DiscBackupFiles(string Folder, string Name, bool IsCd = false)
 {
@@ -14,10 +14,25 @@ public sealed record DiscBackupFiles(string Folder, string Name, bool IsCd = fal
 
     public const string CdImageExtension = ".bin";
 
+    public const string ChdExtension = ".chd";
+
+    /// <summary>The copy as it is read: an .iso, or a CD's .bin. A copy kept as a chd has it only until the chd is made.</summary>
     public string Image => Path.Combine(Folder, Name + (IsCd ? CdImageExtension : ImageExtension));
 
     /// <summary>A CD's cue sheet, which names its .bin.</summary>
     public string Cue => Path.Combine(Folder, Name + ".cue");
+
+    /// <summary>The copy compressed, which takes the place of the .iso, or of a CD's .bin and .cue, once it reads back the same.</summary>
+    public string Chd => Path.Combine(Folder, Name + ChdExtension);
+
+    /// <summary>A chd being written; it becomes <see cref="Chd"/> once it reads back the same as the copy.</summary>
+    public string ChdPart => Path.Combine(Folder, Name + ChdExtension + ".part");
+
+    /// <summary>Says the copy is to become a chd, so that compressing it starts again after Loadout was closed.</summary>
+    public string ChdPending => Path.Combine(Folder, Name + ChdExtension + ".pending");
+
+    /// <summary>The files a chd takes the place of: the .iso, or a CD's .bin and .cue.</summary>
+    public IReadOnlyList<string> Uncompressed => IsCd ? [Image, Cue] : [Image];
 
     public string Report => Path.Combine(Folder, Name + ".report.txt");
 
@@ -27,7 +42,9 @@ public sealed record DiscBackupFiles(string Folder, string Name, bool IsCd = fal
 
     public string MapPicture => Path.Combine(Folder, Name + ".map.png");
 
-    public IReadOnlyList<string> All => IsCd ? [Image, Cue, Report, Hashes, Map, MapPicture] : [Image, Report, Hashes, Map, MapPicture];
+    public IReadOnlyList<string> All => IsCd
+        ? [Image, Cue, Chd, ChdPart, ChdPending, Report, Hashes, Map, MapPicture]
+        : [Image, Chd, ChdPart, ChdPending, Report, Hashes, Map, MapPicture];
 
     /// <summary>A one-track CD's cue sheet as Redump writes it, so it matches Redump's .cue byte for byte.</summary>
     public string CueText(int mode) => $"FILE \"{Name}{CdImageExtension}\" BINARY\r\n  TRACK 01 MODE{mode}/2352\r\n    INDEX 01 00:00:00\r\n";
