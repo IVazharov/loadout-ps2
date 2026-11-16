@@ -256,6 +256,42 @@ internal static class ChdCdEcc
         }
     }
 
+    /// <summary>Whether the sector's sync bytes and both parities are exactly what Restore puts back.</summary>
+    public static bool Verify(ReadOnlySpan<byte> sector)
+    {
+        if (!sector[..Sync.Length].SequenceEqual(Sync))
+        {
+            return false;
+        }
+
+        for (var row = 0; row < ParityPBytes; row++)
+        {
+            var (first, second) = Compute(sector, ParityP.AsSpan(row * ParityPComponents, ParityPComponents));
+            if (sector[ParityPOffset + row] != first || sector[ParityPOffset + ParityPBytes + row] != second)
+            {
+                return false;
+            }
+        }
+
+        for (var row = 0; row < ParityQBytes; row++)
+        {
+            var (first, second) = Compute(sector, ParityQ.AsSpan(row * ParityQComponents, ParityQComponents));
+            if (sector[ParityQOffset + row] != first || sector[ParityQOffset + ParityQBytes + row] != second)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Clears what Restore puts back: the sync bytes and both parities.</summary>
+    public static void Clear(Span<byte> sector)
+    {
+        sector[..Sync.Length].Clear();
+        sector[ParityPOffset..(ParityQOffset + (2 * ParityQBytes))].Clear();
+    }
+
     private static (byte First, byte Second) Compute(ReadOnlySpan<byte> sector, ReadOnlySpan<int> offsets)
     {
         byte first = 0;

@@ -22,6 +22,7 @@ const string Usage =
     is the one PFS Shell lists for LOADOUT.SPEEDTEST, in decimal or 0x hex.
 
            Loadout.SpeedTest read-image <image>
+           Loadout.SpeedTest write-chd <iso>|<bin> <chd> [--cd <MODE2_RAW|MODE1_RAW>] [--threads <n>]
 
     Reads a game image's 2048-byte sectors the way an install sends them, and prints their SHA-256 and
     how fast they were read. A chd is decoded as it is read, with nothing written to the disk.
@@ -241,6 +242,50 @@ if (args[0] == "disc-map" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))
 {
     var result = DiscCommands.Map(args[1], args[2..]);
     return result == 2 ? UsageError() : result;
+}
+
+if (args[0] == "write-chd")
+{
+    string? trackType = null;
+    var threads = Math.Max(1, Environment.ProcessorCount / 2);
+    for (var index = 3; index < args.Length; index += 2)
+    {
+        if (index + 1 >= args.Length || args[index] is not ("--cd" or "--threads"))
+        {
+            return UsageError();
+        }
+
+        if (args[index] == "--cd")
+        {
+            trackType = args[index + 1];
+        }
+        else
+        {
+            threads = int.Parse(args[index + 1], CultureInfo.InvariantCulture);
+        }
+    }
+
+    // As Back up discs makes a chd: then read back, as it checks one, with the SHA-1 Redump lists.
+    var clock = System.Diagnostics.Stopwatch.StartNew();
+    var length = trackType != null
+        ? ChdWriter.WriteCd(args[1], trackType, args[2], threads, CancellationToken.None)
+        : ChdWriter.WriteDvd(args[1], args[2], threads, CancellationToken.None);
+    var written = clock.Elapsed.TotalSeconds;
+    var source = new FileInfo(args[1]).Length;
+    clock.Restart();
+    using var image = ChdImageStream.Open(args[2]);
+    using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA1);
+    var buffer = new byte[1 << 20];
+    int count;
+    while ((count = await image.ReadAsync(buffer.AsMemory())) > 0)
+    {
+        hash.AppendData(buffer, 0, count);
+    }
+
+    Console.WriteLine(string.Create(
+        CultureInfo.InvariantCulture,
+        $"{source} -> {length} bytes ({100.0 * length / source:0.0}%), written in {written:0.0} s ({source / SpeedTestWire.BytesPerMegabyte / written:0.0} MB/s), read back in {clock.Elapsed.TotalSeconds:0.0} s, SHA-1 {Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()}."));
+    return 0;
 }
 
 if (args[0] == "read-image" && args.Length >= 2 && DiscDrive.IsDriveName(args[1]))

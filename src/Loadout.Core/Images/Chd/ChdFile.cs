@@ -272,7 +272,7 @@ internal sealed class ChdFile : IDisposable
         }
     }
 
-    private static ushort Crc16(ReadOnlySpan<byte> data)
+    internal static ushort Crc16(ReadOnlySpan<byte> data)
     {
         ushort crc = 0xFFFF;
         foreach (var value in data)

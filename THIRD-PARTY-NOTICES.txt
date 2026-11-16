@@ -2132,8 +2132,18 @@ freely, subject to the following restrictions:
 
 Mark Adler    madler@alumni.caltech.edu
 
+==============================================================================
+LZMA SDK, by Igor Pavlov (the LZMA encoder is ported from its C# encoder)
+==============================================================================
+
+LZMA SDK is written and placed in the public domain by Igor Pavlov.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or distribute the
+original LZMA SDK code, either in source code form or as a compiled binary, for
+any purpose, commercial or non-commercial, and by any means.
+
 ==============================================================================
-MAME's CHD format (the chd reader's MAME-derived parts)
+MAME's CHD format (the chd reader's and writer's MAME-derived parts)
 ==============================================================================
 
 Copyright Aaron Giles, R. Belmont
