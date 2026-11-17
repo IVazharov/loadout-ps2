@@ -18,7 +18,7 @@ Warnings are errors. The build runs the .NET recommended analyzers and the style
 Loadout Bay builds with the ps2dev toolchain. The simplest way is the ps2dev Docker image that CI uses:
 
 ```bash
-docker run --rm -v "$PWD:/src" -w /src ps2dev/ps2dev:v2.0.0 sh -c "apk add --no-cache build-base git && git config --global --add safe.directory /src && make -C ps2"
+docker run --rm -v "$PWD:/src" -w /src ps2dev/ps2dev@sha256:da143b8074af64e86540763d7742764ec1fe22826980a0ce9155f7bcc7065cce sh -c "apk add --no-cache build-base git && git config --global --add safe.directory /src && make -C ps2"
 ```
 
 The result is `ps2/loadout-bay.elf`.

@@ -11,7 +11,7 @@ jobs:
   ps2:
     name: Build Loadout Bay
     runs-on: ubuntu-latest
-    container: ps2dev/ps2dev:v2.0.0
+    container: ps2dev/ps2dev@sha256:da143b8074af64e86540763d7742764ec1fe22826980a0ce9155f7bcc7065cce
     steps:
       - name: Install build tools
         run: apk add --no-cache build-base git zip

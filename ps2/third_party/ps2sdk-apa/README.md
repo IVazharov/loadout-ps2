@@ -2,7 +2,7 @@
 
 The PS2 hard disk driver that Loadout Bay loads, built as `loadout-hdd.irx`.
 
-- Source: [ps2sdk](https://github.com/ps2dev/ps2sdk) tag `v2.0.0` (commit `b12f8af37bd42ec13b1bafb7ab6e7bdcfb4b683b`), the same ps2sdk as the `ps2dev/ps2dev:v2.0.0` image that builds Loadout Bay.
+- Source: [ps2sdk](https://github.com/ps2dev/ps2sdk) commit `47f6b2e276cba202999d3f24081f56c844ee30aa` (2026-11-16), the same ps2sdk as the `ps2dev/ps2dev` image that builds Loadout Bay (the image of that day, pinned by its digest in CI).
 - Files: `iop/hdd/apa/src/*` and `iop/hdd/libapa/src/*.c` and `iop/hdd/libapa/include/libapa.h`, copied into `src/` unchanged apart from line endings.
 - Licence: AFL-2.0, in `LICENSE` (ps2sdk's licence file).
 

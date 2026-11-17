@@ -34,6 +34,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - Check each game after installing moved from Settings to the Install page, beside its artwork and memory card ticks. A check you had turned off stays off, on both pages. The Install page also remembers its artwork and memory card ticks now.
 - The Windows download holds only `LoadoutPS2.exe` and its readme: every licence text, the fonts' and the chd reader's included, is on the About page. Loadout Bay's download keeps its licence files.
 - Backup is the third page, after Install, so Artwork, Settings, Logs and About are now Ctrl+4 to Ctrl+7.
+- Loadout Bay is built with a newer ps2sdk, of 2026-11-16, which has its own fix for the clock fault that made Loadout Bay stop answering after about 36 minutes, so Loadout Bay no longer needs its own. Its hard disk, network and USB drivers come from the same ps2sdk.
 
 ### Fixed
 

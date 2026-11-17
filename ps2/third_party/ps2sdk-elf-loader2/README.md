@@ -2,7 +2,7 @@
 
 The declarations of ps2sdk's `libelf-loader2` that start an ELF from a buffer in memory. Loadout Bay uses them to start a new version of itself that Loadout sent over the network. The library is ps2sdk's own and unchanged; only its public header leaves these functions out.
 
-- Source: [ps2sdk](https://github.com/ps2dev/ps2sdk) tag `v2.0.0` (commit `b12f8af37bd42ec13b1bafb7ab6e7bdcfb4b683b`), the same ps2sdk as the `ps2dev/ps2dev:v2.0.0` image that builds Loadout Bay.
+- Source: [ps2sdk](https://github.com/ps2dev/ps2sdk) commit `47f6b2e276cba202999d3f24081f56c844ee30aa` (2026-11-16), the same ps2sdk as the `ps2dev/ps2dev` image that builds Loadout Bay (the image of that day, pinned by its digest in CI).
 - File: `ee/elf-loader2/src/include/elf_loader_common.h`, unchanged.
 - Licence: AFL-2.0, in `LICENSE` (ps2sdk's licence file).
 
