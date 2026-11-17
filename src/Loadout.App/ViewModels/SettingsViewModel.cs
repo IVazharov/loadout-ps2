@@ -43,6 +43,7 @@ public sealed class SettingsViewModel : ObservableObject
     private string _cutNote = "";
     private ThemeChoice _theme;
     private bool _checkForUpdates;
+    private bool _resumeConversions;
     private string _backupFolder;
     private bool _finding;
     private bool _choosing;
@@ -60,6 +61,7 @@ public sealed class SettingsViewModel : ObservableObject
         _addressNote = HelpNote;
         _theme = stored.Theme;
         _checkForUpdates = stored.CheckForUpdates;
+        _resumeConversions = stored.ResumeConversions;
         _backupFolder = stored.BackupFolder;
         ChangeBackupFolderCommand = new RelayCommand(() => ChooseBackupFolder());
         FindBayCommand = new AsyncRelayCommand(FindBayAsync, ex => Report(ex.Message));
@@ -149,6 +151,29 @@ public sealed class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(BackupFolderText));
         _log.Add("Disc backups are kept in " + value + ".");
         return true;
+    }
+
+    /// <summary>
+    /// Whether compressing and converting copies that closing Loadout stopped, or left waiting, goes on by itself when
+    /// Loadout starts. Off, they wait until Convert to CHD or Convert to ISO/BIN is pressed for them.
+    /// </summary>
+    public bool ResumeConversions
+    {
+        get => _resumeConversions;
+        set
+        {
+            if (value == _resumeConversions)
+            {
+                return;
+            }
+
+            _resumeConversions = value;
+            OnPropertyChanged();
+            Save(Backups, settings => settings with { ResumeConversions = value });
+            _log.Add(value
+                ? "Compressing and converting copies goes on by itself when Loadout starts."
+                : "Compressing and converting copies no longer goes on by itself when Loadout starts.");
+        }
     }
 
     /// <summary>Whether Loadout asks GitHub for a newer version when it starts. The update dialog changes it too.</summary>

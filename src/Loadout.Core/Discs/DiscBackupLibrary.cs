@@ -30,6 +30,13 @@ public enum DiscBackupFormat
     Chd,
 }
 
+/// <summary>
+/// A copy whose conversion was under way, or waiting, when Loadout last closed: to a chd (<see cref="DiscBackupFormat.Chd"/>)
+/// or back to an iso or a CD's bin and cue. An interim one is a new copy that was kept as an iso or bin only until its chd
+/// was made.
+/// </summary>
+public sealed record PendingConversion(DiscBackup Backup, DiscBackupFormat To, bool Interim);
+
 /// <summary>One backed-up disc as its files say.</summary>
 public sealed record DiscBackup(
     DiscBackupFiles Files,
@@ -57,6 +64,9 @@ public sealed record DiscBackup(
 public static class DiscBackupLibrary
 {
     private const string MapExtension = ".map";
+
+    /// <summary>What a chd's pending mark holds when the user asked for the chd; an empty mark is an interim one.</summary>
+    public const string ConvertMark = "convert";
 
     public static IReadOnlyList<DiscBackup> List(string folder)
     {
@@ -101,9 +111,10 @@ public static class DiscBackupLibrary
         var image = new FileInfo(files.Image);
 
         // A chd is only ever given its name once it reads back the same, so it is the copy even while the image it
-        // replaces waits to be removed.
+        // replaces waits to be removed; an image converted back from a chd likewise, while the chd waits.
         var chd = new FileInfo(files.Chd);
         var cue = new FileInfo(files.Cue);
+        var chdIsTheCopy = files.ChdIsTheCopy();
         return new DiscBackup(
             files,
             identity,
@@ -111,35 +122,58 @@ public static class DiscBackupLibrary
             map.ReadSectors,
             map.Cleanings,
             map.IsComplete && (image.Exists || chd.Exists) ? ResultFrom(files.Hashes) : DiscBackupResult.Incomplete,
-            chd.Exists ? chd.LastWriteTimeUtc : image.Exists ? image.LastWriteTimeUtc : File.GetLastWriteTimeUtc(files.Map))
+            chdIsTheCopy ? chd.LastWriteTimeUtc : image.Exists ? image.LastWriteTimeUtc : File.GetLastWriteTimeUtc(files.Map))
         {
-            Format = chd.Exists ? DiscBackupFormat.Chd : files.IsCd ? DiscBackupFormat.BinCue : DiscBackupFormat.Iso,
-            BytesOnDisk = chd.Exists ? chd.Length : image.Exists ? image.Length + (files.IsCd && cue.Exists ? cue.Length : 0) : 0,
+            Format = chdIsTheCopy ? DiscBackupFormat.Chd : files.IsCd ? DiscBackupFormat.BinCue : DiscBackupFormat.Iso,
+            BytesOnDisk = chdIsTheCopy ? chd.Length : image.Exists ? image.Length + (files.IsCd && cue.Exists ? cue.Length : 0) : 0,
         };
     }
 
     /// <summary>
-    /// The copies whose compression to a chd was under way when Loadout last closed: each has its image and a mark that it
-    /// is to become a chd. A chd half written is removed; it is written again from the start.
+    /// The copies whose conversion was under way or waiting when Loadout last closed, oldest mark first: each has a mark
+    /// that it is to become a chd (.chd.pending), or an iso or bin again (.iso.pending, .bin.pending). A file half written
+    /// is removed by the caller; it is written again from the start.
     /// </summary>
-    public static IReadOnlyList<DiscBackup> PendingCompression(string folder)
+    public static IReadOnlyList<PendingConversion> PendingConversions(string folder)
     {
         if (!Directory.Exists(folder))
         {
             return [];
         }
 
-        var pending = new List<DiscBackup>();
-        foreach (var mark in Directory.EnumerateFiles(folder, "*" + DiscBackupFiles.ChdExtension + ".pending"))
+        var pending = new List<(DateTime Marked, PendingConversion Conversion)>();
+        foreach (var mark in Directory.EnumerateFiles(folder, "*.pending"))
         {
-            var name = Path.GetFileName(mark)[..^(DiscBackupFiles.ChdExtension + ".pending").Length];
-            if (Read(new DiscBackupFiles(folder, name)) is { } backup)
+            var file = Path.GetFileName(mark);
+            var (suffix, to) = file.EndsWith(DiscBackupFiles.ChdExtension + ".pending", StringComparison.OrdinalIgnoreCase)
+                ? (DiscBackupFiles.ChdExtension + ".pending", DiscBackupFormat.Chd)
+                : file.EndsWith(DiscBackupFiles.ImageExtension + ".pending", StringComparison.OrdinalIgnoreCase)
+                    ? (DiscBackupFiles.ImageExtension + ".pending", DiscBackupFormat.Iso)
+                    : file.EndsWith(DiscBackupFiles.CdImageExtension + ".pending", StringComparison.OrdinalIgnoreCase)
+                        ? (DiscBackupFiles.CdImageExtension + ".pending", DiscBackupFormat.BinCue)
+                        : (string.Empty, DiscBackupFormat.Iso);
+            if (suffix.Length == 0 || Read(new DiscBackupFiles(folder, file[..^suffix.Length])) is not { } backup)
             {
-                pending.Add(backup);
+                continue;
             }
+
+            var interim = to == DiscBackupFormat.Chd && !IsConvertMark(mark);
+            pending.Add((File.GetLastWriteTimeUtc(mark), new PendingConversion(backup, to, interim)));
         }
 
-        return pending;
+        return [.. pending.OrderBy(p => p.Marked).Select(p => p.Conversion)];
+    }
+
+    private static bool IsConvertMark(string path)
+    {
+        try
+        {
+            return File.ReadAllText(path).Trim() == ConvertMark;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static bool IsCdChd(string path)

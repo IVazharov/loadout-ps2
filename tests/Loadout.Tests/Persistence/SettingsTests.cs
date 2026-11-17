@@ -104,6 +104,17 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public void ConversionsGoOnAtStartUntilTurnedOff()
+    {
+        var store = new AppSettingsStore(Database);
+        Assert.True(store.Load().ResumeConversions);
+
+        store.Save(AppSettings.Defaults with { ResumeConversions = false });
+
+        Assert.False(new AppSettingsStore(Database).Load().ResumeConversions);
+    }
+
+    [Fact]
     public void AnInstallCheckTurnedOffBefore0110StaysOffOnBothPages()
     {
         // As Loadout 0.10.0 left the row: the check in check_installs, and no page options yet.
@@ -129,6 +140,7 @@ public sealed class SettingsTests : IDisposable
         Assert.False(loaded.BackupPage.Check);
         Assert.True(loaded.BackupPage.SendArtwork);
         Assert.False(loaded.InstallPage.MemoryCards);
+        Assert.True(loaded.ResumeConversions);
     }
 
     [Fact]

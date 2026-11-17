@@ -751,12 +751,17 @@
                             Command="{Binding SaveReportCommand}" />
                     <Button Margin="8,0,0,0"
                             Content="Convert to _CHD"
-                            ToolTip="Compresses the selected copy to a CHD and reads it back to be sure it is the same; the iso or bin then goes to the Recycle Bin."
-                            IsEnabled="{Binding CanConvert}"
-                            Command="{Binding ConvertCommand}" />
+                            ToolTip="Compresses the selected copies kept as ISO or bin/cue to CHDs, one at a time, and reads each back to be sure it is the same; its iso, or bin and cue, then goes to the Recycle Bin."
+                            IsEnabled="{Binding CanConvertToChd}"
+                            Command="{Binding ConvertToChdCommand}" />
+                    <Button Margin="8,0,0,0"
+                            Content="Convert to IS_O/BIN"
+                            ToolTip="Converts the selected copies kept as CHD back to the files they were made from, one at a time: a DVD's iso, a CD's bin and cue. Each is read back to be sure it is the same; its chd then goes to the Recycle Bin."
+                            IsEnabled="{Binding CanConvertToImage}"
+                            Command="{Binding ConvertToImageCommand}" />
                     <Button Margin="8,0,0,0"
                             Content="I_nstall on PS2"
-                            ToolTip="Installs the selected copy on the PS2 now, with the Install page's options: artwork, memory cards and the install check."
+                            ToolTip="Installs the selected copies on the PS2, one after another, with this page's install options: artwork, memory cards and the install check."
                             IsEnabled="{Binding CanInstallBackup}"
                             Command="{Binding InstallBackupCommand}" />
                     <Button Margin="8,0,0,0"
@@ -1133,6 +1138,20 @@
                                         Command="{Binding ChangeBackupFolderCommand}" />
                             </Grid>
                             <TextBlock Style="{StaticResource SettingsNote}" Text="Where Back up discs keeps its copies, with their reports and maps." />
+                            <Grid Style="{StaticResource SettingsRow}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Conversions" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <CheckBox Content="Go on with compressing and converting when Loadout starts" IsChecked="{Binding ResumeConversions}" />
+                                    <c:InfoTip Margin="8,0,0,0"
+                                               AutomationProperties.Name="More about going on with conversions"
+                                               ToolTip="Covers new copies kept as CHD and the copies you convert with Convert to CHD or Convert to ISO/BIN. Closing Loadout asks first, stops the one under way and removes what it had made of it; the next start begins it again. Turned off, those copies wait until you convert them." />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Style="{StaticResource SettingsNote}" Text="Copies that closing Loadout stopped or left waiting are converted again, one at a time." />
 
                             <ContentControl Content="{Binding Appearance}" ContentTemplate="{StaticResource SettingsHeading}" Focusable="False" />
                             <Grid Style="{StaticResource SettingsRow}">

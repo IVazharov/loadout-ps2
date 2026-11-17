@@ -9,8 +9,16 @@ namespace Loadout.Discs;
 public sealed record DiscImageHashes(long Size, string Crc32, string Md5, string Sha1)
 {
     /// <summary>Reads the stream from its start to its end once, hashing as it goes. Reports the bytes read so far.</summary>
-    public static async Task<DiscImageHashes> ComputeAsync(Stream stream, IProgress<long>? progress, CancellationToken cancellationToken)
+    public static Task<DiscImageHashes> ComputeAsync(Stream stream, IProgress<long>? progress, CancellationToken cancellationToken) =>
+        CopyAsync(stream, null, progress, cancellationToken);
+
+    /// <summary>
+    /// Reads the stream from its start to its end once, writing each piece to <paramref name="destination"/> (when there is
+    /// one) and hashing it as it goes, so the hashes are of the bytes written. Reports the bytes read so far.
+    /// </summary>
+    public static async Task<DiscImageHashes> CopyAsync(Stream stream, Stream? destination, IProgress<long>? progress, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(stream);
         stream.Position = 0;
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
         using var sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
@@ -20,6 +28,11 @@ public sealed record DiscImageHashes(long Size, string Crc32, string Md5, string
         int n;
         while ((n = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
         {
+            if (destination is not null)
+            {
+                await destination.WriteAsync(buffer.AsMemory(0, n), cancellationToken).ConfigureAwait(false);
+            }
+
             var data = buffer.AsSpan(0, n);
             md5.AppendData(data);
             sha1.AppendData(data);
@@ -34,6 +47,14 @@ public sealed record DiscImageHashes(long Size, string Crc32, string Md5, string
             Convert.ToHexStringLower(md5.GetHashAndReset()),
             Convert.ToHexStringLower(sha1.GetHashAndReset()));
     }
+
+    /// <summary>The same size and the same three hashes: the same bytes, as far as anyone can tell.</summary>
+    public bool SameAs(DiscImageHashes other) =>
+        other is not null
+        && Size == other.Size
+        && string.Equals(Crc32, other.Crc32, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(Md5, other.Md5, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(Sha1, other.Sha1, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The hashes file kept beside a copy: its name, size and hashes, and what Redump's list said about it.</summary>
     public string Format(string fileName, RedumpCheck? check, string? datVersion)

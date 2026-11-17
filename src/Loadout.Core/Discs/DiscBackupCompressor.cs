@@ -56,10 +56,7 @@ public static class DiscBackupCompressor
             throw;
         }
 
-        if (back.Size != expected.Size
-            || !string.Equals(back.Sha1, expected.Sha1, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(back.Md5, expected.Md5, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(back.Crc32, expected.Crc32, StringComparison.OrdinalIgnoreCase))
+        if (!back.SameAs(expected))
         {
             TryDelete(files.ChdPart);
             throw new InvalidDataException($"The chd of {files.Name} did not read back the same as the copy, so the copy is kept as it is.");
@@ -82,7 +79,7 @@ public static class DiscBackupCompressor
     }
 
     /// <summary>Passes progress on as it comes, from whichever thread reports it; the caller's own IProgress decides where it lands.</summary>
-    private sealed class Forward<T>(Action<T> report) : IProgress<T>
+    internal sealed class Forward<T>(Action<T> report) : IProgress<T>
     {
         public void Report(T value) => report(value);
     }

@@ -102,10 +102,143 @@ public sealed class ChdBackupTests : IDisposable
         await FinishedDvd("Kept as it is [SLES-55002]");
         File.WriteAllText(marked.ChdPending, string.Empty);
 
-        var pending = Assert.Single(DiscBackupLibrary.PendingCompression(_folder));
+        var pending = Assert.Single(DiscBackupLibrary.PendingConversions(_folder));
 
-        Assert.Equal(marked.Name, pending.Files.Name);
-        Assert.Empty(DiscBackupLibrary.PendingCompression(Path.Combine(_folder, "missing")));
+        Assert.Equal(marked.Name, pending.Backup.Files.Name);
+        Assert.Equal(DiscBackupFormat.Chd, pending.To);
+        Assert.True(pending.Interim);
+        Assert.Empty(DiscBackupLibrary.PendingConversions(Path.Combine(_folder, "missing")));
+    }
+
+    [Fact]
+    public async Task PendingConversionsSayWhichWayAndWhetherTheUserAskedForThem()
+    {
+        var toChd = await FinishedDvd("To chd [SLES-55002]");
+        File.WriteAllText(toChd.ChdPending, DiscBackupLibrary.ConvertMark);
+        File.SetLastWriteTimeUtc(toChd.ChdPending, new DateTime(2026, 11, 17, 10, 0, 0, DateTimeKind.Utc));
+        var toIso = await FinishedDvd("To iso [SLES-55002]");
+        await DiscBackupCompressor.CompressAsync(toIso, null, CancellationToken.None);
+        File.Delete(toIso.Image);
+        File.WriteAllText(toIso.ImagePending, string.Empty);
+        File.SetLastWriteTimeUtc(toIso.ImagePending, new DateTime(2026, 11, 17, 9, 0, 0, DateTimeKind.Utc));
+        var toBin = await FinishedCd("To bin [SLES-50219]");
+        await DiscBackupCompressor.CompressAsync(toBin, null, CancellationToken.None);
+        File.Delete(toBin.Image);
+        File.Delete(toBin.Cue);
+        File.WriteAllText(toBin.ImagePending, string.Empty);
+        File.SetLastWriteTimeUtc(toBin.ImagePending, new DateTime(2026, 11, 17, 11, 0, 0, DateTimeKind.Utc));
+
+        var pending = DiscBackupLibrary.PendingConversions(_folder);
+
+        // Oldest mark first, so a batch goes on in the order it was asked for.
+        Assert.Equal(["To iso [SLES-55002]", "To chd [SLES-55002]", "To bin [SLES-50219]"], pending.Select(p => p.Backup.Files.Name));
+        Assert.Equal([DiscBackupFormat.Iso, DiscBackupFormat.Chd, DiscBackupFormat.BinCue], pending.Select(p => p.To));
+        Assert.All(pending, p => Assert.False(p.Interim));
+        Assert.True(pending[2].Backup.Files.IsCd);
+    }
+
+    [Fact]
+    public async Task ADvdChdBecomesItsIsoAgain()
+    {
+        var files = await FinishedDvd("Game [SLES-55002]");
+        var iso = File.ReadAllBytes(files.Image);
+        await DiscBackupCompressor.CompressAsync(files, null, CancellationToken.None);
+        File.Delete(files.Image);
+        var reports = new List<double>();
+
+        var made = await DiscBackupExpander.ExpandAsync(files, new Collect(reports), CancellationToken.None);
+
+        Assert.Equal(iso, File.ReadAllBytes(files.Image));
+        Assert.False(File.Exists(files.ImagePart));
+        Assert.Equal(iso.Length, made.ImageBytes);
+        Assert.Equal(new FileInfo(files.Chd).Length, made.ChdBytes);
+        Assert.Equal(1.0, reports[^1]);
+        Assert.True(reports.SequenceEqual(reports.Order()));
+
+        // The image converted back is marked made: it is the copy while the chd waits to be removed.
+        Assert.Equal(DiscBackupFiles.ImageMadeMark, File.ReadAllText(files.ImagePending));
+        var listed = Assert.Single(DiscBackupLibrary.List(_folder));
+        Assert.Equal(DiscBackupFormat.Iso, listed.Format);
+        Assert.Equal(iso.Length, listed.BytesOnDisk);
+        Assert.Equal(files.Image, DiscBackupInstall.ScanPath(listed.Files));
+        Assert.Contains(files.ImagePart, files.All);
+        Assert.Contains(files.ImagePending, files.All);
+
+        // An image not marked made beside a chd is only left over (as after compressing): the chd is the copy.
+        File.WriteAllText(files.ImagePending, string.Empty);
+        Assert.Equal(DiscBackupFormat.Chd, Assert.Single(DiscBackupLibrary.List(_folder)).Format);
+        File.Delete(files.ImagePending);
+        Assert.Equal(DiscBackupFormat.Chd, Assert.Single(DiscBackupLibrary.List(_folder)).Format);
+    }
+
+    [Fact]
+    public async Task ACdChdBecomesItsBinAndCueAgain()
+    {
+        var files = await FinishedCd("NBA Street [SLES-50219]");
+        var bin = File.ReadAllBytes(files.Image);
+        var cue = File.ReadAllText(files.Cue);
+        await DiscBackupCompressor.CompressAsync(files, null, CancellationToken.None);
+        foreach (var path in files.Uncompressed)
+        {
+            File.Delete(path);
+        }
+
+        var cdFiles = Assert.Single(DiscBackupLibrary.List(_folder)).Files;
+        await DiscBackupExpander.ExpandAsync(cdFiles, null, CancellationToken.None);
+        File.Delete(cdFiles.Chd);
+
+        Assert.Equal(bin, File.ReadAllBytes(files.Image));
+        Assert.Equal(cue, File.ReadAllText(files.Cue));
+        var listed = Assert.Single(DiscBackupLibrary.List(_folder));
+        Assert.Equal(DiscBackupFormat.BinCue, listed.Format);
+        Assert.Equal(files.Cue, DiscBackupInstall.ScanPath(listed.Files));
+    }
+
+    [Fact]
+    public async Task AnImageThatDoesNotMatchTheCopysHashesIsNotKept()
+    {
+        var files = await FinishedDvd("Game [SLES-55002]");
+        await DiscBackupCompressor.CompressAsync(files, null, CancellationToken.None);
+        File.Delete(files.Image);
+        var hashes = File.ReadAllText(files.Hashes).Replace("MD5     ", "MD5     0", StringComparison.Ordinal);
+        File.WriteAllText(files.Hashes, hashes);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => DiscBackupExpander.ExpandAsync(files, null, CancellationToken.None));
+
+        Assert.False(File.Exists(files.Image));
+        Assert.False(File.Exists(files.ImagePart));
+        Assert.True(File.Exists(files.Chd));
+        Assert.Equal(DiscBackupFormat.Chd, Assert.Single(DiscBackupLibrary.List(_folder)).Format);
+    }
+
+    [Fact]
+    public async Task ACancelledConversionBackLeavesTheChdAsItWas()
+    {
+        var files = await FinishedDvd("Game [SLES-55002]");
+        await DiscBackupCompressor.CompressAsync(files, null, CancellationToken.None);
+        File.Delete(files.Image);
+        using var cancel = new CancellationTokenSource();
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => DiscBackupExpander.ExpandAsync(files, null, cancel.Token));
+
+        Assert.False(File.Exists(files.Image));
+        Assert.False(File.Exists(files.ImagePart));
+        Assert.True(File.Exists(files.Chd));
+    }
+
+    [Fact]
+    public async Task AChdWithoutAHashesFileIsCheckedAgainstItsOwnReadBack()
+    {
+        var files = await FinishedDvd("Game [SLES-55002]");
+        var iso = File.ReadAllBytes(files.Image);
+        await DiscBackupCompressor.CompressAsync(files, null, CancellationToken.None);
+        File.Delete(files.Image);
+        File.Delete(files.Hashes);
+
+        await DiscBackupExpander.ExpandAsync(files, null, CancellationToken.None);
+
+        Assert.Equal(iso, File.ReadAllBytes(files.Image));
     }
 
     [Fact]

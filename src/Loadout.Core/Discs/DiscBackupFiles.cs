@@ -16,6 +16,9 @@ public sealed record DiscBackupFiles(string Folder, string Name, bool IsCd = fal
 
     public const string ChdExtension = ".chd";
 
+    /// <summary>What <see cref="ImagePending"/> holds once the image is made and reads back the same: the chd only waits to go.</summary>
+    public const string ImageMadeMark = "made";
+
     /// <summary>The copy as it is read: an .iso, or a CD's .bin. A copy kept as a chd has it only until the chd is made.</summary>
     public string Image => Path.Combine(Folder, Name + (IsCd ? CdImageExtension : ImageExtension));
 
@@ -34,6 +37,38 @@ public sealed record DiscBackupFiles(string Folder, string Name, bool IsCd = fal
     /// <summary>The files a chd takes the place of: the .iso, or a CD's .bin and .cue.</summary>
     public IReadOnlyList<string> Uncompressed => IsCd ? [Image, Cue] : [Image];
 
+    /// <summary>An .iso or .bin being written from the chd; it becomes <see cref="Image"/> once it reads back the same.</summary>
+    public string ImagePart => Image + ".part";
+
+    /// <summary>
+    /// Says the chd is to become an .iso (a CD's .bin and .cue) again, so converting it starts again after Loadout was
+    /// closed. Empty while that waits or runs; <see cref="ImageMadeMark"/> once the image is made and reads back the same,
+    /// when the image is the copy and the chd only waits to be removed.
+    /// </summary>
+    public string ImagePending => Image + ".pending";
+
+    /// <summary>
+    /// Whether the chd is the copy: it is there, and no image converted back from it has taken its place. A chd is only
+    /// given its name once it reads back the same, and an image converted back from one is only marked made likewise; an
+    /// image merely left beside a chd is not the copy.
+    /// </summary>
+    public bool ChdIsTheCopy() => File.Exists(Chd) && !ChdWaitsToGo();
+
+    /// <summary>An image converted back from the chd is the copy, and the chd only waits to be removed.</summary>
+    public bool ChdWaitsToGo() => File.Exists(Chd) && File.Exists(Image) && ImageMade();
+
+    private bool ImageMade()
+    {
+        try
+        {
+            return File.Exists(ImagePending) && File.ReadAllText(ImagePending).Trim() == ImageMadeMark;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     public string Report => Path.Combine(Folder, Name + ".report.txt");
 
     public string Hashes => Path.Combine(Folder, Name + ".hashes.txt");
@@ -43,8 +78,8 @@ public sealed record DiscBackupFiles(string Folder, string Name, bool IsCd = fal
     public string MapPicture => Path.Combine(Folder, Name + ".map.png");
 
     public IReadOnlyList<string> All => IsCd
-        ? [Image, Cue, Chd, ChdPart, ChdPending, Report, Hashes, Map, MapPicture]
-        : [Image, Chd, ChdPart, ChdPending, Report, Hashes, Map, MapPicture];
+        ? [Image, Cue, Chd, ChdPart, ChdPending, ImagePart, ImagePending, Report, Hashes, Map, MapPicture]
+        : [Image, Chd, ChdPart, ChdPending, ImagePart, ImagePending, Report, Hashes, Map, MapPicture];
 
     /// <summary>A one-track CD's cue sheet as Redump writes it, so it matches Redump's .cue byte for byte.</summary>
     public string CueText(int mode) => $"FILE \"{Name}{CdImageExtension}\" BINARY\r\n  TRACK 01 MODE{mode}/2352\r\n    INDEX 01 00:00:00\r\n";
