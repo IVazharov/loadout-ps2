@@ -24,6 +24,7 @@ public sealed class ArtworkViewModel : ObservableObject, IDisposable
     private readonly AsyncRelayCommand _download;
     private readonly AsyncRelayCommand _send;
     private CancellationTokenSource? _work;
+    private IReadOnlyList<ArtworkRow> _picked = [];
     private bool _replaceExisting;
     private int _cached;
     private PageStatus _status;
@@ -53,6 +54,24 @@ public sealed class ArtworkViewModel : ObservableObject, IDisposable
     public ICommand SendCommand => _send;
 
     public ICommand CancelCommand { get; }
+
+    /// <summary>Download artwork's label: with games picked, it fetches theirs only and says how many.</summary>
+    public string DownloadLabel => _picked.Count == 0
+        ? "_Download artwork"
+        : string.Create(CultureInfo.CurrentCulture, $"_Download artwork ({_picked.Count})");
+
+    /// <summary>Send to PS2's label: with games picked, it sends theirs only and says how many.</summary>
+    public string SendLabel => _picked.Count == 0
+        ? "_Send to PS2"
+        : string.Create(CultureInfo.CurrentCulture, $"_Send to PS2 ({_picked.Count})");
+
+    /// <summary>The games picked in the list, as the list says each time its picking changes; none picked means every game.</summary>
+    public void SetPicked(IReadOnlyList<ArtworkRow> picked)
+    {
+        _picked = picked ?? [];
+        OnPropertyChanged(nameof(DownloadLabel));
+        OnPropertyChanged(nameof(SendLabel));
+    }
 
     public bool IsIdle => _work is null;
 
@@ -90,17 +109,34 @@ public sealed class ArtworkViewModel : ObservableObject, IDisposable
     /// <summary>Shows the installed games with what the cache holds for each. The page calls this when it opens.</summary>
     public void Refresh()
     {
-        Games.Clear();
         _cached = 0;
-        foreach (var game in Targets())
+        var rows = new List<ArtworkRow>();
+        foreach (var game in AllTargets())
         {
             var kinds = OplArtCatalog.Kinds.Count(kind => _cache.TryGet(game.DiscId, kind) is not null);
             _cached += kinds > 0 ? 1 : 0;
-            Games.Add(new ArtworkRow(
+            rows.Add(new ArtworkRow(
                 game.DiscId.Canonical,
                 game.Title,
                 _cache.CoverOrIconPath(game.DiscId.Canonical),
                 kinds == 0 ? "Not downloaded" : kinds.ToString(CultureInfo.CurrentCulture) + " of " + OplArtCatalog.Kinds.Count.ToString(CultureInfo.CurrentCulture) + " kinds cached"));
+        }
+
+        // The same games read again change in place, so what is picked in the list stays picked.
+        if (Games.Select(row => (row.DiscId, row.Title)).SequenceEqual(rows.Select(row => (row.DiscId, row.Title))))
+        {
+            for (var i = 0; i < rows.Count; i++)
+            {
+                Games[i].Update(rows[i].ArtPath, rows[i].Cached);
+            }
+        }
+        else
+        {
+            Games.Clear();
+            foreach (var row in rows)
+            {
+                Games.Add(row);
+            }
         }
 
         OnPropertyChanged(nameof(HasGames));
@@ -119,8 +155,15 @@ public sealed class ArtworkViewModel : ObservableObject, IDisposable
                 string.Create(CultureInfo.CurrentCulture, $"Artwork is cached for {_cached} of {Games.Count} games"),
                 _cached < Games.Count ? "Download artwork fetches what is missing." : "Send to PS2 copies it into OPL's ART folder.");
 
+    // The picked games, or every one when none is picked.
+    private List<ArtworkGame> Targets()
+    {
+        var all = AllTargets();
+        return _picked.Count == 0 ? all : [.. all.Where(game => _picked.Any(row => row.DiscId == game.DiscId.Canonical))];
+    }
+
     // Whole games with a disc ID, once each: art is named after the disc, not the partition.
-    private List<ArtworkGame> Targets() =>
+    private List<ArtworkGame> AllTargets() =>
         _installed()
             .Where(BayGameChanges.CanEdit)
             .Select(row => DiscId.TryParse(row.DiscId, out var discId) ? new ArtworkGame(discId, row.Title) : null)
@@ -272,8 +315,34 @@ public sealed class ArtworkViewModel : ObservableObject, IDisposable
 }
 
 /// <summary>A game on the Artwork page: its picture from the cache, if any, and what the cache holds.</summary>
-public sealed record ArtworkRow(string DiscId, string Title, string? ArtPath, string Cached)
+public sealed class ArtworkRow(string discId, string title, string? artPath, string cached) : ObservableObject
 {
+    private string? _artPath = artPath;
+    private string _cached = cached;
+
+    public string DiscId { get; } = discId;
+
+    public string Title { get; } = title;
+
+    public string? ArtPath
+    {
+        get => _artPath;
+        private set => SetField(ref _artPath, value);
+    }
+
+    public string Cached
+    {
+        get => _cached;
+        private set => SetField(ref _cached, value);
+    }
+
+    /// <summary>What the cache holds now, read again in place, so the row stays picked.</summary>
+    public void Update(string? artPath, string cached)
+    {
+        ArtPath = artPath;
+        Cached = cached;
+    }
+
     /// <summary>What a screen reader says for the row.</summary>
     public override string ToString() => Title;
 }

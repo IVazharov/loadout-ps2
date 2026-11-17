@@ -140,6 +140,101 @@ public static class TableColumns
     /// <summary>The header's text as drawn: the label style's capitals.</summary>
     public static string HeaderText(object? header) => (header as string ?? string.Empty).ToUpper(CultureInfo.CurrentCulture);
 
+    /// <summary>
+    /// The picked rows as text for the clipboard: a line of column names, then a line a row in the order shown, the columns
+    /// in their shown order and separated by tabs, each cell the text its column shows (its DisplayMemberBinding's or
+    /// MeasurePath's property). A column with neither, such as a cover, is left out. Empty when nothing is picked.
+    /// </summary>
+    public static string RowsText(ListView list)
+    {
+        ArgumentNullException.ThrowIfNull(list);
+        if (list.View is not GridView view)
+        {
+            return string.Empty;
+        }
+
+        var columns = view.Columns
+            .Select(column => (Header: column.Header as string ?? string.Empty, Path: GetMeasurePath(column) ?? (column.DisplayMemberBinding as Binding)?.Path.Path))
+            .Where(column => column.Path is not null)
+            .ToList();
+        var picked = list.Items.Cast<object>().Where(list.SelectedItems.Contains).ToList();
+        if (columns.Count == 0 || picked.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var text = new System.Text.StringBuilder();
+        text.AppendJoin('\t', columns.Select(column => column.Header)).Append("\r\n");
+        foreach (var item in picked)
+        {
+            text.AppendJoin('\t', columns.Select(column => Cell(item, column.Path!))).Append("\r\n");
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// A right-click menu's Select all: picks every row of the list the menu was opened on. Its parameter is the menu item
+    /// itself, so the list is found when it is chosen.
+    /// </summary>
+    public static ICommand SelectAllRows { get; } = new SelectAllCommand();
+
+    /// <summary>Ctrl+C in a list: its picked rows go to the clipboard as text (<see cref="RowsText"/>).</summary>
+    public static void CopyRows(ListView list)
+    {
+        var text = RowsText(list);
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(text);
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // Another program holds the clipboard; the next try usually works.
+        }
+    }
+
+    private sealed class SelectAllCommand : ICommand
+    {
+        public event EventHandler? CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public bool CanExecute(object? parameter) => true;
+
+        public void Execute(object? parameter)
+        {
+            for (var at = parameter as DependencyObject; at is not null; at = LogicalTreeHelper.GetParent(at) ?? (at as FrameworkElement)?.Parent)
+            {
+                if (at is ContextMenu { PlacementTarget: ListBox list })
+                {
+                    list.SelectAll();
+                    list.Focus();
+                    return;
+                }
+            }
+        }
+    }
+
+    // A cell's text on one line: a tab or a line break in it would split the row.
+    private static string Cell(object item, string path)
+    {
+        object? value = item;
+        foreach (var name in path.Split('.'))
+        {
+            value = value?.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public)?.GetValue(value);
+        }
+
+        var text = Convert.ToString(value, CultureInfo.CurrentCulture) ?? string.Empty;
+        return text.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');
+    }
+
     private static void OnKeyChanged(DependencyObject target, DependencyPropertyChangedEventArgs e)
     {
         if (target is ListView list && list.GetValue(TableProperty) is null && e.NewValue is string)
@@ -172,6 +267,9 @@ public static class TableColumns
         private readonly DispatcherTimer _fitTimer;
         private readonly DispatcherTimer _saveTimer;
         private readonly ContextMenu _menu = new();
+
+        // The list's own menu for its rows, from its XAML: shown on the rows and the empty space; the columns' menu is the headers'.
+        private ContextMenu? _rowMenu;
         private readonly MenuItem _sortBy = new() { Header = "Sort by" };
         private readonly MenuItem _fitColumn = new() { Header = "Size column to fit" };
         private GridView? _view;
@@ -240,6 +338,11 @@ public static class TableColumns
             _list.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnDragCompleted), handledEventsToo: true);
             _list.PreviewKeyDown += OnKeyDown;
             _list.ContextMenuOpening += OnMenuOpening;
+            if (_list.ContextMenu is { } own && own != _menu)
+            {
+                _rowMenu = own;
+            }
+
             _list.ContextMenu = _menu;
             if (_scroller is not null)
             {
@@ -398,7 +501,14 @@ public static class TableColumns
 
         private void OnMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            _menuColumn = Ancestor<GridViewColumnHeader>(e.OriginalSource as DependencyObject)?.Column;
+            var header = Ancestor<GridViewColumnHeader>(e.OriginalSource as DependencyObject);
+            _list.ContextMenu = _rowMenu is not null && header is null ? _rowMenu : _menu;
+            if (_list.ContextMenu != _menu)
+            {
+                return;
+            }
+
+            _menuColumn = header?.Column;
             _fitColumn.Visibility = _menuColumn is null || GetFixed(_menuColumn) ? Visibility.Collapsed : Visibility.Visible;
             _sortBy.Items.Clear();
             if (_view is null)

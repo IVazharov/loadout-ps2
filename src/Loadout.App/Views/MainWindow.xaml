@@ -396,6 +396,31 @@
                               SelectionChanged="QueueList_OnSelectionChanged"
                               Loaded="GameList_Loaded"
                               Visibility="{Binding IsEmpty, Converter={StaticResource CollapsedWhenTrue}}">
+                        <ListView.InputBindings>
+                            <KeyBinding Key="Delete" Command="{Binding RemoveCommand}" />
+                            <KeyBinding Key="Enter" Command="{Binding ShowInFolderCommand}" />
+                        </ListView.InputBindings>
+                        <ListView.CommandBindings>
+                            <CommandBinding Command="ApplicationCommands.Copy" Executed="ListRows_OnCopy" />
+                        </ListView.CommandBindings>
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Show in _folder"
+                                          InputGestureText="Enter"
+                                          IsEnabled="{Binding HasSelection}"
+                                          Command="{Binding ShowInFolderCommand}" />
+                                <Separator />
+                                <MenuItem Header="_Remove"
+                                          InputGestureText="Del"
+                                          IsEnabled="{Binding HasSelection}"
+                                          Command="{Binding RemoveCommand}" />
+                                <Separator />
+                                <MenuItem Header="Select _all"
+                                          InputGestureText="Ctrl+A"
+                                          Command="{x:Static c:TableColumns.SelectAllRows}"
+                                          CommandParameter="{Binding RelativeSource={RelativeSource Self}}" />
+                            </ContextMenu>
+                        </ListView.ContextMenu>
                         <ListView.View>
                             <GridView>
                                 <GridViewColumn Header="Source file"
@@ -787,7 +812,46 @@
                               Visibility="{Binding HasBackups, Converter={StaticResource VisibleWhenTrue}}">
                         <ListView.InputBindings>
                             <KeyBinding Key="Delete" Command="{Binding DeleteCommand}" />
+                            <KeyBinding Key="Enter" Command="{Binding ShowReportCommand}" />
                         </ListView.InputBindings>
+                        <ListView.CommandBindings>
+                            <CommandBinding Command="ApplicationCommands.Copy" Executed="ListRows_OnCopy" />
+                        </ListView.CommandBindings>
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Show _report"
+                                          InputGestureText="Enter"
+                                          IsEnabled="{Binding CanSaveReport}"
+                                          Command="{Binding ShowReportCommand}" />
+                                <MenuItem Header="Sa_ve report…"
+                                          IsEnabled="{Binding CanSaveReport}"
+                                          Command="{Binding SaveReportCommand}" />
+                                <MenuItem Header="Show in _folder"
+                                          IsEnabled="{Binding CanShowInFolder}"
+                                          Command="{Binding ShowInFolderCommand}" />
+                                <Separator />
+                                <MenuItem Header="Convert to _CHD"
+                                          IsEnabled="{Binding CanConvertToChd}"
+                                          Command="{Binding ConvertToChdCommand}" />
+                                <MenuItem Header="Convert to IS_O/BIN"
+                                          IsEnabled="{Binding CanConvertToImage}"
+                                          Command="{Binding ConvertToImageCommand}" />
+                                <Separator />
+                                <MenuItem Header="I_nstall on PS2"
+                                          IsEnabled="{Binding CanInstallBackup}"
+                                          Command="{Binding InstallBackupCommand}" />
+                                <Separator />
+                                <MenuItem Header="D_elete"
+                                          InputGestureText="Del"
+                                          IsEnabled="{Binding CanDelete}"
+                                          Command="{Binding DeleteCommand}" />
+                                <Separator />
+                                <MenuItem Header="Select _all"
+                                          InputGestureText="Ctrl+A"
+                                          Command="{x:Static c:TableColumns.SelectAllRows}"
+                                          CommandParameter="{Binding RelativeSource={RelativeSource Self}}" />
+                            </ContextMenu>
+                        </ListView.ContextMenu>
                         <ListView.View>
                             <GridView>
                                 <GridViewColumn Header="Name"
@@ -882,8 +946,8 @@
                 <DockPanel DockPanel.Dock="Top" Style="{StaticResource CommandBar}">
                     <Button DockPanel.Dock="Right"
                             Style="{StaticResource PrimaryButton}"
-                            Content="_Send to PS2"
-                            ToolTip="Writes the cached artwork the PS2 doesn't have yet into OPL's ART folder, through Loadout Bay at the address in Settings. Download artwork first fetches it."
+                            Content="{Binding SendLabel}"
+                            ToolTip="Writes the cached artwork the PS2 doesn't have yet into OPL's ART folder, through Loadout Bay at the address in Settings: of the games picked in the list, or of every game when none is picked. Download artwork first fetches it."
                             IsEnabled="{Binding IsIdle}"
                             Command="{Binding SendCommand}" />
                     <Button DockPanel.Dock="Right"
@@ -891,8 +955,8 @@
                             Content="Cancel"
                             Command="{Binding CancelCommand}"
                             Visibility="{Binding IsBusy, Converter={StaticResource VisibleWhenTrue}}" />
-                    <Button Content="_Download artwork"
-                            ToolTip="Fetches the covers, icons, backgrounds and screenshots of the installed games into the cache."
+                    <Button Content="{Binding DownloadLabel}"
+                            ToolTip="Fetches the covers, icons, backgrounds and screenshots into the cache: of the games picked in the list, or of every installed game when none is picked."
                             IsEnabled="{Binding IsIdle}"
                             Command="{Binding DownloadCommand}" />
                     <CheckBox Margin="16,0,0,0"
@@ -910,8 +974,28 @@
                               c:TableColumns.Key="artwork"
                               c:TableColumns.Fill="title"
                               ItemsSource="{Binding Games}"
-                              Loaded="GameList_Loaded"
+                              SelectionMode="Extended"
+                              SelectionChanged="ArtworkList_OnSelectionChanged"
+                              Loaded="ArtworkList_Loaded"
                               Visibility="{Binding HasGames, Converter={StaticResource VisibleWhenTrue}}">
+                        <ListView.CommandBindings>
+                            <CommandBinding Command="ApplicationCommands.Copy" Executed="ListRows_OnCopy" />
+                        </ListView.CommandBindings>
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="{Binding DownloadLabel}"
+                                          IsEnabled="{Binding IsIdle}"
+                                          Command="{Binding DownloadCommand}" />
+                                <MenuItem Header="{Binding SendLabel}"
+                                          IsEnabled="{Binding IsIdle}"
+                                          Command="{Binding SendCommand}" />
+                                <Separator />
+                                <MenuItem Header="Select _all"
+                                          InputGestureText="Ctrl+A"
+                                          Command="{x:Static c:TableColumns.SelectAllRows}"
+                                          CommandParameter="{Binding RelativeSource={RelativeSource Self}}" />
+                            </ContextMenu>
+                        </ListView.ContextMenu>
                         <ListView.View>
                             <GridView>
                                 <GridViewColumn Header="Art" Width="56" c:TableColumns.Id="art" c:TableColumns.Fixed="True">

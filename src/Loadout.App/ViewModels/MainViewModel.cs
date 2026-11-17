@@ -205,6 +205,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void KeepList(InstalledGameListStore savedList, BayLibrary library)
     {
         Install.ReplaceInstalled(library.Games, library.Space);
+        if (_selected.Content is ArtworkViewModel artwork)
+        {
+            artwork.Refresh();
+        }
+
         try
         {
             savedList.Replace(library.Games, DateTimeOffset.Now);

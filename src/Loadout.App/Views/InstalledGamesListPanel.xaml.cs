@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Loadout.App.Controls;
 using Loadout.Library;
 
 namespace Loadout.App;
@@ -19,6 +20,9 @@ public partial class InstalledGamesListPanel : UserControl
             viewModel.SetSelection(GamesList.SelectedItems.Cast<InstalledGameRow>().ToList());
         }
     }
+
+    // Ctrl+C copies the picked games as text, a line of column names first.
+    private void GamesList_OnCopy(object sender, System.Windows.Input.ExecutedRoutedEventArgs e) => TableColumns.CopyRows(GamesList);
 
     private void GamesList_Loaded(object sender, RoutedEventArgs e)
     {

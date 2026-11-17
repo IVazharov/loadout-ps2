@@ -233,6 +233,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         StopCommand = new RelayCommand(Stop);
         PauseToCleanCommand = new RelayCommand(PauseToClean);
         OpenFolderCommand = new RelayCommand(OpenFolder);
+        ShowInFolderCommand = new RelayCommand(OpenFolder);
         DeleteCommand = new RelayCommand(DeletePicked);
         ShowReportCommand = new RelayCommand(ShowReport);
         InstallBackupCommand = new RelayCommand(InstallSelected);
@@ -291,6 +292,12 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     }
 
     public ICommand OpenFolderCommand { get; }
+
+    /// <summary>Opens Explorer on the backup folder with the picked copies' files picked: a chd, an iso, or a CD's bin and cue.</summary>
+    public ICommand ShowInFolderCommand { get; }
+
+    /// <summary>A copy is picked in the list, so Show in folder has a file to show.</summary>
+    public bool CanShowInFolder => _picked.Count > 0;
 
     public ICommand ShowReportCommand { get; }
 
@@ -697,6 +704,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanSaveReport));
         OnPropertyChanged(nameof(CanInstallBackup));
         OnPropertyChanged(nameof(CanDelete));
+        OnPropertyChanged(nameof(CanShowInFolder));
         OnPropertyChanged(nameof(CanConvertToChd));
         OnPropertyChanged(nameof(CanConvertToImage));
     }
@@ -2422,18 +2430,24 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         }
     }
 
+    // The backup folder, with the picked copies' files picked in it when there are some.
     private void OpenFolder()
     {
         var folder = _settings.BackupFolder;
-        if (Single is { } row && File.Exists(row.Backup.Files.Image))
+        var files = _picked.SelectMany(row => FilesOf(row.Backup)).Where(File.Exists).ToList();
+        if (files.Count > 0)
         {
-            Process.Start("explorer.exe", "/select,\"" + row.Backup.Files.Image + "\"");
+            ShellFolder.ShowFiles(files);
         }
         else if (folder.Length > 0 && Directory.Exists(folder))
         {
             Process.Start("explorer.exe", "\"" + folder + "\"");
         }
     }
+
+    // The files a copy is kept as: its chd, or its iso, or a CD's bin and cue.
+    private static IEnumerable<string> FilesOf(DiscBackup backup) =>
+        backup.Format == DiscBackupFormat.Chd ? [backup.Files.Chd] : backup.Files.Uncompressed;
 
     private void ShowDetails()
     {

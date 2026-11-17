@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -43,6 +44,9 @@ public partial class MainWindow : LoadoutWindow
 
     // Set when Windows ends the session or an update restarts Loadout: no question before closing then.
     private bool _closeWithoutAsking;
+
+    // The pages' lists, by their names: Ctrl+A and Esc pick in the one the page shows, wherever the keyboard is on it.
+    private static readonly string[] PageLists = ["Installed games", "Install queue", "Backed-up discs", "Games and their artwork", "Log"];
 
     public MainWindow()
     {
@@ -495,6 +499,126 @@ public partial class MainWindow : LoadoutWindow
         var selected = new QueuePreviewItem[list.SelectedItems.Count];
         list.SelectedItems.CopyTo(selected, 0);
         install.SetSelection(selected);
+    }
+
+    // Ctrl+C in a list copies its picked rows as text, a line of column names first, the columns in their shown order.
+    private void ListRows_OnCopy(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (sender is ListView list)
+        {
+            TableColumns.CopyRows(list);
+        }
+    }
+
+    private void ArtworkList_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => PickArtwork(sender);
+
+    // The list is made again each time its page shows, with nothing picked: the buttons then act on every game.
+    private void ArtworkList_Loaded(object sender, RoutedEventArgs e)
+    {
+        GameList_Loaded(sender, e);
+        PickArtwork(sender);
+    }
+
+    private static void PickArtwork(object sender)
+    {
+        if (sender is ListView list && list.DataContext is ArtworkViewModel artwork)
+        {
+            artwork.SetPicked([.. list.SelectedItems.OfType<ArtworkRow>()]);
+        }
+    }
+
+    // Keys for the page shown that nothing on it took first. Ctrl+A picks every row of its list and Esc none (not while
+    // typing); F5 reads the list again; Ctrl+O adds files on Install; on Installed Games, F2, or Enter in the list, goes to
+    // the picked game's title, and Ctrl+S saves it.
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Handled || DataContext is not MainViewModel model)
+        {
+            return;
+        }
+
+        var ctrl = Keyboard.Modifiers == ModifierKeys.Control;
+        var plain = Keyboard.Modifiers == ModifierKeys.None;
+        var typing = Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox or ComboBox;
+        var page = model.SelectedPage.Content;
+        var list = PageList();
+        switch (e.Key)
+        {
+            case Key.A when ctrl && list is { SelectionMode: not SelectionMode.Single }:
+                list.SelectAll();
+                list.Focus();
+                e.Handled = true;
+                break;
+            case Key.Escape when plain && !typing && list is { SelectedItems.Count: > 0 }:
+                list.UnselectAll();
+                e.Handled = true;
+                break;
+            case Key.F5 when plain:
+                e.Handled = ReadAgain(model, page);
+                break;
+            case Key.O when ctrl && page is InstallViewModel install:
+                install.AddFilesCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.F2 when plain && page is InstalledGamesViewModel:
+            case Key.Enter when plain && page is InstalledGamesViewModel && list is { IsKeyboardFocusWithin: true }:
+                e.Handled = FocusTitle();
+                break;
+            case Key.S when ctrl && page is InstalledGamesViewModel { CanSave: true } installed:
+                installed.SaveEditCommand.Execute(null);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    // F5: Back up discs looks through its folder again; Installed Games and Artwork read the list from Loadout Bay again.
+    private static bool ReadAgain(MainViewModel model, object? page)
+    {
+        switch (page)
+        {
+            case BackupViewModel backup:
+                backup.RefreshList();
+                return true;
+            case InstalledGamesViewModel or ArtworkViewModel when model.Installed.CanConnect:
+                model.Installed.ConnectCommand.Execute(null);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool FocusTitle()
+    {
+        if (FindNamed<TextBox>(PageHost, "TitleBox") is not { IsVisible: true, IsEnabled: true } title)
+        {
+            return false;
+        }
+
+        title.Focus();
+        title.SelectAll();
+        return true;
+    }
+
+    private ListBox? PageList() =>
+        Descendants<ListBox>(PageHost).FirstOrDefault(list => list.IsVisible && PageLists.Contains(AutomationProperties.GetName(list)));
+
+    private static IEnumerable<T> Descendants<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match)
+            {
+                yield return match;
+            }
+
+            foreach (var found in Descendants<T>(child))
+            {
+                yield return found;
+            }
+        }
     }
 
     private void BackupList_OnSelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -70,6 +70,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         CancelCommand = new RelayCommand(Cancel, () => _install is not null || _scansRunning > 0);
         SkipCheckCommand = new RelayCommand(SkipCheck);
         RemoveCommand = new RelayCommand(RemoveSelected);
+        ShowInFolderCommand = new RelayCommand(() => ShellFolder.ShowFiles(_selection.Select(item => item.SourceFile)));
         InstallCommand = new AsyncRelayCommand(InstallAsync, OnInstallFailed);
         _status = QueueStatus();
     }
@@ -117,6 +118,9 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     public string Summary => InstallQueueSummary.Describe(Items, _space, _sentSinceReading);
 
     public bool HasSelection => _selection.Length > 0;
+
+    /// <summary>Opens Explorer with the selected games' files picked, one window for each folder they are in.</summary>
+    public ICommand ShowInFolderCommand { get; }
 
     /// <summary>The page's ticks: artwork, memory cards and the check, which its installs use.</summary>
     public InstallTicks Ticks { get; }

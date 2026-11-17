@@ -15,6 +15,29 @@
               SelectionMode="Extended"
               SelectionChanged="GamesList_SelectionChanged"
               Loaded="GamesList_Loaded">
+        <ListView.InputBindings>
+            <KeyBinding Key="Delete" Command="{Binding RemoveCommand}" />
+        </ListView.InputBindings>
+        <ListView.CommandBindings>
+            <CommandBinding Command="ApplicationCommands.Copy" Executed="GamesList_OnCopy" />
+        </ListView.CommandBindings>
+        <ListView.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="_Give memory cards…"
+                          IsEnabled="{Binding CanGiveCards}"
+                          Command="{Binding GiveCardsCommand}" />
+                <Separator />
+                <MenuItem Header="_Remove…"
+                          InputGestureText="Del"
+                          IsEnabled="{Binding CanRemove}"
+                          Command="{Binding RemoveCommand}" />
+                <Separator />
+                <MenuItem Header="Select _all"
+                          InputGestureText="Ctrl+A"
+                          Command="{x:Static c:TableColumns.SelectAllRows}"
+                          CommandParameter="{Binding RelativeSource={RelativeSource Self}}" />
+            </ContextMenu>
+        </ListView.ContextMenu>
         <ListView.View>
             <GridView>
                 <GridViewColumn Header="Art" Width="56" c:TableColumns.Id="art" c:TableColumns.Fixed="True">
