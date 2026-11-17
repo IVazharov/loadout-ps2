@@ -40,10 +40,13 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - Check each game after installing moved from Settings to the Install page, beside its artwork and memory card ticks. A check you had turned off stays off, on both pages. The Install page also remembers its artwork and memory card ticks now.
 - The Windows download holds only `LoadoutPS2.exe` and its readme: every licence text, the fonts' and the chd reader's included, is on the About page. Loadout Bay's download keeps its licence files.
 - Backup is the third page, after Install, so Artwork, Settings, Logs and About are now Ctrl+4 to Ctrl+7.
+- On a drive without a Recycle Bin, such as a USB stick or a network share, what Back up discs removes (with Delete, Back up again's Replace, or once a conversion reads back the same) is deleted for good, as Windows does there. Its questions now say so before you confirm, and its reports after, instead of naming the Recycle Bin.
+- Back up this disc says when the copy itself can't fit on the backup folder's drive, and how much room it takes, instead of starting a copy that stops at once on a full drive.
 - Loadout Bay is built with a newer ps2sdk, of 2026-11-16, which has its own fix for the clock fault that made Loadout Bay stop answering after about 36 minutes, so Loadout Bay no longer needs its own. Its hard disk, network and USB drivers come from the same ps2sdk.
 
 ### Fixed
 
+- A list shown again with a page, such as Back up discs' after another page, showed its picked row while the page's buttons for it stayed off until another row was picked.
 - Cancel, during an install's check, did nothing: the game was installed once the check ended. With this release's Loadout Bay, it now cancels the install, and Loadout Bay removes the game.
 
 ## 0.10.0 - 2026-11-11

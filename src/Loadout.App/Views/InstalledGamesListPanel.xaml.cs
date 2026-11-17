@@ -24,11 +24,13 @@ public partial class InstalledGamesListPanel : UserControl
     // Ctrl+C copies the picked games as text, a line of column names first.
     private void GamesList_OnCopy(object sender, System.Windows.Input.ExecutedRoutedEventArgs e) => TableColumns.CopyRows(GamesList);
 
+    // Made again as its page shows, the list may have its pick back from the binding before it could say so: it says so now.
     private void GamesList_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is ListView list)
         {
             GameColumnSort.Enable(list);
+            GamesList_SelectionChanged(list, null!);
         }
     }
 }

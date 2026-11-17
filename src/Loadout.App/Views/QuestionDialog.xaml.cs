@@ -71,9 +71,16 @@ public partial class QuestionDialog : LoadoutWindow
         ConfirmButton.Content = question.ConfirmLabel;
         CancelButton.Content = question.CancelLabel;
 
+        // A message has nothing to confirm: its one button closes it.
+        var message = question.ConfirmLabel.Length == 0;
+        if (message)
+        {
+            ConfirmButton.Visibility = Visibility.Collapsed;
+        }
+
         // Amber never pulls towards data loss: a destructive action is a secondary button in the error colour,
         // and the safe choice is the default. A notice's action is a side trip (open a folder), so Close is the default.
-        var defaultButton = question.Destructive || confirmAction is not null ? CancelButton : ConfirmButton;
+        var defaultButton = question.Destructive || confirmAction is not null || message ? CancelButton : ConfirmButton;
         defaultButton.IsDefault = true;
         if (question.Destructive)
         {

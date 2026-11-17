@@ -678,8 +678,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         {
             BackupRecycler.Recycle(old.Files);
             backup = backup with { Files = backup.Files.RenameTo(old.Files.Name) };
-            _log.Add($"Replaced the earlier copy {old.Files.Name}: it is in the Recycle Bin.");
-            return " It replaced the earlier copy, which is in the Recycle Bin.";
+            var bin = BackupRecycler.HasRecycleBin(old.Files.Folder);
+            _log.Add($"Replaced the earlier copy {old.Files.Name}: {(bin ? "it is in the Recycle Bin" : "it is deleted for good, as its drive has no Recycle Bin")}.");
+            return bin ? " It replaced the earlier copy, which is in the Recycle Bin." : " It replaced the earlier copy, which is deleted for good: this drive has no Recycle Bin.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
@@ -736,10 +737,13 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
         var size = Size(rows.Sum(r => r.Backup.Bytes));
         var one = rows.Count == 1;
+        var bin = BackupRecycler.HasRecycleBin(rows[0].Backup.Files.Folder);
         if (!_confirm(new Question(
             one ? "Delete " + rows[0].Name + "?" : string.Create(CultureInfo.CurrentCulture, $"Delete {rows.Count} copies?"),
-            (one ? $"This {size} copy and its report, hashes and map go" : string.Create(CultureInfo.CurrentCulture, $"These {rows.Count} copies ({size}) and their reports, hashes and maps go"))
-                + " to the Recycle Bin, where you can restore them. Games on the PS2 are not touched.",
+            (one ? $"This {size} copy and its report, hashes and map" : string.Create(CultureInfo.CurrentCulture, $"These {rows.Count} copies ({size}) and their reports, hashes and maps"))
+                + (bin
+                    ? " go to the Recycle Bin, where you can restore them. Games on the PS2 are not touched."
+                    : " are deleted for good: the backup folder's drive has no Recycle Bin. Games on the PS2 are not touched."),
             "_Delete",
             "Cancel",
             QuestionKind.Warn,
@@ -756,7 +760,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             try
             {
                 BackupRecycler.Recycle(row.Backup.Files);
-                _log.Add($"Deleted the backup {row.Name}: it is in the Recycle Bin.");
+                _log.Add($"Deleted the backup {row.Name}: {(bin ? "it is in the Recycle Bin" : "it is deleted for good, as its drive has no Recycle Bin")}.");
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
             {
@@ -767,7 +771,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
         RefreshList();
         Status = failed.Count == 0
-            ? PageStatus.Ok(one ? "Deleted " + rows[0].Name : string.Create(CultureInfo.CurrentCulture, $"Deleted {rows.Count} copies"), "In the Recycle Bin, if you want them back.")
+            ? PageStatus.Ok(one ? "Deleted " + rows[0].Name : string.Create(CultureInfo.CurrentCulture, $"Deleted {rows.Count} copies"), bin ? "In the Recycle Bin, if you want them back." : "Deleted for good: this drive has no Recycle Bin.")
             : PageStatus.Error(failed.Count == rows.Count ? "Nothing was deleted" : "Some copies were not deleted", string.Join(" ", failed));
     }
 
@@ -1011,7 +1015,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             var choice = _choose(new Question(
                 "Back up this disc again?",
                 $"{chosen.Title} is backed up as {first.Files.Name} ({ResultWords(first.Result)}). The new copy can go beside it, or replace it. "
-                    + "The earlier copy is only replaced once the new one is complete, and goes to the Recycle Bin.",
+                    + (BackupRecycler.HasRecycleBin(first.Files.Folder)
+                        ? "The earlier copy is only replaced once the new one is complete, and goes to the Recycle Bin."
+                        : "The earlier copy is only replaced once the new one is complete, and is then deleted for good: this drive has no Recycle Bin."),
                 "_Back up again",
                 "Cancel",
                 Items: ["Keep both copies", "Replace " + first.Files.Name],
@@ -1024,7 +1030,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             _replacing = picked == 1 ? first : null;
         }
 
-        if (!RoomToCompress(chosen, folder, resume is not null))
+        if (!RoomForCopy(chosen, folder, resume is not null))
         {
             _replacing = null;
             return;
@@ -1151,26 +1157,31 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
     // Before a copy that is to become a chd: its drive needs room for the image and, while it is compressed, for a chd up
     // to as big beside it. Asks when it may not have that; without the room the copy is kept as an iso or a bin and cue.
-    private bool RoomToCompress(DriveDisc chosen, string folder, bool resume)
+    // A copy reserves its whole file when it starts, so one that can't fit is not started: a message says why. One kept as a
+    // chd then needs room for a chd up to as big beside it while it is compressed: asked about when the drive may lack it.
+    private bool RoomForCopy(DriveDisc chosen, string folder, bool resume)
     {
+        if (FreeBytes(folder) is not { } free)
+        {
+            return true;
+        }
+
         var cd = chosen.Disc.Media == DiscMedia.Cd;
-        if (!Formats.ChdFor(cd))
-        {
-            return true;
-        }
-
-        long free;
-        try
-        {
-            free = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace;
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
-        {
-            return true;
-        }
-
         var bytes = chosen.Disc.Sectors * (cd ? 2352L : DiscSectors.Size);
-        if (free >= (resume ? 0 : bytes) + bytes)
+        var copy = resume ? 0 : bytes;
+        if (free < copy)
+        {
+            _confirm(new Question(
+                "There isn't room for this copy",
+                $"The copy of {chosen.Title} takes {Size(bytes)}, and the backup folder's drive has {Size(free)} free. Free some room, or choose another backup folder in Settings.",
+                string.Empty,
+                "OK",
+                QuestionKind.Warn));
+            _log.Add($"Not backing up {chosen.Title}: the copy takes {Size(bytes)}, and the backup folder's drive has {Size(free)} free.");
+            return false;
+        }
+
+        if (!Formats.ChdFor(cd) || free >= copy + bytes)
         {
             return true;
         }
@@ -1363,7 +1374,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             }
 
             BackupRecycler.Recycle(paths);
-            return $": the {kind} {are} in the Recycle Bin.";
+            return BackupRecycler.HasRecycleBin(files.Folder)
+                ? $": the {kind} {are} in the Recycle Bin."
+                : $": the {kind} {are} deleted for good, as this drive has no Recycle Bin.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
@@ -1475,7 +1488,9 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         try
         {
             BackupRecycler.Recycle(paths);
-            return ": the chd is in the Recycle Bin.";
+            return BackupRecycler.HasRecycleBin(files.Folder)
+                ? ": the chd is in the Recycle Bin."
+                : ": the chd is deleted for good, as this drive has no Recycle Bin.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
@@ -1618,15 +1633,18 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         var to = toChd ? "CHD" : (cd ? "bin/cue" : "ISO");
         var count = plan.Convert.Count;
         var one = count == 1;
-        var goes = toChd ? (cd ? "bin and cue go" : "iso goes") : "chd goes";
+        var replaced = toChd ? (cd ? "bin and cue" : "iso") : "chd";
+        var goes = BackupRecycler.HasRecycleBin(_settings.BackupFolder)
+            ? $"{replaced} {(toChd && cd ? "go" : "goes")} to the Recycle Bin"
+            : $"{replaced} {(toChd && cd ? "are" : "is")} deleted for good (this drive has no Recycle Bin)";
         if (_confirm(new Question(
             one
                 ? $"Also convert the {media} copy kept as {from}?"
                 : string.Create(CultureInfo.CurrentCulture, $"Also convert the {count} {media} copies kept as {from}?"),
             $"{media} copies backed up from now on are kept as {to}. "
                 + (one
-                    ? $"The one kept as {from} can be converted too; it is read back to be sure it is the same before its {goes} to the Recycle Bin."
-                    : string.Create(CultureInfo.CurrentCulture, $"The {count} kept as {from} can be converted too, one at a time; each is read back to be sure it is the same before its {goes} to the Recycle Bin.")),
+                    ? $"The one kept as {from} can be converted too; it is read back to be sure it is the same before its {goes}."
+                    : string.Create(CultureInfo.CurrentCulture, $"The {count} kept as {from} can be converted too, one at a time; each is read back to be sure it is the same before its {goes}.")),
             one ? "_Convert it" : "_Convert them",
             "Not now",
             Items: [.. plan.Convert.Select(b => b.Files.Name)])))

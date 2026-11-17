@@ -12,6 +12,7 @@ public enum QuestionKind
 /// A destructive question makes Cancel the default and shows no amber button. Labels may carry an access key ("_Keep them").
 /// With <paramref name="ChooseItem"/> the items are a list to choose one from, and <c>QuestionDialog.Choose</c> returns its index.
 /// With <paramref name="Picker"/> the dialog shows a choice above the items, and <c>QuestionDialog.Choose</c> returns the option picked.
+/// An empty <paramref name="ConfirmLabel"/> makes a message: only the Cancel label's button (such as OK) shows.
 /// </summary>
 public sealed record Question(
     string Title,

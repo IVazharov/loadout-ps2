@@ -621,6 +621,19 @@ public partial class MainWindow : LoadoutWindow
         }
     }
 
+    // A list made again, as its page shows, may have its pick back from a binding before it could say so: it says so now.
+    private void QueueList_Loaded(object sender, RoutedEventArgs e)
+    {
+        GameList_Loaded(sender, e);
+        QueueList_OnSelectionChanged(sender, null!);
+    }
+
+    private void BackupList_Loaded(object sender, RoutedEventArgs e)
+    {
+        GameList_Loaded(sender, e);
+        BackupList_OnSelectionChanged(sender, null!);
+    }
+
     private void BackupList_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is ListView list && list.DataContext is BackupViewModel backup)

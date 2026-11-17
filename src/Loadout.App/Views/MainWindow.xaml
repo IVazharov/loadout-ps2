@@ -394,7 +394,7 @@
                               ItemsSource="{Binding Items}"
                               SelectionMode="Extended"
                               SelectionChanged="QueueList_OnSelectionChanged"
-                              Loaded="GameList_Loaded"
+                              Loaded="QueueList_Loaded"
                               Visibility="{Binding IsEmpty, Converter={StaticResource CollapsedWhenTrue}}">
                         <ListView.InputBindings>
                             <KeyBinding Key="Delete" Command="{Binding RemoveCommand}" />
@@ -761,7 +761,7 @@
                             Command="{Binding OpenFolderCommand}" />
                     <Button Margin="8,0,0,0"
                             Content="D_elete"
-                            ToolTip="Sends the selected copies to the Recycle Bin, with their reports, hashes and maps. Games on the PS2 are not touched. Ctrl-click or Shift-click to select several."
+                            ToolTip="Sends the selected copies to the Recycle Bin, with their reports, hashes and maps (a drive without one, such as a USB stick, deletes them for good, and the question says so). Games on the PS2 are not touched. Ctrl-click or Shift-click to select several."
                             IsEnabled="{Binding CanDelete}"
                             Command="{Binding DeleteCommand}" />
                     <Button Margin="8,0,0,0"
@@ -808,7 +808,7 @@
                               SelectedItem="{Binding SelectedBackup}"
                               SelectionMode="Extended"
                               SelectionChanged="BackupList_OnSelectionChanged"
-                              Loaded="GameList_Loaded"
+                              Loaded="BackupList_Loaded"
                               Visibility="{Binding HasBackups, Converter={StaticResource VisibleWhenTrue}}">
                         <ListView.InputBindings>
                             <KeyBinding Key="Delete" Command="{Binding DeleteCommand}" />
