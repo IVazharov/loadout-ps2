@@ -138,6 +138,7 @@ static int load_modules(void)
         SifExecModuleBuffer(ps2fs_irx, size_ps2fs_irx, sizeof(pfs_args), pfs_args, NULL);
         ui_set_disk(disk_size_gb());
         disk_show_free();
+        files_show_space();
     }
 
     return 0;
@@ -304,7 +305,7 @@ static void choose_config(int argc, char *argv[], struct net_config *config)
     }
 }
 
-// Shows a finished speed test as "TCP 7.85 MB/s" or "UDP 9.12 MB/s · 0.3% lost".
+// Shows a finished speed test on the status line as "TCP 7.85 MB/s" or "UDP 9.12 MB/s · 0.3% lost".
 static void on_bench_report(enum status status, const char *detail, const struct bench_result *result)
 {
     char speed[72] = "";
@@ -319,8 +320,6 @@ static void on_bench_report(enum status status, const char *detail, const struct
             u32 tenths = (u32)((u64)lost * 1000u / result->packets_sent);
             snprintf(speed + length, sizeof(speed) - length, " \xC2\xB7 %u.%u%% lost", tenths / 10u, tenths % 10u);
         }
-
-        ui_set_speed(speed);
     }
 
     ui_status(status, detail != NULL ? detail : speed, STATUS_NO_PROGRESS);

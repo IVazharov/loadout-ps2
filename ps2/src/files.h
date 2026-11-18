@@ -64,6 +64,11 @@ int files_delete(u32 folder, const char *name);
 // Unmounts OPL's partition, if a file command mounted it.
 void files_close(void);
 
+// Shows OPL's partition on the screen, its free space of its size, or that OPL
+// hasn't made it yet, and then unmounts it as files_close does. Shows nothing
+// new while an install has the disk.
+void files_show_space(void);
+
 // Mounts a hard disk partition at pfs0:, closing OPL's first, so a path on it
 // reads "pfs0:<path>". files_close unmounts it. Returns 0 or a negative errno.
 int files_mount_partition(const char *partition, int writable);

@@ -1,5 +1,5 @@
 // Loadout Bay's screens: the main screen with the status panel, the address
-// card, the hard disk and the last speed test, and the network settings.
+// card, the hard disk and OPL's partition, and the network settings.
 //
 // The setters change what the screen shows, from any thread; the UI thread
 // draws it and answers the controller.
@@ -55,7 +55,16 @@ void ui_set_disk(unsigned size_gb);
 // The part of it still free, in GB.
 void ui_set_disk_free(unsigned free_gb);
 
-void ui_set_speed(const char *result);
+// What is known of OPL's partition, where artwork, game settings, memory cards and Loadout Bay itself go.
+enum ui_opl
+{
+    UI_OPL_UNKNOWN, // not read yet, or no hard disk
+    UI_OPL_MISSING, // OPL hasn't made it yet
+    UI_OPL_KNOWN,
+};
+
+// OPL's partition: its free bytes of its size in bytes, when known.
+void ui_set_opl_space(enum ui_opl state, unsigned long long free_bytes, unsigned long long total_bytes);
 
 // A problem with loadout-bay.cfg, in one line, shown while Loadout Bay is ready.
 void ui_set_note(const char *note);

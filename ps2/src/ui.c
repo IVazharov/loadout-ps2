@@ -23,6 +23,8 @@
 #define REPEAT_DELAY_MS 400
 #define REPEAT_MS 80
 #define TOAST_MS 3000
+// An 8 MB memory card, Sony's size and Loadout's default, with the room PFS takes beside it.
+#define OPL_CARD_ROOM_BYTES (8ull * 1024 * 1024 + 64 * 1024)
 
 struct status_copy
 {
@@ -230,6 +232,27 @@ static void format_disk(const struct model *m, char *text, size_t size)
     }
 }
 
+// OPL's partition in MB of 1048576 bytes, as Loadout and OPL count it: "3.8 of 128 MB", tenths below 10 MB,
+// or "0.8 of 1.0 GB" for a partition of 1000 MB and more. Free space is rounded down.
+static void format_opl(const struct model *m, char *text, size_t size)
+{
+    unsigned free_tenths = (unsigned)(m->opl_free_bytes * 10 / (1024u * 1024u));
+    unsigned total_mb = (unsigned)((m->opl_total_bytes + 512u * 1024u) / (1024u * 1024u));
+    if (total_mb >= 1000)
+    {
+        unsigned free_gb_tenths = free_tenths / 1024, total_gb_tenths = (unsigned)(m->opl_total_bytes * 10 / (1024ull * 1024u * 1024u));
+        snprintf(text, size, "%u.%u of %u.%u GB", free_gb_tenths / 10, free_gb_tenths % 10, total_gb_tenths / 10, total_gb_tenths % 10);
+    }
+    else if (free_tenths < 100)
+    {
+        snprintf(text, size, "%u.%u of %u MB", free_tenths / 10, free_tenths % 10, total_mb);
+    }
+    else
+    {
+        snprintf(text, size, "%u of %u MB", free_tenths / 10, total_mb);
+    }
+}
+
 static void draw_cells(const struct model *m)
 {
     gfx_panel(64, 308, 204, 52, 6, SURFACE_1, GFX_OPAQUE);
@@ -247,11 +270,14 @@ static void draw_cells(const struct model *m)
     gfx_text(FONT_BODY, 112, 352, !m->disk_known ? "\xE2\x80\x93" : m->disk_gb == 0 ? "Not found" : size,
              !m->disk_known ? TEXT_DISABLED : disk, GFX_LEFT);
 
+    // Amber once another memory card no longer fits, and while OPL has made no partition.
     gfx_panel(280, 308, 296, 52, 6, SURFACE_1, GFX_OPAQUE);
-    gfx_text(FONT_LABEL, 296, 328, "LAST SPEED TEST", TEXT_LABEL, GFX_LEFT);
-    char cut[WIDGET_TEXT_LENGTH * 2];
-    gfx_text(FONT_BODY, 296, 352, m->speed[0] != '\0' ? widget_fit(FONT_BODY, m->speed, 264, cut, sizeof(cut)) : "Not run yet",
-             m->speed[0] != '\0' ? TEXT_PRIMARY : TEXT_DISABLED, GFX_LEFT);
+    unsigned opl = m->opl == UI_OPL_MISSING || (m->opl == UI_OPL_KNOWN && m->opl_free_bytes < OPL_CARD_ROOM_BYTES) ? STATE_WARN : TEXT_PRIMARY;
+    gfx_text(FONT_LABEL, 296, 328, m->opl == UI_OPL_KNOWN ? "OPL PARTITION FREE" : "OPL PARTITION", TEXT_LABEL, GFX_LEFT);
+    char space[32];
+    format_opl(m, space, sizeof(space));
+    gfx_text(FONT_BODY, 296, 352, m->opl == UI_OPL_UNKNOWN ? "\xE2\x80\x93" : m->opl == UI_OPL_MISSING ? "Not made yet" : space,
+             m->opl == UI_OPL_UNKNOWN ? TEXT_DISABLED : opl, GFX_LEFT);
 }
 
 static void draw_toast(void)
@@ -612,10 +638,12 @@ void ui_set_disk_free(unsigned free_gb)
     unlock_model();
 }
 
-void ui_set_speed(const char *result)
+void ui_set_opl_space(enum ui_opl state, unsigned long long free_bytes, unsigned long long total_bytes)
 {
     lock_model();
-    snprintf(model.speed, sizeof(model.speed), "%s", result);
+    model.opl = state;
+    model.opl_free_bytes = free_bytes;
+    model.opl_total_bytes = total_bytes;
     unlock_model();
 }
 

@@ -30,7 +30,7 @@ Covers, sizes, memory cards and free space. Change a game's title or modes, give
 
 ### Follow it on the TV
 
-Loadout Bay shows its address, progress and free disk space. Set its network from the controller.
+Loadout Bay shows its address, progress, and the free space on the hard disk and in OPL's partition, where memory cards and artwork go. Set its network from the controller.
 
 ![Loadout Bay's screen on the PS2, its install progress, and its network settings](docs/images/tv.png)
 

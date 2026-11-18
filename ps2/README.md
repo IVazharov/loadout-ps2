@@ -9,7 +9,7 @@ You also need a way to start homebrew and run an ELF, such as FreeMcBoot or Free
 1. Copy `loadout-bay.elf` to a USB drive formatted as FAT32. A memory card also works, but updates sent from Loadout can't be saved there.
 2. On the PS2, start `loadout-bay.elf` with your homebrew launcher, such as wLaunchELF. Any launcher that tells it where it was started from will do: it saves its settings and updates there.
 
-The screen shows what Loadout Bay is doing, the console's address and network settings, the hard disk, and the last speed test.
+The screen shows what Loadout Bay is doing, the console's address and network settings, the hard disk's free space, and the free space in OPL's partition, where artwork, game settings, memory cards and Loadout Bay itself go. That turns amber below 8 MB, when another 8 MB memory card no longer fits, and says "Not made yet" until OPL has made the partition.
 
 Press Triangle for the network settings: DHCP or a fixed address, set with the controller. Save writes `loadout-bay.cfg` next to `loadout-bay.elf` and uses the new settings at once; the screen shows the address to give Loadout on the PC.
 

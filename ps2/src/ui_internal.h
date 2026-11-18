@@ -31,7 +31,8 @@ struct model
     int disk_known;
     unsigned disk_free_gb;
     int disk_free_known;
-    char speed[WIDGET_TEXT_LENGTH];
+    enum ui_opl opl;
+    unsigned long long opl_free_bytes, opl_total_bytes;
     char note[WIDGET_TEXT_LENGTH];
     char place[96];
     int can_save;

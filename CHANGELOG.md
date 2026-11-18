@@ -42,6 +42,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 - Backup is the third page, after Install, so Artwork, Settings, Logs and About are now Ctrl+4 to Ctrl+7.
 - On a drive without a Recycle Bin, such as a USB stick or a network share, what Back up discs removes (with Delete, Back up again's Replace, or once a conversion reads back the same) is deleted for good, as Windows does there. Its questions now say so before you confirm, and its reports after, instead of naming the Recycle Bin.
 - Back up this disc says when the copy itself can't fit on the backup folder's drive, and how much room it takes, instead of starting a copy that stops at once on a full drive.
+- Loadout Bay's screen shows the free space in OPL's partition, such as "3.8 of 128 MB", where the last speed test was: artwork, game settings, memory cards and Loadout Bay itself go there, and it is often far smaller than the hard disk. It turns amber below 8 MB, when another memory card no longer fits, and says "Not made yet" until OPL has made the partition. A speed test's result still shows on the status line.
 - Loadout Bay is built with a newer ps2sdk, of 2026-11-16, which has its own fix for the clock fault that made Loadout Bay stop answering after about 36 minutes, so Loadout Bay no longer needs its own. Its hard disk, network and USB drivers come from the same ps2sdk.
 
 ### Fixed

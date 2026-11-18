@@ -727,9 +727,11 @@ static const char *serve_requests(int fd, status_report report)
 }
 
 // An install that Loadout leaves open is removed, and OPL's
-// partition is unmounted, so its files are all on the disk. A game
-// left during its check is whole, so its check runs to the end, as
-// it did when the check answered INSTALL_END.
+// partition is unmounted, so its files are all on the disk; the
+// screen then shows the room left in it, which the session's cards,
+// artwork or Loadout Bay update may have taken. A game left during
+// its check is whole, so its check runs to the end, as it did when
+// the check answered INSTALL_END.
 static const char *serve_session(int fd, status_report report)
 {
     const char *result = serve_requests(fd, report);
@@ -745,7 +747,7 @@ static const char *serve_session(int fd, status_report report)
         disk_show_free();
     }
 
-    files_close();
+    files_show_space();
     return result;
 }
 

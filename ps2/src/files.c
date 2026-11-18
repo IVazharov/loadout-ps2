@@ -3,6 +3,7 @@
 
 #include "files.h"
 #include "install.h"
+#include "ui.h"
 #include "wire.h"
 
 #include <ctype.h>
@@ -430,6 +431,63 @@ void files_close(void)
         fileXioUmount(MOUNT_POINT);
         mounted = 0;
     }
+}
+
+// The partition's size from the disk's own partition table: the main part and its
+// sub-partitions, in 512-byte sectors, as wLaunchELF's HDD manager counts it.
+static int partition_bytes(const char *partition, u64 *bytes)
+{
+    char device[48];
+    snprintf(device, sizeof(device), "hdd0:%s", partition);
+    int fd = fileXioOpen(device, FIO_O_RDONLY);
+    if (fd < 0)
+    {
+        return fd;
+    }
+
+    *bytes = 0;
+    int subs = fileXioIoctl2(fd, HIOCNSUB, NULL, 0, NULL, 0);
+    int status = subs < 0 ? subs : 0;
+    for (u32 i = 0; status == 0 && i <= (u32)subs; i++)
+    {
+        // Sector counts come back in an int; the driver's errors are small negative errno values.
+        int sectors = fileXioIoctl2(fd, HIOCGETSIZE, &i, sizeof(i), NULL, 0);
+        status = sectors < 0 && sectors > -4096 ? sectors : 0;
+        *bytes += status == 0 ? (u64)(u32)sectors * 512u : 0;
+    }
+
+    fileXioClose(fd);
+    return status;
+}
+
+void files_show_space(void)
+{
+    // The partition is opened whole for its size, so nothing of it may be mounted then.
+    files_close();
+    if (install_busy())
+    {
+        return;
+    }
+
+    char partition[PARTITION_NAME_MAX + 1];
+    u64 total = 0;
+    u64 free = 0;
+    int status = opl_partition(partition);
+    if (status == 0)
+    {
+        status = partition_bytes(partition, &total);
+    }
+
+    if (status == -ENOENT)
+    {
+        ui_set_opl_space(UI_OPL_MISSING, 0, 0);
+    }
+    else if (status == 0 && files_space(&free) == 0)
+    {
+        ui_set_opl_space(UI_OPL_KNOWN, free, total);
+    }
+
+    files_close();
 }
 
 int files_mount_partition(const char *partition, int writable)
