@@ -15,9 +15,14 @@ public enum BayUpgradeStage
 /// <param name="Version">The version the new copy names in its greeting.</param>
 /// <param name="Saved">
 /// Whether the new copy saved itself over the file it was started from. False when saving was not asked
-/// for, or when the copy was not started from a USB drive or the hard disk; the new copy runs either way.
+/// for, or when it failed, such as for a copy not started from a USB drive or the hard disk, or for want of
+/// room there; the new copy runs either way, and the old file stays whole.
 /// </param>
-public sealed record BayUpgradeResult(string Version, bool Saved);
+/// <param name="NotSaved">Why a save that was asked for failed, in a sentence; null otherwise.</param>
+public sealed record BayUpgradeResult(string Version, bool Saved, string? NotSaved = null);
+
+/// <summary>OPL's partition's free bytes, and the bytes saving a new Loadout Bay there takes, when they fall short.</summary>
+public sealed record BayUpgradeRoom(long FreeBytes, long NeededBytes);
 
 /// <summary>
 /// Puts a new Loadout Bay on the PS2 over the network. The running copy takes the ELF and starts it
@@ -57,18 +62,54 @@ public static class BayUpgrade
         }
 
         stage?.Report(BayUpgradeStage.Saving);
-        await started.SendElfAsync(elf, cancellationToken: cancellationToken).ConfigureAwait(false);
         try
         {
+            await started.SendElfAsync(elf, cancellationToken: cancellationToken).ConfigureAwait(false);
             await started.SaveElfAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (LoadoutBayException ex) when (ex.Status == BayWire.StatusNotPermitted)
         {
             // Started from somewhere other than a USB drive or the hard disk: the new copy runs, and the old file stays.
-            return new BayUpgradeResult(started.Hello.Version, Saved: false);
+            return new BayUpgradeResult(started.Hello.Version, Saved: false, "It wasn't started from a USB drive or the hard disk.");
+        }
+        catch (LoadoutBayException ex)
+        {
+            // The new copy runs all the same, and Loadout Bay writes the new file whole before it touches the old one.
+            return new BayUpgradeResult(started.Hello.Version, Saved: false, ex.Message);
         }
 
         return new BayUpgradeResult(started.Hello.Version, Saved: true);
+    }
+
+    /// <summary>Room PFS takes beyond the ELF's own bytes: its inode and the rounding to whole zones.</summary>
+    public const long SaveOverheadBytes = 64 * 1024;
+
+    /// <summary>
+    /// Whether OPL's partition lacks room to save a new Loadout Bay of <paramref name="elfBytes"/> beside the one
+    /// in <c>APPS/Loadout-Bay</c>, where a copy that OPL started saves itself: the new file is written whole while
+    /// the old one and its backup are still there. Null when there is room, or when it can't be told: no copy in
+    /// that folder (so the running one came from a USB drive, which this doesn't measure), or a Loadout Bay
+    /// whose protocol differs from this Loadout's. Then the update goes ahead, and a failed save says why.
+    /// </summary>
+    public static async Task<BayUpgradeRoom?> CheckRoomAsync(string host, long elfBytes, int port = BayWire.Port, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var bay = await LoadoutBayClient.ConnectAsync(host, port, cancellationToken).ConfigureAwait(false);
+            var files = await bay.ListFilesAsync(BayFolder.App, cancellationToken).ConfigureAwait(false);
+            if (!files.Any(file => file.Name == HardDiskElfName))
+            {
+                return null;
+            }
+
+            var free = await bay.GetOplFreeBytesAsync(cancellationToken).ConfigureAwait(false);
+            var needed = elfBytes + SaveOverheadBytes;
+            return free >= needed ? null : new BayUpgradeRoom(free, needed);
+        }
+        catch (LoadoutBayException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The ELF's name in <see cref="BayFolder.App"/>.</summary>

@@ -242,6 +242,14 @@ int files_read(u32 folder, const char *name, u32 offset, u32 length, u8 *out)
     return status;
 }
 
+// A write that fails ends its transfer, as Loadout sends no more chunks of it:
+// the .part would only take room in OPL's partition, as half a memory card once did.
+static void remove_part(const char *part)
+{
+    fileXioRemove(part);
+    fileXioSync(MOUNT_POINT, FXIO_WAIT);
+}
+
 int files_write(u32 folder, const char *name, u32 offset, const u8 *data, u32 length)
 {
     if (length == 0 || length > FILES_CHUNK_MAX)
@@ -285,6 +293,7 @@ int files_write(u32 folder, const char *name, u32 offset, const u8 *data, u32 le
     int fd = fileXioOpen(path, FIO_O_WRONLY | FIO_O_CREAT | (offset == 0 ? FIO_O_TRUNC : 0), 0666);
     if (fd < 0)
     {
+        remove_part(path);
         return fd;
     }
 
@@ -292,7 +301,15 @@ int files_write(u32 folder, const char *name, u32 offset, const u8 *data, u32 le
     int size = fileXioLseek(fd, 0, SEEK_END);
     status = size < 0 ? size : (u32)size != offset ? -EINVAL : fileXioWrite(fd, (void *)data, (int)length);
     fileXioClose(fd);
-    return status < 0 ? status : (u32)status == length ? 0 : -EIO;
+
+    // PFS writes short when the partition fills up, which Loadout tells as no room rather than a disk error.
+    status = status < 0 ? status : (u32)status == length ? 0 : -ENOSPC;
+    if (status < 0)
+    {
+        remove_part(path);
+    }
+
+    return status;
 }
 
 int files_commit(u32 folder, const char *name, u32 size)
@@ -319,6 +336,7 @@ int files_commit(u32 folder, const char *name, u32 size)
 
     if (stat.size != size)
     {
+        remove_part(part);
         return -EPIPE;
     }
 

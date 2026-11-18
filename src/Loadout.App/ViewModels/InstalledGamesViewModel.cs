@@ -343,6 +343,26 @@ public sealed class InstalledGamesViewModel : ObservableObject
         Status = shown;
     }
 
+    // Files that writes cut short left in OPL's partition only take room there, which a Loadout Bay update and cards need.
+    private async Task ClearLeftoversAsync(string host)
+    {
+        try
+        {
+            var cleared = await BayLeftovers.ClearAsync(host);
+            if (cleared.Count > 0)
+            {
+                _log.Add(string.Create(
+                    CultureInfo.CurrentCulture,
+                    $"Deleted {cleared.Count} unfinished {(cleared.Count == 1 ? "file" : "files")} from OPL's partition on the PS2, left by writes cut short: ")
+                    + string.Join(", ", cleared.Select(file => file.Path + " (" + BackupViewModel.Size(file.Bytes) + ")")) + ".");
+            }
+        }
+        catch (LoadoutBayException ex)
+        {
+            _log.Add("Unfinished files in OPL's partition on the PS2 weren't deleted: " + ex.Message);
+        }
+    }
+
     // Replacing a row would drop it from the selection, so a selected row gets its cover from the next list.
     private void ShowCover(string? discId)
     {
@@ -383,6 +403,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
             _onRead(library);
             otherVersion = library.Hello.Version != ProductInfo.Version;
             answered = library.Hello;
+            await ClearLeftoversAsync(host);
             await ReadCoversAsync(host);
         }
         catch (LoadoutBayException ex)
@@ -411,6 +432,19 @@ public sealed class InstalledGamesViewModel : ObservableObject
 
         if (otherVersion && _bundledBay() is { } elf)
         {
+            // A new Loadout Bay that couldn't save itself would run only until the PS2 is switched off, so none is sent then.
+            // A Loadout Bay of another protocol can't say what room there is; a failed save says why afterwards.
+            if (answered?.ProtocolVersion == BayWire.ProtocolVersion && await BayUpgrade.CheckRoomAsync(host, elf.Length) is { } room)
+            {
+                Status = PageStatus.Warn(
+                    "Loadout Bay wasn't updated",
+                    "OPL's partition on the PS2 has " + BackupViewModel.Size(room.FreeBytes) + " free, and saving Loadout Bay "
+                    + ProductInfo.Version + " there needs " + BackupViewModel.Size(room.NeededBytes)
+                    + ". Free some room in it, then Connect again; Loadout Bay " + answered.Version + " works until then.");
+                _log.Add(Status.LogLine);
+                return;
+            }
+
             // With the update check on, a Loadout Bay that answered and is older follows this Loadout without a question.
             // A newer one, or one whose version is unknown, is never replaced unasked.
             var unasked = answered is not null && Loadout.Updates.BayVersions.IsOlder(answered) && _sendOlderBay();
@@ -592,7 +626,7 @@ public sealed class InstalledGamesViewModel : ObservableObject
                 ? PageStatus.Ok("Loadout Bay " + result.Version + " runs on the PS2", "It is saved where it was started from; the old file is loadout-bay.elf.bak.")
                 : PageStatus.Warn(
                     "Loadout Bay " + result.Version + " runs, but wasn't saved",
-                    "It wasn't started from a USB drive or the hard disk, so the PS2 starts the old one next time.");
+                    result.NotSaved + " The PS2 starts the old one next time.");
             notSaved = result.Saved ? null : Status;
         }
         catch (LoadoutBayException ex)

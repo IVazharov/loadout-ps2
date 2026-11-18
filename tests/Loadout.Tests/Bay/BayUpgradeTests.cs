@@ -99,6 +99,7 @@ public sealed class BayUpgradeTests
         var result = await BayUpgrade.RunAsync("127.0.0.1", Elf, save: true, port: bay.Port);
 
         Assert.False(result.Saved);
+        Assert.Equal("It wasn't started from a USB drive or the hard disk.", result.NotSaved);
         Assert.Single(bay.StartedElfs);
         Assert.Null(bay.SavedElf);
 
@@ -106,6 +107,58 @@ public sealed class BayUpgradeTests
         await client.SendElfAsync(Elf);
         var error = await Assert.ThrowsAsync<LoadoutBayException>(() => client.SaveElfAsync());
         Assert.Contains("not started from a USB drive", error.Message);
+    }
+
+    [Fact]
+    public async Task ASaveWithoutRoomLeavesTheNewCopyRunningAndSaysWhy()
+    {
+        // As on the user's console: OPL's partition was full, the new copy ran, and the page said it "wasn't updated".
+        using var bay = new FakeLoadoutBay { ElfSaveStatus = BayWire.StatusNoSpace };
+
+        var result = await BayUpgrade.RunAsync("127.0.0.1", Elf, save: true, port: bay.Port);
+
+        Assert.False(result.Saved);
+        Assert.Equal("0.1.0", result.Version);
+        Assert.Single(bay.StartedElfs);
+        Assert.Null(bay.SavedElf);
+        Assert.StartsWith("There isn't room for the new Loadout Bay beside the old one", result.NotSaved);
+        Assert.DoesNotContain("game", result.NotSaved);
+    }
+
+    [Fact]
+    public async Task TooLittleRoomInOplsPartitionIsToldBeforeAnythingIsSent()
+    {
+        using var bay = new FakeLoadoutBay { OplFreeBytes = 0 };
+        bay.Files[(BayFolder.App, "loadout-bay.elf")] = [1, 2, 3];
+
+        var room = await BayUpgrade.CheckRoomAsync("127.0.0.1", Elf.Length, bay.Port);
+
+        Assert.Equal(new BayUpgradeRoom(0, Elf.Length + BayUpgrade.SaveOverheadBytes), room);
+        Assert.Empty(bay.StartedElfs);
+    }
+
+    [Theory]
+    [InlineData(true, 1L << 20)]
+    [InlineData(false, 0L)]
+    public async Task RoomIsOnlyLackingWhenTheCopyOnTheHardDiskCantBeSavedBesideItself(bool onHardDisk, long freeBytes)
+    {
+        // Enough room, or no copy in OPL's APPS folder, so the running one came from a USB drive this can't measure.
+        using var bay = new FakeLoadoutBay { OplFreeBytes = freeBytes };
+        if (onHardDisk)
+        {
+            bay.Files[(BayFolder.App, "loadout-bay.elf")] = [1, 2, 3];
+        }
+
+        Assert.Null(await BayUpgrade.CheckRoomAsync("127.0.0.1", Elf.Length, bay.Port));
+    }
+
+    [Fact]
+    public async Task ALoadoutBayOfAnotherProtocolIsNotAskedForRoom()
+    {
+        using var bay = new FakeLoadoutBay(protocolVersion: BayWire.ProtocolVersion - 1) { OplFreeBytes = 0 };
+        bay.Files[(BayFolder.App, "loadout-bay.elf")] = [1, 2, 3];
+
+        Assert.Null(await BayUpgrade.CheckRoomAsync("127.0.0.1", Elf.Length, bay.Port));
     }
 
     [Fact]

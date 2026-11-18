@@ -127,6 +127,12 @@ public sealed class FakeLoadoutBay : IDisposable
     /// <summary>True for an ELF_RUN that closes the connection but leaves the old copy answering, as if the new one never started.</summary>
     public bool NewCopyNeverStarts { get; set; }
 
+    /// <summary>A status ELF_SAVE answers instead of saving, such as -ENOSPC for a full partition; 0 saves.</summary>
+    public int ElfSaveStatus { get; set; }
+
+    /// <summary>A status FILE_WRITE answers instead of writing, such as -ENOSPC; the .part goes, as Loadout Bay deletes it.</summary>
+    public int FileWriteStatus { get; set; }
+
     private byte[]? _elf;
     private int _elfReceived;
     private string? _pendingTag;
@@ -321,6 +327,11 @@ public sealed class FakeLoadoutBay : IDisposable
             status = BayWire.StatusNotPermitted;
         }
 
+        if (status == 0 && ElfSaveStatus != 0)
+        {
+            status = ElfSaveStatus;
+        }
+
         if (status == 0)
         {
             SavedElf = _elf;
@@ -502,6 +513,12 @@ public sealed class FakeLoadoutBay : IDisposable
         }
 
         var part = (key.Folder, key.Name + ".part");
+        if (FileWriteStatus != 0)
+        {
+            Files.Remove(part);
+            return (FileWriteStatus, []);
+        }
+
         var offset = BinaryPrimitives.ReadUInt32LittleEndian(request.AsSpan(BayWire.FileFieldsBytes));
         var held = offset == 0 ? [] : Files.GetValueOrDefault(part, []);
         if (held.Length != offset)

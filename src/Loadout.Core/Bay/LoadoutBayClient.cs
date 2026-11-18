@@ -875,6 +875,8 @@ public sealed class LoadoutBayClient : IDisposable
                 throw new LoadoutBayException("Part of " + place + " did not arrive, so the file on the PS2 was left as it was.", status);
             case BayWire.StatusExists:
                 throw new LoadoutBayException(place + " is already on the PS2, and Loadout Bay does not replace a memory card.", status);
+            case BayWire.StatusNoSpace:
+                throw new LoadoutBayException("OPL's partition on the PS2 has no room for " + place + ".", status);
             default:
                 ThrowIfFailed(status);
                 return;
@@ -898,6 +900,10 @@ public sealed class LoadoutBayClient : IDisposable
             case BayWire.StatusNotPermitted:
                 throw new LoadoutBayException(
                     "Loadout Bay was not started from a USB drive or the hard disk, so it cannot save the new version where it was started.",
+                    status);
+            case BayWire.StatusNoSpace:
+                throw new LoadoutBayException(
+                    "There isn't room for the new Loadout Bay beside the old one, on the USB drive or in OPL's partition it was started from.",
                     status);
             default:
                 ThrowIfFailed(status);

@@ -185,8 +185,9 @@ static int write_file(const char *path)
         return -errno;
     }
 
+    // A short write means the USB drive or the partition filled up: Loadout says there isn't room.
     int written = (int)write(fd, elf, elf_size);
-    int error = written < 0 ? -errno : (u32)written != elf_size ? -EIO : 0;
+    int error = written < 0 ? -errno : (u32)written != elf_size ? -ENOSPC : 0;
     if (close(fd) < 0 && error == 0)
     {
         error = -errno;
