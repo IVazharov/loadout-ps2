@@ -137,6 +137,22 @@ public sealed class BayUpgradeTests
         Assert.Empty(bay.StartedElfs);
     }
 
+    [Fact]
+    public async Task TheOldBackupCountsAsRoomAsTheNewCopyDeletesItWhenShort()
+    {
+        // As on the user's console, where OPL's partition held 3.8 MiB beside the old Loadout Bay's 3.4 MB backup.
+        using var bay = new FakeLoadoutBay { OplFreeBytes = 1000 };
+        bay.Files[(BayFolder.App, "loadout-bay.elf")] = [1, 2, 3];
+        bay.Files[(BayFolder.App, "loadout-bay.elf.bak")] = new byte[Elf.Length + (int)BayUpgrade.SaveOverheadBytes - 1000];
+
+        Assert.Null(await BayUpgrade.CheckRoomAsync("127.0.0.1", Elf.Length, bay.Port));
+
+        bay.Files[(BayFolder.App, "loadout-bay.elf.bak")] = new byte[Elf.Length / 2];
+        var room = await BayUpgrade.CheckRoomAsync("127.0.0.1", Elf.Length, bay.Port);
+
+        Assert.Equal(new BayUpgradeRoom(1000, Elf.Length + BayUpgrade.SaveOverheadBytes - (Elf.Length / 2)), room);
+    }
+
     [Theory]
     [InlineData(true, 1L << 20)]
     [InlineData(false, 0L)]

@@ -87,9 +87,11 @@ public static class BayUpgrade
     /// <summary>
     /// Whether OPL's partition lacks room to save a new Loadout Bay of <paramref name="elfBytes"/> beside the one
     /// in <c>APPS/Loadout-Bay</c>, where a copy that OPL started saves itself: the new file is written whole while
-    /// the old one and its backup are still there. Null when there is room, or when it can't be told: no copy in
-    /// that folder (so the running one came from a USB drive, which this doesn't measure), or a Loadout Bay
-    /// whose protocol differs from this Loadout's. Then the update goes ahead, and a failed save says why.
+    /// the old one is still there. The new copy is the one that saves, and it deletes the old backup
+    /// (<c>loadout-bay.elf.bak</c>) first when it needs its room, so the backup counts as room; the needed bytes
+    /// given are those beyond it. Null when there is room, or when it can't be told: no copy in that folder (so the
+    /// running one came from a USB drive, which this doesn't measure), or a Loadout Bay whose protocol differs
+    /// from this Loadout's. Then the update goes ahead, and a failed save says why.
     /// </summary>
     public static async Task<BayUpgradeRoom?> CheckRoomAsync(string host, long elfBytes, int port = BayWire.Port, CancellationToken cancellationToken = default)
     {
@@ -102,8 +104,9 @@ public static class BayUpgrade
                 return null;
             }
 
+            var backup = files.FirstOrDefault(file => file.Name == HardDiskElfName + ".bak")?.Size ?? 0;
             var free = await bay.GetOplFreeBytesAsync(cancellationToken).ConfigureAwait(false);
-            var needed = elfBytes + SaveOverheadBytes;
+            var needed = elfBytes + SaveOverheadBytes - backup;
             return free >= needed ? null : new BayUpgradeRoom(free, needed);
         }
         catch (LoadoutBayException)

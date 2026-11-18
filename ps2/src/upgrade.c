@@ -223,6 +223,8 @@ static int rename_file(const char *from, const char *to)
 }
 
 // Writes the ELF beside the file at elf_path as .part, checks it, and swaps it in, keeping the old one as .bak.
+// Without room for the new file beside the old one and its backup, the backup goes first: until the swap, the
+// old file stays whole, and the copy running now is the fallback. OPL's partition is often that full.
 static int replace_elf(const char *elf_path)
 {
     char part[PATH_BYTES + 8];
@@ -231,6 +233,13 @@ static int replace_elf(const char *elf_path)
     snprintf(backup, sizeof(backup), "%s.bak", elf_path);
     remove(part);
     int status = write_file(part);
+    if (status == -ENOSPC)
+    {
+        remove(part);
+        remove(backup);
+        status = write_file(part);
+    }
+
     if (status == 0)
     {
         status = same_as_elf(part);
