@@ -10,7 +10,7 @@ Loadout has two parts:
 Both parts share one version number.
 
 <!-- showcase:start -->
-![Loadout for PS2 on Windows and Loadout Bay on the PS2, showing the same install at 42%](docs/images/hero.png)
+![Loadout for PS2 on Windows and Loadout Bay on the PS2, showing the same install](docs/images/hero.png)
 
 ### Back up your discs
 
@@ -65,12 +65,12 @@ Loadout is a prerelease. It writes to your PS2's hard disk, and so far it has be
 
 ## Get started
 
-1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in. OPL makes it 128 MB: room for about a dozen 8 MB memory cards beside the artwork, and it can't safely be made bigger later. For more, create a partition named `+OPL` of the size you want with wLaunchELF's HDD Manager before OPL first opens that list, and OPL uses it instead. 1 GB holds cards for about a hundred games.
+1. Start OPL on the PS2, set **Settings → HDD Device Start Mode** so it lists games from the hard disk, and open that list once. This makes the partition that artwork, game settings, and memory cards go in. OPL makes it 128 MB: room for about ten 8 MB memory cards beside the artwork and Loadout Bay, and it can't safely be made bigger later. For more, create a partition named `+OPL` of the size you want with wLaunchELF's HDD Manager before OPL first opens that list, and OPL uses it instead. 1 GB holds cards for about a hundred games.
 2. Download both zips from the [releases page](https://github.com/IVazharov/loadout-ps2/releases).
 3. Copy `loadout-bay.elf` to the USB drive and start it with your homebrew launcher, such as wLaunchELF. Its screen shows the PS2's address. This is the only time Loadout Bay needs the USB drive.
 4. Unzip Loadout anywhere you can write and run `LoadoutPS2.exe`. It keeps its settings and caches next to the executable. It's signed, and runs with Smart App Control on. The certificate is new, so Windows may still warn you about it.
 5. In Settings, press **Find Bay** or enter the address from the TV.
-6. Put Loadout Bay on the hard disk: on **Installed Games**, press **Connect**, then **Put Loadout Bay on the hard disk…**. It goes into OPL's partition, and in OPL, with **Settings → Applications Start Mode** on, it is in the Apps menu. Start it from there from now on, with no USB drive. This is the setup Loadout is made for: after Loadout updates itself, its next Connect brings the Loadout Bay on the hard disk to the same version, asking first if you turned off the update check in Settings. It needs about 3.5 MB in OPL's partition for that, the old version's backup `loadout-bay.elf.bak` counted, as it goes when its room is needed; when there is less, Connect says so and leaves Loadout Bay as it is. [From the hard disk](ps2/README.md#from-the-hard-disk) has the details, such as a fixed address.
+6. Put Loadout Bay on the hard disk: on **Installed Games**, press **Connect**, then **Put Loadout Bay on the hard disk…**. It goes into OPL's partition, and in OPL, with **Settings → Applications Start Mode** on, it is in the Apps menu. Start it from there from now on, with no USB drive. This is the setup Loadout is made for: after Loadout updates itself, its next Connect brings the Loadout Bay on the hard disk to the same version, asking first if you turned off the update check in Settings. That needs about 3.5 MB in OPL's partition, counting the old version's backup, `loadout-bay.elf.bak`, which goes when its room is needed; with less, Connect says so and leaves Loadout Bay as it is. [From the hard disk](ps2/README.md#from-the-hard-disk) has the details, such as a fixed address.
 7. On **Install**, add iso, bin and cue, or chd files, then press **Install on PS2**.
 8. Start OPL on the PS2. It lists the games from its hard disk section.
 
