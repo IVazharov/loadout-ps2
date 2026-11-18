@@ -13,7 +13,7 @@ body:
     attributes:
       label: Loadout version
       description: In the title bar of the Windows app.
-      placeholder: "0.9.2"
+      placeholder: "0.11.0"
     validations:
       required: true
   - type: input
@@ -21,7 +21,7 @@ body:
     attributes:
       label: Loadout Bay version
       description: At the top right of Loadout Bay's screen on the TV, if you got that far.
-      placeholder: "0.9.2"
+      placeholder: "0.11.0"
   - type: dropdown
     id: windows
     attributes:
@@ -33,10 +33,16 @@ body:
     validations:
       required: true
   - type: input
+    id: disc-drive
+    attributes:
+      label: Disc drive
+      description: If you backed up discs. Its make and model, as Device Manager shows it under DVD/CD-ROM drives, and whether it is built in or USB.
+      placeholder: "HL-DT-ST DVDRAM GP65NB60, USB"
+  - type: input
     id: ps2
     attributes:
       label: PS2 model, network adapter and hard disk
-      description: The model is on the label under the console.
+      description: If you installed games. The model is on the label under the console.
       placeholder: "SCPH-50004, official network adapter, 500 GB IDE hard disk"
   - type: input
     id: opl
@@ -47,5 +53,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: On Loadout's Logs page, press Copy all and paste it here. If Loadout made an error log, Open error log folder shows it; attach that file too.
+      description: On Loadout's Logs page, press Copy all and paste it here. If Loadout made an error log, Open error log folder shows it; attach that file too. For a backup, Save report… on Back up discs saves the disc's report; attach that as well.
       render: text
