@@ -104,6 +104,7 @@ Each release has two downloads:
 - [Protocol](docs/bay-protocol.md): how the two parts talk.
 - [Speed test](docs/speed-test.md): measuring the network and the hard disk.
 - [Contributing](CONTRIBUTING.md): building and testing both apps.
+- [Changelog](CHANGELOG.md): what changed in each release.
 
 ## Licence
 
