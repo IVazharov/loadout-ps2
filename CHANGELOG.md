@@ -2,7 +2,11 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
-## Unreleased
+## 0.11.1 - 2026-11-19
+
+Games that another tool installed on the PS2's hard disk under its own partition names can now be changed and removed, and Installed Games says why a game can't be. Loadout Bay started from the hard disk with wLaunchELF saves its network settings and updates there. The licence files that Loadout 0.10.0 left beside the program are cleaned up.
+
+New to Loadout? `Loadout-PS2-0.11.1-win-x64.zip` is the Windows app, and all that backing up needs. `Loadout-Bay-PS2-0.11.1.zip` is for installing games on a PS2: Get started, in the readme, has the steps. Loadout 0.10.0 and 0.11.0 offer this version by themselves when they start, and the next Connect updates Loadout Bay too.
 
 ### Fixed
 
