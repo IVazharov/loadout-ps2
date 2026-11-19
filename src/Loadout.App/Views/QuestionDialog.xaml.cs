@@ -60,6 +60,15 @@ public partial class QuestionDialog : LoadoutWindow
             ItemBox.Visibility = Visibility.Visible;
         }
 
+        if (question.Text is { } text)
+        {
+            AnswerLabel.Text = text.Label;
+            AutomationProperties.SetName(AnswerBox, text.Label);
+            AnswerBox.MaxLength = text.MaxLength;
+            AnswerBox.Text = text.Initial;
+            TextRow.Visibility = Visibility.Visible;
+        }
+
         if (question.Picker is { } picker)
         {
             PickerLabel.Text = picker.Label;
@@ -97,11 +106,21 @@ public partial class QuestionDialog : LoadoutWindow
             PickerBox.SelectedIndex = first.Selected;
         }
 
+        if (question.Text is not null)
+        {
+            ConfirmButton.IsEnabled = HasText(AnswerBox.Text);
+        }
+
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, _) => Clipboard.SetText(PlainText())));
         // A list to choose from takes the keyboard, so Up and Down move and Enter confirms.
         Loaded += (_, _) =>
         {
-            if (ChoiceList.Visibility == Visibility.Visible
+            if (TextRow.Visibility == Visibility.Visible)
+            {
+                AnswerBox.Focus();
+                AnswerBox.SelectAll();
+            }
+            else if (ChoiceList.Visibility == Visibility.Visible
                 && ChoiceList.ItemContainerGenerator.ContainerFromIndex(0) is ListBoxItem first)
             {
                 first.Focus();
@@ -128,6 +147,24 @@ public partial class QuestionDialog : LoadoutWindow
         var dialog = new QuestionDialog(owner, question, null);
         var list = question.Picker is null ? (Selector)dialog.ChoiceList : dialog.PickerBox;
         return dialog.Run() && list.SelectedIndex >= 0 ? list.SelectedIndex : null;
+    }
+
+    // The text typed, trimmed, when the question has Text and Confirm was chosen; else null.
+    public static string? AskText(Window owner, Question question)
+    {
+        var dialog = new QuestionDialog(owner, question, null);
+        return dialog.Run() && question.Text is not null ? dialog.AnswerBox.Text.Trim() : null;
+    }
+
+    private static bool HasText(string text) => text.Any(char.IsLetterOrDigit);
+
+    // Confirm only while the box holds a letter or a digit: an empty name can't be confirmed.
+    private void AnswerBox_OnTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_question.Text is not null)
+        {
+            ConfirmButton.IsEnabled = HasText(AnswerBox.Text);
+        }
     }
 
     // The picker's option decides the items, the note, and whether Confirm can be pressed.

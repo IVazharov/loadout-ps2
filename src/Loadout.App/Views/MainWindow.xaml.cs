@@ -66,6 +66,7 @@ public partial class MainWindow : LoadoutWindow
             _log,
             Confirm,
             question => QuestionDialog.Choose(this, question),
+            question => QuestionDialog.AskText(this, question),
             new OplCfgTitleCatalog(Http, new DiscTitleCache(layout.DatabaseFile)),
             BundledBay,
             new Loadout.Updates.GitHubReleaseFeed(Http, ProductInfo.Version),

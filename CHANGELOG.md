@@ -6,6 +6,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 
 ### Fixed
 
+- A game OPL's list of game titles doesn't have took its disc's label as its title, and some labels are no name: King of Fighters XI (Europe), labelled "1", backed up and installed as "1". Such a game now takes Redump's name for the disc, or the name of the file it is installed from, made into a title ("King of Fighters XI, The (Europe)" gives "The King of Fighters XI"), and its label only after those. When none of them is a name, Loadout asks for one before it backs up or installs the game.
 - After installing, Installed Games lost its memory cards: the column stayed empty until the next Connect. The list read back after an install now has them.
 - The Backup page counted a GB as 1,000,000,000 bytes and the rest of Loadout as 1,073,741,824, so the same disc showed as 4.27 GB there and 3.97 GB on Installed Games. Every size now counts as Windows does, the Backup page's disc map included.
 - After Find Bay found Loadout Bay, Installed Games still asked for the PS2's address. It now says which Loadout Bay it found and to press Connect.

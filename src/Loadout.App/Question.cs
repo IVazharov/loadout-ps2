@@ -13,6 +13,7 @@ public enum QuestionKind
 /// With <paramref name="ChooseItem"/> the items are a list to choose one from, and <c>QuestionDialog.Choose</c> returns its index.
 /// With <paramref name="Picker"/> the dialog shows a choice above the items, and <c>QuestionDialog.Choose</c> returns the option picked.
 /// An empty <paramref name="ConfirmLabel"/> makes a message: only the Cancel label's button (such as OK) shows.
+/// With <paramref name="Text"/> the dialog asks for a line of text, and <c>QuestionDialog.AskText</c> returns it.
 /// </summary>
 public sealed record Question(
     string Title,
@@ -23,7 +24,14 @@ public sealed record Question(
     bool Destructive = false,
     IReadOnlyList<string>? Items = null,
     bool ChooseItem = false,
-    QuestionPicker? Picker = null);
+    QuestionPicker? Picker = null,
+    QuestionText? Text = null);
+
+/// <summary>
+/// A line of text the dialog asks for, such as a game's name: its box starts with <paramref name="Initial"/>, all of it
+/// selected, and Confirm is on only while the box holds a letter or a digit.
+/// </summary>
+public sealed record QuestionText(string Label, string Initial, int MaxLength);
 
 /// <summary>
 /// A choice the dialog shows above its items, such as a card size. Each time it changes, <paramref name="Show"/>

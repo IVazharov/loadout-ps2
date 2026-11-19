@@ -15,10 +15,18 @@ using Loadout.Metadata;
 
 namespace Loadout.App;
 
-/// <summary>A disc in a drive, as the page offers it.</summary>
-public sealed record DriveDisc(DiscInDrive Disc, string Title)
+/// <summary>
+/// A disc in a drive, as the page offers it. With <paramref name="NeedsName"/> its title is only its disc ID (nothing gave a
+/// name), and the user is asked for one before it is backed up.
+/// </summary>
+public sealed record DriveDisc(DiscInDrive Disc, string Title, bool NeedsName = false)
 {
-    public string Label => $"{Title} ({Disc.Identity?.DiscId?.Canonical}) in {Disc.Drive}";
+    /// <summary>The title and the disc ID, such as "Shrek 2 (SLUS-20745)"; the ID alone when that is the title.</summary>
+    public string TitleAndId => Disc.Identity?.DiscId?.Canonical is { } id && !string.Equals(id, Title, StringComparison.Ordinal)
+        ? $"{Title} ({id})"
+        : Title;
+
+    public string Label => $"{TitleAndId} in {Disc.Drive}";
 
     // What a screen reader says for the item in the disc chooser, which shows the label too.
     public override string ToString() => Label;
@@ -145,6 +153,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     private readonly List<Ps2Install> _ps2 = [];
     private readonly Func<Question, bool> _confirm;
     private readonly Func<Question, int?> _choose;
+    private readonly GameNamer _namer;
 
     // The copies picked in the list: Delete takes them all, the other buttons need exactly one.
     private IReadOnlyList<BackupRow> _picked = [];
@@ -213,6 +222,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         InstallViewModel installer,
         Func<Question, bool> confirm,
         Func<Question, int?> choose,
+        GameNamer namer,
         Func<IReadOnlyCollection<string>> installedDiscIds,
         InstallTicks ticks,
         CopyFormats formats)
@@ -227,6 +237,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         _installer = installer ?? throw new ArgumentNullException(nameof(installer));
         _confirm = confirm ?? throw new ArgumentNullException(nameof(confirm));
         _choose = choose ?? throw new ArgumentNullException(nameof(choose));
+        _namer = namer ?? throw new ArgumentNullException(nameof(namer));
         _installedDiscIds = installedDiscIds ?? throw new ArgumentNullException(nameof(installedDiscIds));
         BackUpCommand = new AsyncRelayCommand(BackUpAsync, Fail);
         BackUpAgainCommand = new AsyncRelayCommand(() => BackUpAsync(again: true), Fail);
@@ -899,7 +910,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         if (disc is { IsPs2Game: true, Identity.DiscId: { } id })
         {
             var lookup = await _titles.LookupAsync(id, CancellationToken.None).ConfigureAwait(true);
-            var entry = new DriveDisc(disc, string.IsNullOrWhiteSpace(lookup.Title) ? disc.VolumeLabel ?? id.Canonical : lookup.Title!);
+            var entry = string.IsNullOrWhiteSpace(lookup.Title) ? await UnlistedDiscAsync(disc, id).ConfigureAwait(true) : new DriveDisc(disc, lookup.Title!);
             Discs.Add(entry);
             if (!_working)
             {
@@ -931,6 +942,32 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         }
     }
 
+    // The disc under the name the user gave it, in the page's list and picked.
+    private DriveDisc Rename(DriveDisc disc, string name)
+    {
+        var named = disc with { Title = name, NeedsName = false };
+        var index = Discs.IndexOf(disc);
+        if (index >= 0)
+        {
+            Discs[index] = named;
+        }
+
+        SelectedDisc = named;
+        _log.Add($"{disc.Title} is named {name}, as given.");
+        return named;
+    }
+
+    // A disc the title database doesn't know: Redump's name for the disc of its size, else its label, when either is a
+    // name; else only its disc ID, and the user names it before it is backed up. Redump's list is the one kept for the
+    // copy's check (downloaded first when there is none yet).
+    private async Task<DriveDisc> UnlistedDiscAsync(DiscInDrive disc, DiscId id)
+    {
+        var list = await _redump.GetAsync(refresh: false, CancellationToken.None).ConfigureAwait(true);
+        var bytes = disc.Sectors * (disc.Media == DiscMedia.Cd ? 2352 : DiscSectors.Size);
+        var name = GameNames.FirstName(GameNames.FromRedump(list.Dat, bytes), disc.VolumeLabel);
+        return name is null ? new DriveDisc(disc, id.Canonical, NeedsName: true) : new DriveDisc(disc, name);
+    }
+
     private void UpdateSameDisc()
     {
         var identity = _selected?.Disc.Identity;
@@ -949,7 +986,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
 
         TaskbarState = TaskbarItemProgressState.None;
         var speeds = disc.Disc.Speeds?.Range(CultureInfo.CurrentCulture);
-        var what = $"{disc.Title} ({disc.Disc.Identity?.DiscId?.Canonical}), a {Size(disc.Disc.Bytes)} {(disc.Disc.Media == DiscMedia.Cd ? "CD" : disc.Disc.Layers > 1 ? "two-layer DVD" : "DVD")} in drive {disc.Disc.Drive.TrimEnd(':')}{(string.IsNullOrEmpty(speeds) ? "" : $", which reads it at {speeds}")}";
+        var what = $"{disc.TitleAndId}, a {Size(disc.Disc.Bytes)} {(disc.Disc.Media == DiscMedia.Cd ? "CD" : disc.Disc.Layers > 1 ? "two-layer DVD" : "DVD")} in drive {disc.Disc.Drive.TrimEnd(':')}{(string.IsNullOrEmpty(speeds) ? "" : $", which reads it at {speeds}")}";
         Status = _sameDisc switch
         {
             { Result: DiscBackupResult.Incomplete } same => PageStatus.Idle(
@@ -1011,6 +1048,17 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         if (!again && resume is null && _sameDisc is not null)
         {
             return;
+        }
+
+        // Nothing gave the disc a name: the user names it, or it is not backed up.
+        if (chosen.NeedsName)
+        {
+            if (_namer.ForBackup(chosen.Title, chosen.Disc.VolumeLabel) is not { } given)
+            {
+                return;
+            }
+
+            chosen = Rename(chosen, given);
         }
 
         _replacing = null;
@@ -2139,7 +2187,7 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
         try
         {
             var text = new StringBuilder();
-            text.Append(CultureInfo.InvariantCulture, $"== {disc.Title} ({disc.Disc.Identity?.DiscId?.Canonical}), from {disc.Disc.Drive}, started {started:yyyy-MM-dd HH:mm:ss}\n");
+            text.Append(CultureInfo.InvariantCulture, $"== {disc.TitleAndId}, from {disc.Disc.Drive}, started {started:yyyy-MM-dd HH:mm:ss}\n");
             foreach (var line in lines)
             {
                 text.Append(line).Append('\n');
@@ -2224,7 +2272,21 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
             return null;
         }
 
-        return item;
+        // Nothing gave the game a name: the user names it, or it is not installed.
+        if (!item.NeedsName)
+        {
+            return item;
+        }
+
+        if (_namer.ForInstall(item, "_Install", "Cancel") is not { } named)
+        {
+            InstallLine = $"{backup.Files.Name} was not installed on the PS2: {item.DiscId} was given no name.";
+            _log.Add(InstallLine);
+            return null;
+        }
+
+        _log.Add($"{item.DiscId} is named {named.DetectedTitle}, as given.");
+        return named;
     }
 
     // Install on PS2 for the picked copies: the complete ones go into the Install page's line in the order picked, one

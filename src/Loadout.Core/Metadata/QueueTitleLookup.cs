@@ -5,7 +5,7 @@ namespace Loadout.Metadata;
 
 /// <summary>
 /// Gives each queued image the title the OPL CFG database has for its disc ID, in place of the
-/// title read from the disc (usually its volume label, such as <c>DARK_ALLIANCE</c>). That title
+/// title the scan made from its file's name or its volume label (see <see cref="GameNames"/>). That title
 /// becomes the game's HDLoader title and its partition name when it is installed. An image whose
 /// disc ID the database does not know, or that could not be looked up, keeps its title.
 /// </summary>
@@ -48,6 +48,7 @@ public static class QueueTitleLookup
             {
                 DetectedTitle = TitleText.FitQueueTitle(lookup.Title, discId.Canonical),
                 TitleIsFilenameFallback = false,
+                NeedsName = false,
             });
         }
 

@@ -138,6 +138,9 @@ public sealed class RedumpDat
         return new RedumpDat(version, games);
     }
 
+    /// <summary>The discs whose image (a DVD's iso, a CD's bin) is <paramref name="size"/> bytes long.</summary>
+    public IReadOnlyList<RedumpGame> OfSize(long size) => _bySize.TryGetValue(size, out var games) ? games : [];
+
     /// <summary>Checks a copy by its size and SHA-1 (lowercase or uppercase hex).</summary>
     public RedumpCheck Check(long size, string sha1)
     {

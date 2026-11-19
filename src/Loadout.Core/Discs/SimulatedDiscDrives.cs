@@ -177,12 +177,25 @@ public sealed class SimulatedDiscDrives : IDiscDrives
         try
         {
             using var reader = Open(drive);
-            return new DiscInDrive(Drive, DiscMedia.Dvd, reader.Sectors, 1, 0, null, DiscIdentity.Read(reader));
+            return new DiscInDrive(Drive, DiscMedia.Dvd, reader.Sectors, 1, 0, Label(reader), DiscIdentity.Read(reader));
         }
         catch (IOException)
         {
             return null;
         }
+    }
+
+    // The volume label Windows gives a real drive's disc: the ISO 9660 primary volume descriptor's (sector 16, bytes 40-71).
+    private static string? Label(IDiscReader reader)
+    {
+        var sector = new byte[DiscSectors.Size];
+        if (reader.Sectors <= 16 || !reader.TryRead(16, sector, out _) || sector[0] != 1 || sector[1] != (byte)'C')
+        {
+            return null;
+        }
+
+        var label = System.Text.Encoding.ASCII.GetString(sector, 40, 32).Trim();
+        return label.Length == 0 ? null : label;
     }
 
     public IDiscReader Open(string drive)

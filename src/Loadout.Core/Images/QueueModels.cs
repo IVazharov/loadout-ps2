@@ -118,6 +118,15 @@ public sealed record QueuePreviewItem
 
     public bool TitleIsFilenameFallback { get; init; }
 
+    /// <summary>
+    /// True when the title is only the disc ID: the title database doesn't know the disc, and neither its file's name
+    /// nor its label is a name (King of Fighters XI's label is "1"). Loadout asks the user for one before installing it.
+    /// </summary>
+    public bool NeedsName { get; init; }
+
+    /// <summary>The disc's volume label as the image gives it, or null.</summary>
+    public string? VolumeLabel { get; init; }
+
     public MediaKind Media { get; init; }
 
     public string MediaLabel { get; init; } = "Unknown";

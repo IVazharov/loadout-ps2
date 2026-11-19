@@ -1,4 +1,5 @@
 using Loadout.Core;
+using Loadout.Metadata;
 
 namespace Loadout.Images;
 
@@ -244,20 +245,26 @@ public static class DiscScanner
             media = MediaKind.CdMultiTrack;
         }
 
+        // Until the title database is asked: the file's name made into a title (often Redump's name), then the disc's
+        // label, each only when it is a name. A label such as "1" is not, and then the user is asked for the name.
         var readable = facts.Readable && !facts.Corrupt;
+        var fileName = Path.GetFileNameWithoutExtension(work.SourceFile);
+        var id = facts.AmbiguousId ? null : facts.DiscId?.Canonical;
         string? title;
         var fallback = false;
-        if (readable && !string.IsNullOrWhiteSpace(facts.VolumeLabel))
+        var needsName = false;
+        if (readable && GameNames.FirstName(GameNames.Tidy(fileName), facts.VolumeLabel) is { } name)
         {
-            title = facts.VolumeLabel;
+            title = name;
         }
-        else if (readable && facts.DiscId != null && !facts.AmbiguousId)
+        else if (readable && id is not null)
         {
-            title = facts.DiscId.Value.Canonical;
+            title = id;
+            needsName = true;
         }
         else
         {
-            title = Path.GetFileNameWithoutExtension(work.SourceFile);
+            title = fileName;
             fallback = true;
         }
 
@@ -290,7 +297,7 @@ public static class DiscScanner
             detail = null;
         }
 
-        return Make(work, status, detail, facts, fallback, title, media, convertedSize, trackCount);
+        return Make(work, status, detail, facts, fallback, title, media, convertedSize, trackCount) with { NeedsName = needsName };
     }
 
     private static QueuePreviewItem Make(
@@ -316,6 +323,7 @@ public static class DiscScanner
             Region = facts?.DiscId?.Region,
             DetectedTitle = fitted,
             TitleIsFilenameFallback = filenameFallback,
+            VolumeLabel = facts?.VolumeLabel,
             Media = media,
             MediaLabel = QueuePreviewItem.DescribeMedia(media, setSize, sequence),
             Layer0Sectors = facts?.Layer0Sectors ?? 0,

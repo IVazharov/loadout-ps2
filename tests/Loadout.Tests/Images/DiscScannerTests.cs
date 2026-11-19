@@ -11,7 +11,7 @@ public class DiscScannerTests
     {
         using var tree = new TempTree();
         const string boot = "BOOT2 = cdrom0:\\SLES_538.86;1\nVER = 1.00\n";
-        var path = Path.Combine(tree.Root, "plain.iso");
+        var path = Path.Combine(tree.Root, "1.iso");
         var image = DiscImageBuilder.Build("Real Title", boot);
         File.WriteAllBytes(path, image);
 
@@ -68,7 +68,7 @@ public class DiscScannerTests
     public async Task RegionIsNotTakenFromTheTitle()
     {
         using var tree = new TempTree();
-        var path = Path.Combine(tree.Root, "europe.iso");
+        var path = Path.Combine(tree.Root, "2.iso");
         var image = DiscImageBuilder.Build(
             "SLES_538.86 USA",
             "BOOT2 = cdrom0:\\SLUS_200.01;1\n");
@@ -89,7 +89,7 @@ public class DiscScannerTests
         using var tree = new TempTree();
         var underscore = WriteIso(tree, "a-underscore.iso", "Game", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
         var hyphen = WriteIso(tree, "b-hyphen.iso", "Game", "BOOT2 = cdrom0:\\SLES-53886;1\n");
-        var ntsc = WriteIso(tree, "c-ntsc.iso", "European Edition", "BOOT2 = cdrom0:\\SLUS_538.86;1\n");
+        var ntsc = WriteIso(tree, "3.iso", "European Edition", "BOOT2 = cdrom0:\\SLUS_538.86;1\n");
 
         var items = (await ScanAsync(
             tree,
@@ -263,7 +263,7 @@ public class DiscScannerTests
         using var tree = new TempTree();
         var path = WriteIso(
             tree,
-            "ambiguous.iso",
+            "4.iso",
             "Ambiguous",
             "BOOT2 = cdrom0:\\SLES_538.86;1\nBOOT2 = cdrom0:\\SLUS_200.01;1\n");
         var item = Assert.Single((await ScanAsync(tree, new ScanInput(path, ScanDepth.File))).Items);
@@ -279,7 +279,7 @@ public class DiscScannerTests
     public async Task TheTitleIsTheVolumeTitle()
     {
         using var tree = new TempTree();
-        var path = WriteIso(tree, "long-name.iso", "Hello World Extra", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
+        var path = WriteIso(tree, "5.iso", "Hello World Extra", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
         var item = Assert.Single((await ScanAsync(tree, new ScanInput(path, ScanDepth.File))).Items);
 
         Assert.Equal("Hello World Extra", item.DetectedTitle);
@@ -289,14 +289,48 @@ public class DiscScannerTests
     }
 
     [Fact]
-    public async Task BlankVolumeLabelUsesTheDiscIdNotTheFilename()
+    public async Task TheFileNameMadeIntoATitleComesBeforeTheLabel()
     {
+        // King of Fighters XI (Europe): its label is "1", and the title database has no title for it.
         using var tree = new TempTree();
-        var path = WriteIso(tree, "not-the-title.iso", "   ", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
+        var path = WriteIso(tree, "King of Fighters XI, The (Europe).iso", "1", "BOOT2 = cdrom0:\\SLES_544.37;1\n");
         var item = Assert.Single((await ScanAsync(tree, new ScanInput(path, ScanDepth.File))).Items);
 
-        Assert.Equal("SLES-53886", item.DetectedTitle);
-        Assert.False(item.TitleIsFilenameFallback);
+        Assert.Equal("The King of Fighters XI", item.DetectedTitle);
+        Assert.False(item.NeedsName);
+        Assert.Equal("1", item.VolumeLabel);
+
+        var shrek = WriteIso(tree, "Shrek 2 (Europe) (En,Fr).iso", "SHREK_2", "BOOT2 = cdrom0:\\SLES_524.24;1\n");
+        Assert.Equal("Shrek 2", Assert.Single((await ScanAsync(tree, new ScanInput(shrek, ScanDepth.File))).Items).DetectedTitle);
+    }
+
+    [Fact]
+    public async Task ALabelIsTheTitleWhenTheFileNameIsNoName()
+    {
+        using var tree = new TempTree();
+        var path = WriteIso(tree, "SLES_538.86.iso", "DARK_ALLIANCE", "BOOT2 = cdrom0:\\SLES_538.86;1\n");
+        var item = Assert.Single((await ScanAsync(tree, new ScanInput(path, ScanDepth.File))).Items);
+
+        Assert.Equal("DARK_ALLIANCE", item.DetectedTitle);
+        Assert.False(item.NeedsName);
+    }
+
+    [Fact]
+    public async Task WhenNeitherTheFileNameNorTheLabelIsANameTheDiscNeedsOne()
+    {
+        // Before 0.11.2 the first of these installed as PP.SLES-54437.HDL.1, titled "1".
+        using var tree = new TempTree();
+        foreach (var (file, label) in new[] { ("1.iso", "1"), ("SLES_544.37.iso", "   "), ("KF.iso", "SLES_544.37") })
+        {
+            var path = WriteIso(tree, file, label, "BOOT2 = cdrom0:\\SLES_544.37;1\n");
+            var item = Assert.Single((await ScanAsync(tree, new ScanInput(path, ScanDepth.File))).Items);
+
+            Assert.Equal("SLES-54437", item.DetectedTitle);
+            Assert.True(item.NeedsName);
+            Assert.False(item.TitleIsFilenameFallback);
+            Assert.Equal(QueueItemStatus.Ready, item.Status);
+            File.Delete(path);
+        }
     }
 
     [Fact]

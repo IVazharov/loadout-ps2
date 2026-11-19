@@ -18,6 +18,18 @@ public sealed class QueueTitleLookupTests
     }
 
     [Fact]
+    public async Task ADatabaseTitleIsANameAndAnUnknownDiscStillNeedsOne()
+    {
+        var items = new[] { Item("SLUS-20035", "SLUS-20035") with { NeedsName = true }, Item("SLES-54437", "SLES-54437") with { NeedsName = true } };
+
+        var titled = await QueueTitleLookup.ApplyAsync(items, new Catalog(("SLUS-20035", "Mythic's Keep - Deep Crossing")));
+
+        Assert.False(titled[0].NeedsName);
+        Assert.True(titled[1].NeedsName);
+        Assert.Equal("SLES-54437", titled[1].DetectedTitle);
+    }
+
+    [Fact]
     public async Task ALookupThatFailsKeepsTheTitle()
     {
         var titled = await QueueTitleLookup.ApplyAsync([Item("SLUS-20035", "DARK_ALLIANCE")], new Failing());

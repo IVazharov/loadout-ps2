@@ -31,6 +31,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
     private readonly Func<BayLibrary, Task> _onLibraryRead;
     private readonly IDiscTitleCatalog _titles;
     private readonly Func<Question, bool> _confirm;
+    private readonly GameNamer _namer;
     private readonly ArtworkCache _artworkCache;
     private readonly ArtworkDownloader _artworkDownloader;
     private QueuePreviewItem[] _selection = [];
@@ -51,6 +52,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         Func<BayLibrary, Task> onLibraryRead,
         IDiscTitleCatalog titles,
         Func<Question, bool> confirm,
+        GameNamer namer,
         ArtworkCache artworkCache,
         ArtworkDownloader artworkDownloader,
         InstallTicks ticks)
@@ -60,6 +62,7 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
         _artworkDownloader = artworkDownloader ?? throw new ArgumentNullException(nameof(artworkDownloader));
         _titles = titles ?? throw new ArgumentNullException(nameof(titles));
         _confirm = confirm ?? throw new ArgumentNullException(nameof(confirm));
+        _namer = namer ?? throw new ArgumentNullException(nameof(namer));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _hostFor = hostFor ?? throw new ArgumentNullException(nameof(hostFor));
         _onLibraryRead = onLibraryRead ?? throw new ArgumentNullException(nameof(onLibraryRead));
@@ -305,13 +308,19 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
 
         // A disc already in the queue or on the PS2 would only show as a duplicate that never installs.
         var (kept, leftOut) = DiscScanner.WithoutDuplicates(_scanned, items, _installed);
-        _scanned.AddRange(kept);
+        var (named, unnamed) = Named(kept);
+        _scanned.AddRange(named);
         Publish();
-        var added = new List<string> { kept.Count == 1 ? "Added 1 image" : "Added " + kept.Count.ToString(CultureInfo.CurrentCulture) + " images" };
+        var added = new List<string> { named.Count == 1 ? "Added 1 image" : "Added " + named.Count.ToString(CultureInfo.CurrentCulture) + " images" };
         var left = result.AlreadyQueued.Count + leftOut.Count;
         if (left > 0)
         {
             added.Add("left out " + left.ToString(CultureInfo.CurrentCulture) + " already in the queue or on the PS2");
+        }
+
+        if (unnamed.Count > 0)
+        {
+            added.Add("left out " + unnamed.Count.ToString(CultureInfo.CurrentCulture) + " given no name");
         }
 
         var detail = string.Join(", ", added) + ".";
@@ -328,6 +337,11 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
                 + (item.DuplicateStatus == DuplicateMatch.InLibrary ? " is already on the PS2." : " is already in the queue."));
         }
 
+        foreach (var item in unnamed)
+        {
+            _log.Add("Left out " + item.SourceFile + ": " + item.DiscId + " was given no name.");
+        }
+
         foreach (var item in Items)
         {
             if (!string.IsNullOrWhiteSpace(item.Detail))
@@ -335,6 +349,31 @@ public sealed class InstallViewModel : ObservableObject, IDisposable
                 _log.Add(item.Detail);
             }
         }
+    }
+
+    // Games with only their disc ID for a title are named by the user, one question each; one given no name stays out.
+    private (List<QueuePreviewItem> Named, List<QueuePreviewItem> Unnamed) Named(IReadOnlyList<QueuePreviewItem> items)
+    {
+        var named = new List<QueuePreviewItem>(items.Count);
+        var unnamed = new List<QueuePreviewItem>();
+        foreach (var item in items)
+        {
+            if (item is not { NeedsName: true, Status: QueueItemStatus.Ready })
+            {
+                named.Add(item);
+            }
+            else if (_namer.ForInstall(item, "_Add", "Leave it out") is { } given)
+            {
+                _log.Add($"{item.DiscId} is named {given.DetectedTitle}, as given.");
+                named.Add(given);
+            }
+            else
+            {
+                unnamed.Add(item);
+            }
+        }
+
+        return (named, unnamed);
     }
 
     private void Publish()

@@ -21,6 +21,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OperationLog log,
         Func<Question, bool> confirm,
         Func<Question, int?> choose,
+        Func<Question, string?> askText,
         IDiscTitleCatalog titles,
         Func<byte[]?> bundledBay,
         Loadout.Updates.GitHubReleaseFeed releases,
@@ -32,6 +33,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _log = log ?? throw new ArgumentNullException(nameof(log));
         var stored = settingsStore.Load();
         Settings = new SettingsViewModel(settingsStore, stored, log);
+        var namer = new GameNamer(askText);
 
         // After an install, the list read from the PS2 goes to Installed Games and is saved, as after Connect.
         Install = new InstallViewModel(
@@ -40,6 +42,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             library => AfterInstallAsync(savedList, library),
             titles,
             confirm,
+            namer,
             artworkCache,
             artworkDownloader,
             new InstallTicks(stored.InstallPage, options => Settings.SaveInstallOptions(settings => settings with { InstallPage = options })));
@@ -66,6 +69,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Install,
             confirm,
             choose,
+            namer,
             () => [.. Installed.Games.Select(g => g.DiscId)],
             new InstallTicks(stored.BackupPage, options => Settings.SaveInstallOptions(settings => settings with { BackupPage = options })),
             new CopyFormats(stored.BackupFormats, formats => Settings.SaveInstallOptions(settings => settings with { BackupFormats = formats })));
