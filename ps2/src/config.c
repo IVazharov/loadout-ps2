@@ -62,6 +62,23 @@ void config_path_beside(const char *elf_path, char *path, size_t size)
     snprintf(path, size, "%.*s%s", (int)(end - elf_path), elf_path, CONFIG_FILE_NAME);
 }
 
+// The length of the mount point at the start of text: "pfs" and any digits after it, or 0 without one.
+static size_t mount_point_length(const char *text, size_t size)
+{
+    if (size < 3 || strncmp(text, "pfs", 3) != 0)
+    {
+        return 0;
+    }
+
+    size_t length = 3;
+    while (length < size && isdigit((unsigned char)text[length]))
+    {
+        length++;
+    }
+
+    return length;
+}
+
 int config_split_hdd_path(const char *elf_path, char *partition, size_t partition_size, char *inner, size_t inner_size)
 {
     if (strncmp(elf_path, "hdd0:", 5) != 0)
@@ -71,27 +88,41 @@ int config_split_hdd_path(const char *elf_path, char *partition, size_t partitio
 
     // A partition name with anything but these could start an hdd0: password.
     const char *name = elf_path + 5;
-    size_t length = strspn(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+_.-");
-    if (length == 0 || length >= partition_size || name[length] != ':')
+    size_t field = strspn(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+_.-");
+    if (field == 0 || name[field] != ':')
     {
         return 0;
     }
 
     // Then the mount point the path was written for: "pfs0:" from OPL, "pfs:" in the ps2sdk form.
-    const char *rest = name + length + 1;
-    if (strncmp(rest, "pfs", 3) != 0)
+    size_t length = field;
+    const char *rest = name + field + 1;
+    size_t mount = mount_point_length(rest, strlen(rest));
+    if (mount > 0 && rest[mount] == ':')
     {
-        return 0;
+        rest += mount + 1;
+    }
+    else
+    {
+        // ps2sdk's loader puts the partition and the path it was given together with nothing between, so
+        // wLaunchELF, which gives it "hdd0:__common" and "pfs0:/loadout-bay.elf", starts the ELF as
+        // "hdd0:__commonpfs0:/loadout-bay.elf". The mount point then ends the partition's field.
+        size_t digits = 0;
+        while (digits < field && isdigit((unsigned char)name[field - 1 - digits]))
+        {
+            digits++;
+        }
+
+        if (field < digits + 4 || mount_point_length(name + field - digits - 3, digits + 3) != digits + 3)
+        {
+            return 0;
+        }
+
+        length = field - digits - 3;
     }
 
-    rest += 3 + strspn(rest + 3, "0123456789");
-    if (*rest != ':')
-    {
-        return 0;
-    }
-
-    rest += 1 + strspn(rest + 1, "/");
-    if (*rest == '\0' || strlen(rest) >= inner_size)
+    rest += strspn(rest, "/");
+    if (length >= partition_size || *rest == '\0' || strlen(rest) >= inner_size)
     {
         return 0;
     }

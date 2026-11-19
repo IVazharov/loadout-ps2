@@ -48,6 +48,8 @@ void config_path_beside(const char *elf_path, char *path, size_t size);
 // "hdd0:+OPL:pfs0:APPS/Loadout-Bay/loadout-bay.elf": the partition, then the
 // path on it while it was mounted. Splits that into "+OPL" and
 // "APPS/Loadout-Bay/loadout-bay.elf" and returns 1; returns 0 for any other path.
+// Also takes ps2sdk's "hdd0:+OPL:pfs:/APPS/..." and the form wLaunchELF's
+// starts get, with no colon after the partition: "hdd0:__commonpfs0:/loadout-bay.elf".
 int config_split_hdd_path(const char *elf_path, char *partition, size_t partition_size, char *inner, size_t inner_size);
 
 // Reads the file at path. On CONFIG_INVALID, error says what is wrong in one line.

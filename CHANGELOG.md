@@ -8,6 +8,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 
 - Games that other tools installed under their own partition names, such as `PP.SLES-53886..BLACK`, couldn't be changed or removed: Installed Games listed them, but greyed out Remove and called them incomplete installs. Loadout and Loadout Bay now take any game partition named `PP.<disc ID>.` and something after it, as long as its header is a game's. Loadout Bay still names the games it installs `PP.<disc ID>.HDL.<title>`.
 - Installed Games says why a game can't be changed: an incomplete install, a header Loadout Bay couldn't read, or a partition name it doesn't know, instead of calling them all incomplete installs.
+- Loadout Bay started from the hard disk with wLaunchELF, from `__common`, `+OPL` or any other partition, couldn't save its network settings or an update from Loadout, and didn't read the `loadout-bay.cfg` beside it: its Network screen said "Can't save where Loadout Bay was started", and an update ran only until the PS2 was switched off, so Connect offered it again every time. wLaunchELF tells it where it was started in another form than OPL does, which Loadout Bay now reads too.
 
 ### Removed
 

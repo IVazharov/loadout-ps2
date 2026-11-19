@@ -72,6 +72,9 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           make -C ps2
 
+      - name: Test the code that runs without a PS2
+        run: make -C ps2 test
+
       - name: Upload Loadout Bay
         uses: actions/upload-artifact@v7
         with:

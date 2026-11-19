@@ -42,5 +42,13 @@ clean:
 	rm -rf $(EE_BIN) $(EE_OBJS) build
 	$(MAKE) -C $(HDD_DIR) clean
 
+# Tests of the code that runs without a PS2, built for this computer with its own C compiler.
+test:
+	@mkdir -p build/test
+	cc -Wall -Wextra -Werror -Itests/include -Isrc -o build/test/config_test tests/config_test.c src/config.c
+	./build/test/config_test
+
+.PHONY: all clean test
+
 include $(PS2SDK)/samples/Makefile.pref
 include $(PS2SDK)/samples/Makefile.eeglobal

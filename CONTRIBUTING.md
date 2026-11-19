@@ -21,7 +21,7 @@ Loadout Bay builds with the ps2dev toolchain. The simplest way is the ps2dev Doc
 docker run --rm -v "$PWD:/src" -w /src ps2dev/ps2dev@sha256:da143b8074af64e86540763d7742764ec1fe22826980a0ce9155f7bcc7065cce sh -c "apk add --no-cache build-base git && git config --global --add safe.directory /src && make -C ps2"
 ```
 
-The result is `ps2/loadout-bay.elf`.
+The result is `ps2/loadout-bay.elf`. `make -C ps2 test` builds and runs the tests of the code that runs without a PS2, such as reading `loadout-bay.cfg` and the path Loadout Bay was started from, with the computer's own C compiler; the same image has one once `build-base` is installed.
 
 ## Version
 
