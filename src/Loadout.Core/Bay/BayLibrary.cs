@@ -30,6 +30,20 @@ public sealed record BayLibrary(BayHello Hello, BayFreeSpace Space, IReadOnlyLis
         connected?.Report(bay.Hello);
         var space = await bay.GetFreeSpaceAsync(cancellationToken).ConfigureAwait(false);
         var games = await bay.ListGamesAsync(cancellationToken).ConfigureAwait(false);
+        return await WithMemoryCardsAsync(bay, space, games, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The library of these games, each with the memory card OPL's settings give it, read over this connection: after
+    /// Connect and after installs alike. When the cards can't be read, the games come without them and
+    /// <see cref="MemoryCardError"/> says why.
+    /// </summary>
+    internal static async Task<BayLibrary> WithMemoryCardsAsync(
+        LoadoutBayClient bay,
+        BayFreeSpace space,
+        IEnumerable<BayGame> games,
+        CancellationToken cancellationToken)
+    {
         var rows = games.Select(game => game.ToInstalledGameRow()).ToList();
         try
         {

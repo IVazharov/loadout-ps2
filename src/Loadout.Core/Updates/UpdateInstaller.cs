@@ -50,7 +50,9 @@ public sealed class UpdateInstaller
         ArgumentException.ThrowIfNullOrWhiteSpace(appFolder);
         ArgumentException.ThrowIfNullOrWhiteSpace(workFolder);
         _clientVersion = clientVersion;
-        AppFolder = Path.GetFullPath(appFolder);
+        // The app passes AppContext.BaseDirectory, which ends with a separator: kept as is, CleanUp's "inside the app
+        // folder" check compared against "folder\\" and every update kept its .old files.
+        AppFolder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(appFolder));
         WorkFolder = Path.GetFullPath(workFolder);
         _check = check ?? throw new ArgumentNullException(nameof(check));
     }
@@ -321,6 +323,17 @@ public sealed class UpdateInstaller
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 left.Add(list);
+            }
+        }
+
+        // Before 0.11.2 the list's files were never deleted (see the constructor) and the list was, so the two files
+        // every update replaces can still be here under their .old names. Only those two names: they are Loadout's own.
+        foreach (var name in new[] { ExecutableName + BackupSuffix, "README.md" + BackupSuffix })
+        {
+            var stale = Path.Combine(AppFolder, name);
+            if (File.Exists(stale) && !TryDelete(stale))
+            {
+                left.Add(stale);
             }
         }
 

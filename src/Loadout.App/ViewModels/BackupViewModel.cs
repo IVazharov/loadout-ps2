@@ -562,14 +562,18 @@ public sealed class BackupViewModel : ObservableObject, IDisposable
     /// <summary>The disc map's hover text for a stretch of sectors.</summary>
     public Func<long, long, string> Describe { get; }
 
-    /// <summary>A legend amount in a steady form: whole MB under 1 GB, two decimals of GB above.</summary>
-    private static string LegendSize(long bytes) => bytes >= 1_000_000_000
-        ? string.Create(CultureInfo.CurrentCulture, $"{bytes / 1_000_000_000.0:0.00} GB")
-        : string.Create(CultureInfo.CurrentCulture, $"{bytes / 1_000_000.0:0} MB");
+    // Sizes count as Windows, Installed Games and Loadout Bay do: a GB is 1024 MB of 1024 KB.
+    private const double Megabyte = 1L << 20;
+    private const long Gigabyte = 1L << 30;
 
-    public static string Size(long bytes) => bytes >= 1_000_000_000
-        ? string.Create(CultureInfo.CurrentCulture, $"{bytes / 1_000_000_000.0:0.00} GB")
-        : string.Create(CultureInfo.CurrentCulture, $"{bytes / 1_000_000.0:0.#} MB");
+    /// <summary>A legend amount in a steady form: whole MB under 1 GB, two decimals of GB above.</summary>
+    private static string LegendSize(long bytes) => bytes >= Gigabyte
+        ? string.Create(CultureInfo.CurrentCulture, $"{bytes / (double)Gigabyte:0.00} GB")
+        : string.Create(CultureInfo.CurrentCulture, $"{bytes / Megabyte:0} MB");
+
+    public static string Size(long bytes) => bytes >= Gigabyte
+        ? string.Create(CultureInfo.CurrentCulture, $"{bytes / (double)Gigabyte:0.00} GB")
+        : string.Create(CultureInfo.CurrentCulture, $"{bytes / Megabyte:0.#} MB");
 
     /// <summary>
     /// Stops a copy under way and waits a little for it to save its map, then adds the run to the copy's report, so

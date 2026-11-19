@@ -292,8 +292,10 @@ public static class BayQueueInstaller
         // The games are on the PS2 by now: not reading the list back must not lose what became of them.
         try
         {
+            // With the memory cards, as Connect reads them: without, the column went blank until the next Connect.
             var games = await bay.ListGamesAsync(CancellationToken.None).ConfigureAwait(false);
-            return new BayQueueRun(results, new BayLibrary(bay.Hello, space, games.Select(game => game.ToInstalledGameRow()).ToList())) { LostConnection = lost };
+            var library = await BayLibrary.WithMemoryCardsAsync(bay, space, games, CancellationToken.None).ConfigureAwait(false);
+            return new BayQueueRun(results, library) { LostConnection = lost };
         }
         catch (LoadoutBayException)
         {

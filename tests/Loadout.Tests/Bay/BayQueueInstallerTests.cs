@@ -1,5 +1,7 @@
+using System.Text;
 using Loadout.Fakes;
 using Loadout.Images;
+using Loadout.Library;
 
 namespace Loadout.Bay;
 
@@ -10,6 +12,21 @@ public sealed class BayQueueInstallerTests : IDisposable
     private readonly string _folder = Directory.CreateTempSubdirectory("loadout-queue-").FullName;
 
     public void Dispose() => Directory.Delete(_folder, recursive: true);
+
+    [Fact]
+    public async Task TheListReadAfterTheInstallsKeepsTheMemoryCards()
+    {
+        // A tester's video (2026-11-19): after an install, Installed Games showed no memory cards until the next Connect.
+        using var bay = new FakeLoadoutBay(disk: Disk, games: [("PP.SLES-53886.HDL.Game_One", BayGameTests.Synthetic("Game One", "SLES_538.86"))]);
+        bay.Files[(BayFolder.Vmc, "SLES_538.86_0.bin")] = new byte[8 << 20];
+        bay.Files[(BayFolder.Cfg, "SLES_538.86.cfg")] = Encoding.UTF8.GetBytes("$VMC_0=SLES_538.86_0\r\n");
+
+        var run = await BayQueueInstaller.RunAsync("127.0.0.1", [Image("SLUS-20043", "One", 2)], port: bay.Port, dataPort: bay.DataPort);
+
+        var game = Assert.Single(run.Library!.Games, row => row.Title == "Game One");
+        Assert.Equal(new MemoryCardStatus(MemoryCardKind.Present, "SLES_538.86_0", 8 << 20), game.MemoryCard);
+        Assert.Null(run.Library.MemoryCardError);
+    }
 
     [Fact]
     public async Task ReadyGamesAreInstalledGamesOnThePs2AreSkippedAndIncompleteInstallsReplaced()

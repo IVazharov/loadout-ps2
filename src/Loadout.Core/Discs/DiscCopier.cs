@@ -490,5 +490,6 @@ public sealed class DiscCopier
 
     private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 
-    private static string Mb(long sectors) => string.Create(CultureInfo.InvariantCulture, $"{sectors * DiscSectors.Size / 1_000_000.0:0.0} MB");
+    // MB as Windows counts it (1024 KB), like every size Loadout shows.
+    private static string Mb(long sectors) => string.Create(CultureInfo.InvariantCulture, $"{sectors * DiscSectors.Size / (double)(1L << 20):0.0} MB");
 }

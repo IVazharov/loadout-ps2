@@ -157,6 +157,41 @@ public sealed class UpdateInstallerTests : IDisposable
         Assert.Contains("404", error.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CleanUpRemovesTheOldFilesWhenTheAppFolderEndsWithASeparator()
+    {
+        // The app passes AppContext.BaseDirectory, which ends with a separator: until 0.11.2 every update kept its .old files.
+        Installer(new FakeCheck(null));
+        var installer = Installer(new FakeCheck(null), AppFolder + Path.DirectorySeparatorChar);
+        installer.Apply(installer.Prepare(Zip(("LoadoutPS2.exe", "new exe"), ("README.md", "new readme")), Next));
+        var restarted = Installer(new FakeCheck(null), AppFolder + Path.DirectorySeparatorChar);
+
+        Assert.True(restarted.CleanUp());
+
+        Assert.False(File.Exists(Path.Combine(AppFolder, "LoadoutPS2.exe.old")));
+        Assert.False(File.Exists(Path.Combine(AppFolder, "README.md.old")));
+        Assert.Equal("new exe", File.ReadAllText(Path.Combine(AppFolder, "LoadoutPS2.exe")));
+    }
+
+    [Fact]
+    public void CleanUpRemovesTheOldFilesEarlierUpdatesLeftWithoutAList()
+    {
+        var installer = Installer(new FakeCheck(null));
+        File.WriteAllText(Path.Combine(AppFolder, "LoadoutPS2.exe.old"), "0.10.0");
+        File.WriteAllText(Path.Combine(AppFolder, "README.md.old"), "0.10.0");
+        File.WriteAllText(Path.Combine(AppFolder, "notes.txt.old"), "the user's");
+
+        Assert.True(installer.CleanUp());
+
+        Assert.False(File.Exists(Path.Combine(AppFolder, "LoadoutPS2.exe.old")));
+        Assert.False(File.Exists(Path.Combine(AppFolder, "README.md.old")));
+        Assert.True(File.Exists(Path.Combine(AppFolder, "notes.txt.old")));
+        Assert.Equal("old exe", File.ReadAllText(Path.Combine(AppFolder, "LoadoutPS2.exe")));
+    }
+
+    private UpdateInstaller Installer(IExecutableCheck check, string appFolder) =>
+        new(new HttpClient(new Handler(HttpStatusCode.OK, [])), "0.10.0", appFolder, WorkFolder, check);
+
     private UpdateInstaller Installer(IExecutableCheck check, HttpMessageHandler? handler = null)
     {
         Directory.CreateDirectory(Path.Combine(AppFolder, "data"));

@@ -572,6 +572,11 @@ public sealed class InstalledGamesViewModel : ObservableObject
         if (chosen is not null)
         {
             _useBay(chosen);
+            if (!_connected)
+            {
+                // The card still asked for an address it now has (a tester's video, 2026-11-19).
+                Status = PageStatus.Idle("Not connected", "Found Loadout Bay " + chosen.Version + " at " + chosen.Address + ". Press Connect to read its games.");
+            }
         }
 
         SetEmptyNote(

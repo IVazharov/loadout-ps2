@@ -2,6 +2,15 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
+## Unreleased
+
+### Fixed
+
+- After installing, Installed Games lost its memory cards: the column stayed empty until the next Connect. The list read back after an install now has them.
+- The Backup page counted a GB as 1,000,000,000 bytes and the rest of Loadout as 1,073,741,824, so the same disc showed as 4.27 GB there and 3.97 GB on Installed Games. Every size now counts as Windows does, the Backup page's disc map included.
+- After Find Bay found Loadout Bay, Installed Games still asked for the PS2's address. It now says which Loadout Bay it found and to press Connect.
+- An update kept the files it replaced, `LoadoutPS2.exe.old` and `README.md.old`, for good. They are deleted when the new version starts, those that earlier updates left too.
+
 ## 0.11.1 - 2026-11-19
 
 Games that another tool installed on the PS2's hard disk under its own partition names can now be changed and removed, and Installed Games says why a game can't be. Loadout Bay started from the hard disk with wLaunchELF saves its network settings and updates there. The licence files that Loadout 0.10.0 left beside the program are cleaned up.
