@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Windows;
@@ -152,6 +153,18 @@ public partial class MainWindow : LoadoutWindow
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _log.Add("The last update's leftover files could not be removed: " + ex.Message);
+        }
+
+        // A release folder only: 0.10.0's and older zips put licence files beside the program, which updates left behind.
+        if (_cannotUpdate is null)
+        {
+            var removed = OldReleaseFiles.Remove(AppContext.BaseDirectory);
+            if (removed.Count > 0)
+            {
+                _log.Add(string.Create(
+                    CultureInfo.CurrentCulture,
+                    $"Removed {removed.Count} licence files that Loadout 0.10.0 and older kept beside the program. Every licence text is on the About page."));
+            }
         }
     }
 

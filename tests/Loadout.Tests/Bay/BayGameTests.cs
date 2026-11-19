@@ -94,6 +94,37 @@ public sealed class BayGameTests
         Assert.Equal("SLUS-20035", BayGame.DiscIdOfName("PP.SLUS-20035.HDL."));
     }
 
+    [Theory]
+    [InlineData("PP.SLES-53886.._BLACK__REVIEW_", "SLES-53886", "BLACK REVIEW")]
+    [InlineData("PP.SLES-54945..DRAGON_BALL_Z", "SLES-54945", "DRAGON BALL Z")]
+    [InlineData("PP.SLUS-20062.HDL.Grand_Theft", "SLUS-20062", "Grand Theft")]
+    public void OtherToolsGameNamesGiveTheirDiscIdAndTitle(string name, string discId, string title)
+    {
+        // As a tester's games from another tool were named (2026-11-19): without .HDL., Loadout couldn't change them.
+        Assert.Equal(discId, BayGame.DiscIdOfName(name));
+        Assert.Equal(title, BayGame.TitleOfName(name));
+    }
+
+    [Fact]
+    public void AWholeGameUnderAnotherToolsNameCanBeChangedAndRemoved()
+    {
+        var row = BayWire.ReadGame(Entry("PP.SLUS-20043.._MOON_WARS_", Header(MoonWarsCd))).ToInstalledGameRow();
+
+        Assert.False(row.Incomplete);
+        Assert.True(BayGameChanges.CanEdit(row));
+        Assert.True(BayGameChanges.CanRemove(row));
+    }
+
+    [Theory]
+    [InlineData("PP.HOMEBREW")]
+    [InlineData("PP.HOMEBREW.APP")]
+    [InlineData("PP.SLES-53886")]
+    [InlineData("__common")]
+    public void NamesWithoutADiscIdAreNotGames(string name)
+    {
+        Assert.Null(BayGame.DiscIdOfName(name));
+    }
+
     [Fact]
     public async Task AnIncompleteInstallIsRemovedAndAWholeGameIsNot()
     {

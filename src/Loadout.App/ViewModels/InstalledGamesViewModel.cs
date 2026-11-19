@@ -192,7 +192,9 @@ public sealed class InstalledGamesViewModel : ObservableObject
     public string EditorHint =>
         _selection.Length == 0 || _selected is null ? "Select one game to change its title, disc type, modes or transfer mode."
         : _selection.Length > 1 ? _selection.Length.ToString(CultureInfo.CurrentCulture) + " games selected. Select one to change it."
-        : !BayGameChanges.CanEdit(_selected) ? "An incomplete install can't be changed. Installing the game again replaces it."
+        : _selected.Incomplete ? "An incomplete install can't be changed. Installing the game again replaces it."
+        : _selected.Title == BayGame.UnreadableTitle ? "Loadout Bay couldn't read this game's header, so it can't be changed here."
+        : !BayGameChanges.CanEdit(_selected) ? "Its partition isn't named PP.<disc ID>.<title>, as games are, so Loadout doesn't change it."
         : _connecting ? "Wait for the current task to finish."
         : "";
 

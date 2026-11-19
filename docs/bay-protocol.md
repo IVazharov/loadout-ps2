@@ -201,7 +201,7 @@ Request payload: the partition name, 1 to 32 bytes, without `hdd0:` and without 
 Removes an incomplete install: the main partition and its sub-partitions. Loadout Bay reads the partition's header again, so a list read earlier cannot remove a game that has been installed since. It removes the partition only when all of these hold:
 
 - it is a game partition (type `0x1337`, not a sub-partition);
-- its name has the form `PP.<disc ID>.HDL.<title>`, with a disc ID as `INSTALL_BEGIN` accepts it;
+- its name has the form `PP.<disc ID>.<rest>`, with a disc ID as `INSTALL_BEGIN` accepts it: `PP.<disc ID>.HDL.<title>` as Loadout Bay and HDLGameInstaller name games, or another tool's form, such as `PP.<disc ID>..<title>`;
 - its header was read without error, and all 1024 bytes of it are zeros, the way an install that stopped early leaves it.
 
 Statuses:
@@ -255,7 +255,7 @@ Request payload: the partition name, 1 to 32 bytes, without `hdd0:` and without 
 Deletes a whole game: the main partition and its sub-partitions. Loadout Bay reads the partition's header again and deletes it only when all of these hold:
 
 - it is a game partition (type `0x1337`, not a sub-partition);
-- its name has the form `PP.<disc ID>.HDL.<title>`, with a disc ID as `INSTALL_BEGIN` accepts it;
+- its name has the form `PP.<disc ID>.<rest>`, with a disc ID as `INSTALL_BEGIN` accepts it: `PP.<disc ID>.HDL.<title>` as Loadout Bay and HDLGameInstaller name games, or another tool's form, such as `PP.<disc ID>..<title>`;
 - its header has the HDLoader magic `0xDEADFEED`.
 
 The game's files in `+OPL`, such as its artwork and its CFG file, stay. An incomplete install goes through `REMOVE_INCOMPLETE` instead.
@@ -389,7 +389,7 @@ Loadout Bay opens the partition read-only and reads the header 1 MB into it. Rea
 The PC tells three cases apart:
 
 - **Unreadable:** the header could not be read. The entry carries zeros there with flag bit 0 set, and the PC shows the game as unreadable.
-- **Incomplete install:** the header was read and is all zeros, under a name of the form `PP.<disc ID>.HDL.<title>`. The PC shows it under its disc ID and offers `REMOVE_INCOMPLETE`, which runs only after the user confirms.
+- **Incomplete install:** the header was read and is all zeros, under a name of the form `PP.<disc ID>.<rest>`. The PC shows it under its disc ID and offers `REMOVE_INCOMPLETE`, which runs only after the user confirms.
 - **Unrecognised:** any other header without the HDLoader magic is shown as unreadable too, and cannot be removed this way.
 
 The PC decodes the header (`HdlGameHeader`):

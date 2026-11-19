@@ -2,6 +2,17 @@
 
 Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Until 1.0.0, every release is a prerelease and behavior can change between minor versions. This changelog has a section for each release.
 
+## Unreleased
+
+### Fixed
+
+- Games that other tools installed under their own partition names, such as `PP.SLES-53886..BLACK`, couldn't be changed or removed: Installed Games listed them, but greyed out Remove and called them incomplete installs. Loadout and Loadout Bay now take any game partition named `PP.<disc ID>.` and something after it, as long as its header is a game's. Loadout Bay still names the games it installs `PP.<disc ID>.HDL.<title>`.
+- Installed Games says why a game can't be changed: an incomplete install, a header Loadout Bay couldn't read, or a partition name it doesn't know, instead of calling them all incomplete installs.
+
+### Removed
+
+- The licence files that Loadout 0.10.0 and older kept beside the program (`LICENSE`, `THIRD-PARTY-NOTICES.txt` and the `third_party` folder) are deleted when Loadout starts: an update to 0.11.0 left them behind, outdated, and every licence text is on the About page. Only files exactly as those versions shipped them go; anything else in the folder stays.
+
 ## 0.11.0 - 2026-11-18
 
 Loadout now backs up PS2 discs. Put an original PS2 DVD or CD in a drive on your PC, and Loadout copies it, checks it against Redump's list of verified discs, and keeps it as a chd or as a bin and cue. A scratched disc is read again where it's weak, and a copy can go straight to the PS2. Installs also show their check as it runs, every list has a right-click menu and keys, and Loadout Bay's screen shows the free space in OPL's partition.

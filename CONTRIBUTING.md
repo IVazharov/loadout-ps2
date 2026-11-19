@@ -49,8 +49,8 @@ A wrong write can corrupt the PS2's hard disk, so:
 
 - Every write path is built and tested in PCSX2 against a virtual hard disk first.
 - The first console test of a write uses one small game that can be reinstalled.
-- Loadout Bay writes only `PP.<DiscID>.HDL.*` partitions, files under `ART`, `CFG`, `VMC` and `APPS/Loadout-Bay` in OPL's `+OPL` partition, its own ELF and settings where it was started from, and a temporary partition for the disk speed test. It never touches other partitions.
-- A delete is sent only for a `PP.<DiscID>.HDL.*` partition and only after the user confirms.
+- Loadout Bay writes only game partitions (it makes them as `PP.<DiscID>.HDL.*`, and changes or deletes games other tools named `PP.<DiscID>.*`), files under `ART`, `CFG`, `VMC` and `APPS/Loadout-Bay` in OPL's `+OPL` partition, its own ELF and settings where it was started from, and a temporary partition for the disk speed test. It never touches other partitions.
+- A delete is sent only for a game partition named `PP.<DiscID>.*` and only after the user confirms.
 - Loadout Bay does not write OSD resources.
 
 A pull request that changes a write path says how it was tested in PCSX2 and, if it was, on which console.

@@ -13,7 +13,11 @@ public sealed record BayGame(string PartitionName, HdlGameHeader? Header, bool I
 {
     public const string UnreadableTitle = "(unreadable game header)";
 
-    /// <summary>The disc ID in a game partition name, <c>PP.&lt;disc ID&gt;.HDL.&lt;title&gt;</c>, or null.</summary>
+    /// <summary>
+    /// The disc ID in a game partition name, or null. Loadout and HDLGameInstaller name a game
+    /// <c>PP.&lt;disc ID&gt;.HDL.&lt;title&gt;</c>; other tools use other forms, such as
+    /// <c>PP.&lt;disc ID&gt;..&lt;title&gt;</c>, so any <c>PP.&lt;disc ID&gt;.&lt;rest&gt;</c> counts.
+    /// </summary>
     public static string? DiscIdOfName(string partitionName)
     {
         ArgumentNullException.ThrowIfNull(partitionName);
@@ -22,20 +26,23 @@ public sealed record BayGame(string PartitionName, HdlGameHeader? Header, bool I
             return null;
         }
 
-        var end = partitionName.IndexOf(".HDL.", 3, StringComparison.Ordinal);
+        var end = partitionName.IndexOf('.', 3);
         return end > 3 && DiscId.TryParse(partitionName[3..end], out var discId) ? discId.Canonical : null;
     }
 
     /// <summary>
-    /// The title part of a game partition name, as far as it goes: the first 14 characters, with
-    /// every character that was not a letter, a digit or '_' already turned into '_'. Shown with
-    /// spaces for an incomplete install, which has no header to take its title from.
+    /// The title part of a game partition name, as far as it goes: after <c>.HDL.</c>, or after the
+    /// disc ID's dots in other tools' names, with each '_' shown as a space. Shown for an incomplete
+    /// install, which has no header to take its title from.
     /// </summary>
     public static string TitleOfName(string partitionName)
     {
         ArgumentNullException.ThrowIfNull(partitionName);
-        var start = partitionName.IndexOf(".HDL.", StringComparison.Ordinal);
-        var title = start < 0 ? partitionName : partitionName[(start + 5)..];
+        var hdl = partitionName.IndexOf(".HDL.", StringComparison.Ordinal);
+        var dot = partitionName.StartsWith("PP.", StringComparison.Ordinal) ? partitionName.IndexOf('.', 3) : -1;
+        var title = hdl >= 0 ? partitionName[(hdl + 5)..]
+            : dot > 3 ? partitionName[(dot + 1)..].TrimStart('.')
+            : partitionName;
         title = string.Join(' ', title.Split('_', StringSplitOptions.RemoveEmptyEntries));
         return title.Length > 0 ? title : partitionName;
     }

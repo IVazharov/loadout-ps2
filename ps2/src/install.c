@@ -1044,7 +1044,9 @@ int install_checksum_sectors(const char *name, u32 sub, u32 sector, u32 sectors,
     return status < 0 ? status : 0;
 }
 
-// Only a name Loadout Bay or HDLGameInstaller gives a game: PP.<disc ID>.HDL.<title>.
+// Only a game's name: PP.<disc ID>.HDL.<title> as Loadout Bay and HDLGameInstaller name
+// games, or another tool's PP.<disc ID>.<rest>, such as PP.<disc ID>..<title>. The callers
+// also check that the partition is a game partition and what its header holds.
 static int is_game_name(const char *name)
 {
     if (strncmp(name, "PP.", 3) != 0)
@@ -1054,7 +1056,7 @@ static int is_game_name(const char *name)
 
     const char *disc_id = name + 3;
     const char *end = strchr(disc_id, '.');
-    if (end == NULL || strncmp(end, ".HDL.", 5) != 0 || end - disc_id > DISC_ID_MAX_LENGTH)
+    if (end == NULL || end - disc_id > DISC_ID_MAX_LENGTH)
     {
         return 0;
     }

@@ -121,7 +121,7 @@ void install_abort(void);
 // True while an install is open, writing to the disk or checking it.
 int install_busy(void);
 
-// Removes an incomplete install: a game partition named PP.<disc ID>.HDL.<title>
+// Removes an incomplete install: a game partition named PP.<disc ID>.<rest>
 // whose header area is all zeros, which is how a copy that stopped early is
 // left. Returns 0, -ENOENT when no game partition has the name, -EPERM when the
 // name is not in that form or the partition holds a header, -EBUSY while the
@@ -129,7 +129,7 @@ int install_busy(void);
 // cannot be read. Nothing is removed unless it returns 0.
 int install_remove_incomplete(const char *name);
 
-// Deletes a whole game: a game partition named PP.<disc ID>.HDL.<title> whose
+// Deletes a whole game: a game partition named PP.<disc ID>.<rest> whose
 // header has the HDLoader magic, with its sub-partitions. Returns 0, -ENOENT
 // when no game partition has the name, -EPERM when the name is not in that form
 // or the header is not a game's, -EBUSY while an install is open, or another
