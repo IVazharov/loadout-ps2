@@ -114,6 +114,14 @@ jobs:
       - name: Build solution
         run: dotnet build Loadout.slnx --configuration Release --verbosity minimal
 
+      # Loadout Bay rides inside Loadout gzipped (Loadout.App.csproj): a build without it couldn't update a PS2's Loadout Bay.
+      # The resource's name is in the assembly's metadata as plain text.
+      - name: Check that Loadout embeds Loadout Bay
+        run: |
+          $dll = 'src/Loadout.App/bin/Release/net10.0-windows/LoadoutPS2.dll'
+          $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($dll))
+          if (-not $text.Contains('loadout-bay.elf.gz')) { throw "$dll has no loadout-bay.elf.gz resource." }
+
       - name: Test solution
         run: dotnet test Loadout.slnx --configuration Release --verbosity minimal --no-build
 

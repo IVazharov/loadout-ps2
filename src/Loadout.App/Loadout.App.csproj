@@ -45,11 +45,49 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The Loadout Bay of this version, offered to a PS2 that runs another. Built in ps2/; without it nothing is offered. -->
-    <EmbeddedResource Include="..\..\ps2\loadout-bay.elf" LogicalName="loadout-bay.elf" Condition="Exists('..\..\ps2\loadout-bay.elf')" />
     <!-- Shown on the About page; the zip has the same files next to the executable. -->
     <EmbeddedResource Include="..\..\LICENSE" LogicalName="LICENSE" />
     <EmbeddedResource Include="..\..\THIRD-PARTY-NOTICES.txt" LogicalName="THIRD-PARTY-NOTICES.txt" />
   </ItemGroup>
+
+  <!-- The Loadout Bay of this version, offered to a PS2 that runs another. Built in ps2/; without it nothing is offered.
+       It is embedded gzipped, and MainWindow.BundledBay unpacks it: the exe is about 2 MB smaller, and signed with the
+       ELF as it is, 0.11.0 and 0.11.1 were taken for malware by Bitdefender's engine (Gen:Variant.Yogi), which a
+       signed build with the ELF gzipped is not (VirusTotal, 2026-11-20). -->
+  <PropertyGroup>
+    <LoadoutBayElf>$(MSBuildThisFileDirectory)..\..\ps2\loadout-bay.elf</LoadoutBayElf>
+  </PropertyGroup>
+
+  <UsingTask TaskName="GzipLoadoutBay" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(Destination)));
+        using (var input = File.OpenRead(Source))
+        using (var output = File.Create(Destination))
+        using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
+        {
+            input.CopyTo(gzip);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="CompressLoadoutBay" Condition="Exists('$(LoadoutBayElf)')" Inputs="$(LoadoutBayElf)" Outputs="$(IntermediateOutputPath)loadout-bay.elf.gz">
+    <GzipLoadoutBay Source="$(LoadoutBayElf)" Destination="$(IntermediateOutputPath)loadout-bay.elf.gz" />
+  </Target>
+
+  <!-- Before the build, not before PrepareResourceNames: that one's dependencies would have named the resources already. -->
+  <Target Name="EmbedLoadoutBay" BeforeTargets="BeforeBuild" DependsOnTargets="CompressLoadoutBay" Condition="Exists('$(LoadoutBayElf)')">
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)loadout-bay.elf.gz" LogicalName="loadout-bay.elf.gz" />
+      <FileWrites Include="$(IntermediateOutputPath)loadout-bay.elf.gz" />
+    </ItemGroup>
+  </Target>
 
 </Project>

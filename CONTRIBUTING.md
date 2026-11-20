@@ -29,7 +29,7 @@ The result is `ps2/loadout-bay.elf`. `make -C ps2 test` builds and runs the test
 
 Work between releases goes on the branch `next`; `main` holds the latest release. Each commit that changes Loadout or Loadout Bay raises the suffix's number by one (`0.10.0-dev.1`, then `0.10.0-dev.2`), so every build reports its own version, and Connect offers a Loadout Bay built from another commit. Other commits keep it. Below 1.0.0, a new feature or a change that breaks compatibility raises the minor number, and a fix the patch number. The release drops the suffix.
 
-A Windows build embeds `ps2/loadout-bay.elf` when it exists, to offer it to a PS2 that runs another version, so build the ELF first.
+A Windows build embeds `ps2/loadout-bay.elf`, gzipped, when it exists, to offer it to a PS2 that runs another version, so build the ELF first.
 
 ## Tests never dial a console
 

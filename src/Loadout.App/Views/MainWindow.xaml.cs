@@ -222,17 +222,18 @@ public partial class MainWindow : LoadoutWindow
         Application.Current.Shutdown();
     }
 
-    // The Loadout Bay built with this Loadout, embedded when ps2/loadout-bay.elf was there at build time.
+    // The Loadout Bay built with this Loadout, embedded gzipped when ps2/loadout-bay.elf was there at build time.
     private static byte[]? BundledBay()
     {
-        using var stream = typeof(MainWindow).Assembly.GetManifestResourceStream("loadout-bay.elf");
+        using var stream = typeof(MainWindow).Assembly.GetManifestResourceStream("loadout-bay.elf.gz");
         if (stream is null)
         {
             return null;
         }
 
+        using var elf = new System.IO.Compression.GZipStream(stream, System.IO.Compression.CompressionMode.Decompress);
         using var copy = new MemoryStream();
-        stream.CopyTo(copy);
+        elf.CopyTo(copy);
         return copy.ToArray();
     }
 
