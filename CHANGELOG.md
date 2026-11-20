@@ -4,7 +4,7 @@ Notable changes to Loadout and Loadout Bay. The format follows [Keep a Changelog
 
 ## 0.11.2 - 2026-11-20
 
-A game that OPL's list of game titles doesn't have is named after Redump's name for the disc or its file's name, and Loadout asks for a name when nothing gives one. Installed Games keeps its memory cards after an install, every size is counted as Windows counts it, and updates no longer leave old files behind. The download is about 2 MB smaller, and a few virus scanners no longer raise a false alarm on it.
+A game that OPL's list of game titles doesn't have is named after Redump's name for the disc or its file's name, and Loadout asks for a name when nothing gives one. Installed Games keeps its memory cards after an install, every size is counted as Windows counts it, and updates no longer leave old files behind. LoadoutPS2.exe is about 2 MB smaller, and a few virus scanners no longer raise a false alarm on it.
 
 New to Loadout? `Loadout-PS2-0.11.2-win-x64.zip` is the Windows app, and all that backing up needs. `Loadout-Bay-PS2-0.11.2.zip` is for installing games on a PS2: Get started, in the readme, has the steps. Loadout 0.10.0, 0.11.0 and 0.11.1 offer this version by themselves when they start, and the next Connect updates Loadout Bay too.
 
@@ -15,7 +15,7 @@ New to Loadout? `Loadout-PS2-0.11.2-win-x64.zip` is the Windows app, and all tha
 - The Backup page counted a GB as 1,000,000,000 bytes and the rest of Loadout as 1,073,741,824, so the same disc showed as 4.27 GB there and 3.97 GB on Installed Games. Every size now counts as Windows does, the Backup page's disc map included.
 - After Find Bay found Loadout Bay, Installed Games still asked for the PS2's address. It now says which Loadout Bay it found and to press Connect.
 - An update kept the files it replaced, `LoadoutPS2.exe.old` and `README.md.old`, for good. They are deleted when the new version starts, those that earlier updates left too.
-- A few virus scanners wrongly flagged 0.11.0 and 0.11.1. Loadout now keeps the Loadout Bay it carries compressed, which they don't flag, and the download is about 2 MB smaller.
+- A few virus scanners wrongly flagged 0.11.0 and 0.11.1. Loadout now keeps the Loadout Bay it carries compressed, which they don't flag, and LoadoutPS2.exe is about 2 MB smaller.
 
 ## 0.11.1 - 2026-11-19
 
