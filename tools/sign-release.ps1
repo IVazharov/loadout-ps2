@@ -11,6 +11,10 @@ The script signs LoadoutPS2.exe with a timestamp and replaces only that file in 
 zip, so the rest is what the workflow built. It then uploads the zip and checks the
 uploaded copy. The release stays a draft unless -Publish is given.
 
+An app that is already signed by the publisher with a timestamp, from an earlier run,
+is not signed again: -Publish then only publishes, so the published files are the ones
+that were checked (and scanned) as the draft, and SimplySign need not be logged in.
+
 .EXAMPLE
 tools/sign-release.ps1 -Tag v0.9.2
 
@@ -92,6 +96,20 @@ function Assert-Signed {
     if (-not $signature.TimeStamperCertificate) { throw "The signature on $Path has no timestamp, so it would end with the certificate." }
 }
 
+# True when the app in the zip is signed by the publisher with a timestamp, and signtool's check passes.
+function Test-AppSigned {
+    param([string]$Zip, [string]$Tool, [string]$WorkFolder)
+    $present = Join-Path $WorkFolder 'present.exe'
+    Read-AppFromZip -Zip $Zip -Destination $present
+    $signature = Get-AuthenticodeSignature $present
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notlike "CN=$Publisher,*" -or -not $signature.TimeStamperCertificate) {
+        return $false
+    }
+
+    Assert-Signed -Path $present -Tool $Tool | Out-Null
+    return $true
+}
+
 function Read-AppFromZip {
     param([string]$Zip, [string]$Destination)
     $archive = [IO.Compression.ZipFile]::OpenRead($Zip)
@@ -128,14 +146,25 @@ function Set-SignedAppInZip {
 }
 
 $tool = Find-SignTool
-$certificate = Find-Certificate
-Write-Host "Signing as $($certificate.Subject), valid to $($certificate.NotAfter)."
+
+# Only when there is something to sign: publishing an already signed draft needs no SimplySign login.
+function Get-SigningCertificate {
+    $certificate = Find-Certificate
+    Write-Host "Signing as $($certificate.Subject), valid to $($certificate.NotAfter)."
+    return $certificate
+}
 
 $work = Join-Path ([IO.Path]::GetTempPath()) "loadout-sign-$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory $work | Out-Null
 try {
     if ($PSCmdlet.ParameterSetName -eq 'Local') {
         $zip = (Resolve-Path $LocalZip).Path
+        if (Test-AppSigned -Zip $zip -Tool $tool -WorkFolder $work) {
+            Write-Host "The app in $zip is already signed by $Publisher with a timestamp: not signed again."
+            return
+        }
+
+        $certificate = Get-SigningCertificate
         Set-SignedAppInZip -Zip $zip -Tool $tool -Thumbprint $certificate.Thumbprint -WorkFolder $work
         Write-Host "Signed the app in $zip."
         return
@@ -154,17 +183,25 @@ try {
     Invoke-Native gh @('release', 'download', $Tag, '--repo', $Repository, '--pattern', $name, '--dir', $download)
     $zip = Join-Path $download $name
 
-    Set-SignedAppInZip -Zip $zip -Tool $tool -Thumbprint $certificate.Thumbprint -WorkFolder $work
-    Invoke-Native gh @('release', 'upload', $Tag, $zip, '--repo', $Repository, '--clobber')
+    # Signed by an earlier run: left as it is, so what is published is what was checked as the draft.
+    if (Test-AppSigned -Zip $zip -Tool $tool -WorkFolder $work) {
+        Write-Host "$AppFile in $name is already signed by $Publisher with a timestamp: not signed again."
+    }
+    else {
+        $certificate = Get-SigningCertificate
+        Set-SignedAppInZip -Zip $zip -Tool $tool -Thumbprint $certificate.Thumbprint -WorkFolder $work
+        Invoke-Native gh @('release', 'upload', $Tag, $zip, '--repo', $Repository, '--clobber')
 
-    $uploaded = Join-Path $work 'uploaded'
-    New-Item -ItemType Directory $uploaded | Out-Null
-    Invoke-Native gh @('release', 'download', $Tag, '--repo', $Repository, '--pattern', $name, '--dir', $uploaded)
-    if ((Get-FileHash $zip).Hash -ne (Get-FileHash (Join-Path $uploaded $name)).Hash) {
-        throw 'The uploaded zip differs from the signed one.'
+        $uploaded = Join-Path $work 'uploaded'
+        New-Item -ItemType Directory $uploaded | Out-Null
+        Invoke-Native gh @('release', 'download', $Tag, '--repo', $Repository, '--pattern', $name, '--dir', $uploaded)
+        if ((Get-FileHash $zip).Hash -ne (Get-FileHash (Join-Path $uploaded $name)).Hash) {
+            throw 'The uploaded zip differs from the signed one.'
+        }
+
+        Write-Host "Uploaded $name with the signed app."
     }
 
-    Write-Host "Uploaded $name with the signed app."
     if ($Publish) {
         Invoke-Native gh @('release', 'edit', $Tag, '--repo', $Repository, '--draft=false')
         Write-Host "Published $Tag."
