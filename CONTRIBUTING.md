@@ -29,6 +29,8 @@ The result is `ps2/loadout-bay.elf`. `make -C ps2 test` builds and runs the test
 
 Work between releases goes on the branch `next`; `main` holds the latest release. Each commit that changes Loadout or Loadout Bay raises the suffix's number by one (`0.10.0-dev.1`, then `0.10.0-dev.2`), so every build reports its own version, and Connect offers a Loadout Bay built from another commit. Other commits keep it. Below 1.0.0, a new feature or a change that breaks compatibility raises the minor number, and a fix the patch number. The release drops the suffix.
 
+Fixes for the latest release go on the branch `release/X.Y`, such as `release/0.11`, while `next` holds the next minor version, such as `0.11.3-dev.1` on `release/0.11` beside `0.12.0-dev.1` on `next`, each with its own `## Unreleased`. A bug that users of the latest release can meet is fixed on `release/X.Y`; a bug in code that only `next` has is fixed on `next`. After each patch release, `release/X.Y` is merged into `next`. The merge keeps the version of `next`, raised by one dev step when the merge brings code, and the patch's changelog section goes below the `## Unreleased` of `next`. The updater offers the newest release to every older version, so `release/X.Y` ends when `next` is released.
+
 A Windows build embeds `ps2/loadout-bay.elf`, gzipped, when it exists, to offer it to a PS2 that runs another version, so build the ELF first.
 
 ## Tests never dial a console
@@ -71,10 +73,10 @@ Add a line to [CHANGELOG.md](CHANGELOG.md) for anything a user would notice, und
 
 ## Releases
 
-A release is built from a commit on `next` that drops the suffix from `VERSION`, such as from `0.10.0-dev.7` to `0.10.0`, and renames `## Unreleased` in `CHANGELOG.md` to `## <version> - <date>`, which supplies the notes. `main` then moves to that commit, and a maintainer pushes the tag `v<version>`, such as `v0.10.0`. The release workflow refuses a tag that does not match `VERSION` or has no changelog section, before it builds anything, so a `-dev` version is never released. It then builds and tests both apps, and creates a draft GitHub release with both downloads. A version below 1.0.0 is a prerelease.
+A release is built from a commit on `next`, or on `release/X.Y` for a patch release, that drops the suffix from `VERSION`, such as from `0.10.0-dev.7` to `0.10.0`, and renames `## Unreleased` in `CHANGELOG.md` to `## <version> - <date>`, which supplies the notes. `main` then moves to that commit, and a maintainer pushes the tag `v<version>`, such as `v0.10.0`. The release workflow refuses a tag that does not match `VERSION` or has no changelog section, before it builds anything, so a `-dev` version is never released. It then builds and tests both apps, and creates a draft GitHub release with both downloads. A version below 1.0.0 is a prerelease.
 
 The maintainer then logs in to SimplySign Desktop and runs `tools/sign-release.ps1 -Tag v<version>`, which signs `LoadoutPS2.exe` with a timestamp and replaces it in the draft's zip. Running it again with `-Publish` publishes the release.
 
 ## Commits and pull requests
 
-A commit message starts with one summary sentence that ends with a period, then a short body that says why. Keep each commit to one change. A pull request says what changed, why, and how it was tested.
+A commit message starts with one summary sentence that ends with a period, then a short body that says why. Keep each commit to one change. A pull request says what changed, why, and how it was tested. A fix for the latest release targets `release/X.Y` when that branch exists; anything else targets `next`.
